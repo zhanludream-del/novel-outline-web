@@ -30,6 +30,7 @@
             </div>
 
             <div class="topbar-actions">
+                <button class="btn btn-ghost" id="btnShowLog" type="button">查看日志</button>
                 <button class="btn btn-ghost" id="btnOpenSettings" type="button">API 设置</button>
                 <button class="btn btn-ghost" id="btnSaveData" type="button">保存</button>
                 <button class="btn btn-primary" id="btnExportData" type="button">导出</button>
@@ -381,6 +382,9 @@
                                 <p class="section-kicker">人物库</p>
                                 <h2>人物卡与关系整理</h2>
                             </div>
+                            <div class="panel-actions">
+                                <button class="btn btn-ghost" id="btnGenerateCharacters" type="button">按章纲批量生成人设</button>
+                            </div>
                         </div>
 
                         <div class="form-grid two-column">
@@ -522,6 +526,36 @@
                     <div class="panel">
                         <div class="panel-head">
                             <div>
+                                <p class="section-kicker">分析面板</p>
+                                <h3>追踪器联动概览</h3>
+                            </div>
+                        </div>
+
+                        <div class="insight-grid" id="trackerSummaryCards"></div>
+
+                        <div class="insight-columns">
+                            <section class="insight-card">
+                                <h4>最近章末快照</h4>
+                                <div class="insight-list" id="trackerSnapshotList"></div>
+                            </section>
+                            <section class="insight-card">
+                                <h4>待回收伏笔</h4>
+                                <div class="insight-list" id="trackerForeshadowList"></div>
+                            </section>
+                            <section class="insight-card">
+                                <h4>人物一致性动态</h4>
+                                <div class="insight-list" id="trackerConsistencyList"></div>
+                            </section>
+                            <section class="insight-card">
+                                <h4>世界与龙套记录</h4>
+                                <div class="insight-list" id="trackerWorldEventList"></div>
+                            </section>
+                        </div>
+                    </div>
+
+                    <div class="panel">
+                        <div class="panel-head">
+                            <div>
                                 <p class="section-kicker">系统数据</p>
                                 <h3>桌面版追踪器 JSON 面板</h3>
                             </div>
@@ -644,6 +678,16 @@
                         <span>最大 tokens</span>
                         <input class="input" id="settingMaxTokens" type="number" min="256" step="256" value="4000">
                     </label>
+
+                    <label class="field">
+                        <span>超时秒数</span>
+                        <input class="input" id="settingTimeoutSeconds" type="number" min="30" step="30" value="600">
+                    </label>
+
+                    <label class="field">
+                        <span>失败重试次数</span>
+                        <input class="input" id="settingRetryCount" type="number" min="1" max="8" step="1" value="3">
+                    </label>
                 </div>
 
                 <p class="modal-hint">提示：这个 Web 版仍然是纯前端方案，API Key 只保存在浏览器本地，不会上传到别的服务器。</p>
@@ -663,12 +707,13 @@
         </div>
     </div>
 
-    <section class="log-drawer" id="logDrawer">
+    <section class="log-drawer hidden" id="logDrawer">
         <div class="log-head">
             <div>
                 <p class="section-kicker">运行日志</p>
                 <h3>本地调试面板</h3>
             </div>
+            <button class="btn btn-ghost btn-small" id="btnHideLog" type="button">隐藏</button>
             <button class="btn btn-ghost btn-small" id="btnToggleLog" type="button">收起</button>
         </div>
         <div class="log-body" id="logContent"></div>

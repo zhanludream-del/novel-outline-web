@@ -97,6 +97,10 @@ class Utils {
         entry.className = `log-entry ${type}`;
         entry.textContent = `[${Utils.formatTime()}] ${message}`;
         logContent.prepend(entry);
+
+        while (logContent.children.length > 120) {
+            logContent.removeChild(logContent.lastElementChild);
+        }
     }
 
     static async copyText(text) {

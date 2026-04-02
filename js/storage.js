@@ -71,6 +71,8 @@ class StorageManager {
         );
         merged.chapters = merged.chapters || {};
         merged.generatedChapterTexts = merged.generatedChapterTexts || {};
+        merged.used_extras_characters = Array.isArray(merged.used_extras_characters) ? merged.used_extras_characters : [];
+        merged.used_temp_subplots = Array.isArray(merged.used_temp_subplots) ? merged.used_temp_subplots : [];
         this.syncTopLevelChapterContent(merged);
         return merged;
     }
@@ -114,6 +116,8 @@ class StorageManager {
             foreshadows: Array.isArray(chapter.foreshadows)
                 ? chapter.foreshadows
                 : Utils.ensureArrayFromText(chapter.foreshadows),
+            plot_unit: chapter.plot_unit || {},
+            next_chapter_setup: chapter.next_chapter_setup || {},
             chapter_number: Number(chapter.number || chapter.chapter_number || 0) || 0,
             key_event: chapter.keyEvent || chapter.key_event || "",
             emotion_curve: chapter.emotionCurve || chapter.emotion_curve || "",

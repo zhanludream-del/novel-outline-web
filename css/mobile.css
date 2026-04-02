@@ -59,6 +59,8 @@
     .form-grid.three-column,
     .form-grid.narrow-grid,
     .system-grid,
+    .insight-grid,
+    .insight-columns,
     .hero-card {
         grid-template-columns: 1fr;
     }
@@ -94,6 +96,19 @@
     .quick-actions .btn,
     .modal-actions .btn,
     .field-actions .btn {
+        flex: 1 1 100%;
+    }
+
+    .log-head {
+        align-items: flex-start;
+        flex-direction: column;
+    }
+
+    .log-head > div:last-child {
+        width: 100%;
+    }
+
+    .log-head > div:last-child .btn {
         flex: 1 1 100%;
     }
 

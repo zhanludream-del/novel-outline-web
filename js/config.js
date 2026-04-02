@@ -38,7 +38,9 @@ const DEFAULT_API_CONFIG = {
     apiBase: "https://ark.cn-beijing.volces.com/api/v3",
     model: "doubao-pro-32k-241215",
     temperature: 0.7,
-    maxTokens: 4000
+    maxTokens: 4000,
+    timeoutMs: 600000,
+    retryCount: 3
 };
 
 const DEFAULT_NOVEL_DATA = {
@@ -149,12 +151,26 @@ const DEFAULT_NOVEL_DATA = {
     dialogue_tracker: {
         declarations: {}
     },
+    world_tracker: {
+        locations: {},
+        organizations: {},
+        character_positions: {},
+        offscreen_status: {},
+        world_events: []
+    },
     prompt_state: {
         current_prompt: "",
         saved_prompts: {},
         selected_prompt: "",
         chapter_frequency: "male"
     },
+    generated_context: {
+        worldbuilding: "",
+        volume_synopsis: "",
+        chapter_synopsis: ""
+    },
+    used_extras_characters: [],
+    used_temp_subplots: [],
     chapters: {},
     generatedChapterTexts: {},
     meta: {
