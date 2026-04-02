@@ -3,16 +3,41 @@ class NovelGenerator {
         this.api = apiClient;
     }
 
-    async generateWorldbuilding({ title, concept, genre, theme }) {
+    getGenreDefinition(genre) {
+        if (!genre || !NOVEL_GENRES || typeof NOVEL_GENRES !== "object") {
+            return null;
+        }
+        return NOVEL_GENRES[genre] || null;
+    }
+
+    buildGenreConstraint(genre, subgenre) {
+        const genreInfo = this.getGenreDefinition(genre);
+        if (!genreInfo) {
+            return "";
+        }
+
+        return [
+            "【题材约束】",
+            genreInfo.description ? `题材说明：${genreInfo.description}` : "",
+            `1. 严格限定为${genre}题材${subgenre ? `，具体子题材为${subgenre}` : ""}。`,
+            `2. 允许的元素：${(genreInfo.allowed || []).join("；") || "无"}`,
+            `3. 禁止的元素：${(genreInfo.forbidden || []).join("；") || "无"}`,
+            `4. 创作风格应符合${genre}题材特征，语言风格要与题材匹配。`
+        ].filter(Boolean).join("\n");
+    }
+
+    async generateWorldbuilding({ title, concept, genre, subgenre, theme }) {
+        const genreConstraint = this.buildGenreConstraint(genre, subgenre || genre);
         const systemPrompt = [
+            genreConstraint,
             "你是一名资深中文网文策划编辑。",
             "请根据小说标题、题材、主题和故事概念，生成适合长篇连载的世界观设定。",
             "输出纯文本，不要使用 markdown 标题。"
-        ].join("\n");
+        ].filter(Boolean).join("\n");
 
         const userPrompt = [
             `小说标题：${title}`,
-            `题材：${genre || "未指定"}`,
+            `题材：${subgenre || genre || "未指定"}`,
             `核心主题：${theme || "未指定"}`,
             `故事概念：${concept || "暂无"}`,
             "",
@@ -20,7 +45,7 @@ class NovelGenerator {
             "1. 解释世界规则、冲突来源和人物生存逻辑。",
             "2. 能直接服务后续卷纲、细纲和正文生成。",
             "3. 语言风格偏网文策划，不写成百科词条。"
-        ].join("\n");
+        ].filter(Boolean).join("\n");
 
         return (await this.api.callLLM(userPrompt, systemPrompt, {
             temperature: 0.75,
@@ -28,16 +53,18 @@ class NovelGenerator {
         })).trim();
     }
 
-    async generateVolumeSynopsis({ title, concept, genre, theme, worldbuilding, volumeCount, chaptersPerVolume }) {
+    async generateVolumeSynopsis({ title, concept, genre, theme, worldbuilding, volumeCount, chaptersPerVolume, subgenre }) {
+        const genreConstraint = this.buildGenreConstraint(genre, subgenre || genre);
         const systemPrompt = [
+            genreConstraint,
             "你是一名资深长篇网文总策划。",
             "请把一个故事拆成多卷卷纲，输出 JSON 数组。",
             "每一卷都必须体现目标、冲突、高点和卷末钩子。"
-        ].join("\n");
+        ].filter(Boolean).join("\n");
 
         const userPrompt = [
             `小说标题：${title}`,
-            `题材：${genre || "未指定"}`,
+            `题材：${subgenre || genre || "未指定"}`,
             `核心主题：${theme || "未指定"}`,
             `故事概念：${concept || "暂无"}`,
             `计划卷数：${volumeCount}`,
@@ -71,17 +98,23 @@ class NovelGenerator {
         title,
         concept,
         genre,
+        subgenre,
         worldbuilding,
         volumeNumber,
         chapterCount,
         volumeSummary,
         existingSynopsis
     }) {
+        const genreConstraint = this.buildGenreConstraint(
+            genre,
+            subgenre || project?.outline?.subgenre || project?.subgenre || genre
+        );
         const systemPrompt = [
+            genreConstraint,
             "你是一名中文长篇小说章节细纲策划编辑。",
             "请严格根据当前卷卷纲、世界观、前置卷细纲和人物一致性约束，拆解出当前卷的章节细纲。",
             "输出必须是 JSON 数组，不要输出任何额外解释。"
-        ].join("\n");
+        ].filter(Boolean).join("\n");
 
         const volumeSynopsisContext = this.buildVolumeSynopsisContext(project, volumeNumber);
         const previousChapterSynopsisContext = this.buildPreviousChapterSynopsisContext(project, volumeNumber);
@@ -93,7 +126,7 @@ class NovelGenerator {
 
         const userPrompt = [
             `小说标题：${title}`,
-            `题材：${genre || "未指定"}`,
+            `题材：${subgenre || genre || "未指定"}`,
             `故事概念：${concept || "暂无"}`,
             `世界观：${worldbuilding || "暂无"}`,
             volumeSynopsisContext ? `【卷纲前置】\n${volumeSynopsisContext}` : "",

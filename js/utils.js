@@ -125,6 +125,16 @@ class Utils {
         URL.revokeObjectURL(url);
     }
 
+    static downloadText(text, filename = "novel-outline.txt") {
+        const blob = new Blob([String(text || "")], { type: "text/plain;charset=utf-8" });
+        const url = URL.createObjectURL(blob);
+        const anchor = document.createElement("a");
+        anchor.href = url;
+        anchor.download = filename;
+        anchor.click();
+        URL.revokeObjectURL(url);
+    }
+
     static readJSONFile(file) {
         return new Promise((resolve, reject) => {
             const reader = new FileReader();

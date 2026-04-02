@@ -43,6 +43,12 @@ class NovelOutlineWebApp {
             projectTheme: document.getElementById("projectTheme"),
             projectGenre: document.getElementById("projectGenre"),
             projectSubgenre: document.getElementById("projectSubgenre"),
+            btnAutoDetectGenre: document.getElementById("btnAutoDetectGenre"),
+            genreGuideTitle: document.getElementById("genreGuideTitle"),
+            genreGuideSubgenres: document.getElementById("genreGuideSubgenres"),
+            genreGuideDescription: document.getElementById("genreGuideDescription"),
+            genreGuideAllowed: document.getElementById("genreGuideAllowed"),
+            genreGuideForbidden: document.getElementById("genreGuideForbidden"),
             projectVolumeCount: document.getElementById("projectVolumeCount"),
             projectChaptersPerVolume: document.getElementById("projectChaptersPerVolume"),
             projectConcept: document.getElementById("projectConcept"),
@@ -105,6 +111,7 @@ class NovelOutlineWebApp {
             btnCancelSettings: document.getElementById("btnCancelSettings"),
             btnSaveSettings: document.getElementById("btnSaveSettings"),
             btnSaveData: document.getElementById("btnSaveData"),
+            btnExportTxt: document.getElementById("btnExportTxt"),
             btnExportData: document.getElementById("btnExportData"),
             btnImportData: document.getElementById("btnImportData"),
             btnGenerateWorldbuilding: document.getElementById("btnGenerateWorldbuilding"),
@@ -152,6 +159,11 @@ class NovelOutlineWebApp {
             characterChecker: document.getElementById("editorCharacterChecker"),
             appearanceTracker: document.getElementById("editorAppearanceTracker"),
             dialogueTracker: document.getElementById("editorDialogueTracker"),
+            worldTracker: document.getElementById("editorWorldTracker"),
+            supportingCharacters: document.getElementById("editorSupportingCharacters"),
+            legacyForeshadows: document.getElementById("editorLegacyForeshadows"),
+            chapterRhythms: document.getElementById("editorChapterRhythms"),
+            chapterEmotions: document.getElementById("editorChapterEmotions"),
             stateSnapshots: document.getElementById("editorStateSnapshots"),
             synopsisData: document.getElementById("editorSynopsisData")
         };
@@ -159,6 +171,7 @@ class NovelOutlineWebApp {
 
     init() {
         this.ensureBaseData();
+        this.applyStoredGenreExtensions();
         this.populateGenreOptions();
         this.loadSettingsToForm();
         this.syncFormFromData();
@@ -179,6 +192,21 @@ class NovelOutlineWebApp {
         }
         if (!this.novelData.prompt_state) {
             this.novelData.prompt_state = JSON.parse(JSON.stringify(DEFAULT_NOVEL_DATA.prompt_state));
+        }
+        if (!this.novelData.genre_extensions || typeof this.novelData.genre_extensions !== "object") {
+            this.novelData.genre_extensions = {};
+        }
+        if (!Array.isArray(this.novelData.foreshadows)) {
+            this.novelData.foreshadows = [];
+        }
+        if (!this.novelData.chapter_rhythms || typeof this.novelData.chapter_rhythms !== "object") {
+            this.novelData.chapter_rhythms = {};
+        }
+        if (!this.novelData.chapter_emotions || typeof this.novelData.chapter_emotions !== "object") {
+            this.novelData.chapter_emotions = {};
+        }
+        if (!this.novelData.supporting_characters || typeof this.novelData.supporting_characters !== "object") {
+            this.novelData.supporting_characters = {};
         }
         this.ensureVolumeCount(Number(this.novelData.synopsisData.volumeCount || 5), false);
     }
@@ -212,15 +240,18 @@ class NovelOutlineWebApp {
             this.novelData.outline.genre = this.elements.projectGenre.value;
             this.populateSubgenreOptions(this.elements.projectGenre.value);
             this.novelData.outline.subgenre = this.elements.projectSubgenre.value;
+            this.renderGenreGuide();
             this.persist(true);
             this.renderDashboard();
         });
 
         this.elements.projectSubgenre.addEventListener("change", () => {
             this.novelData.outline.subgenre = this.elements.projectSubgenre.value;
+            this.renderGenreGuide();
             this.persist(true);
             this.renderDashboard();
         });
+        this.elements.btnAutoDetectGenre.addEventListener("click", () => this.safeAsync(() => this.autoDetectGenre()));
 
         this.elements.projectVolumeCount.addEventListener("change", () => {
             const count = Number(this.elements.projectVolumeCount.value || 1);
@@ -278,6 +309,7 @@ class NovelOutlineWebApp {
 
         this.elements.btnSaveSettings.addEventListener("click", () => this.saveSettings());
         this.elements.btnSaveData.addEventListener("click", () => this.persist(false));
+        this.elements.btnExportTxt.addEventListener("click", () => this.exportChaptersTxt());
         this.elements.btnExportData.addEventListener("click", () => this.exportData());
         this.elements.btnImportData.addEventListener("click", () => this.elements.importFileInput.click());
         this.elements.importFileInput.addEventListener("change", (event) => this.importData(event));
@@ -374,11 +406,12 @@ class NovelOutlineWebApp {
 
         genreSelect.value = this.novelData.outline.genre || "";
         this.populateSubgenreOptions(this.novelData.outline.genre);
+        this.renderGenreGuide();
     }
 
     populateSubgenreOptions(genre) {
         const subgenreSelect = this.elements.projectSubgenre;
-        const options = NOVEL_GENRES[genre] || [];
+        const options = NOVEL_GENRES[genre]?.subgenres || [];
         subgenreSelect.innerHTML = '<option value="">请选择子题材</option>';
         options.forEach((subgenre) => {
             const option = document.createElement("option");
@@ -392,6 +425,210 @@ class NovelOutlineWebApp {
         } else {
             subgenreSelect.value = "";
         }
+        this.renderGenreGuide();
+    }
+
+    renderGenreGuide() {
+        const genre = this.elements.projectGenre.value || this.novelData.outline.genre || "";
+        const subgenre = this.elements.projectSubgenre.value || this.novelData.outline.subgenre || "";
+        const info = NOVEL_GENRES[genre];
+
+        if (!info) {
+            this.elements.genreGuideTitle.textContent = "题材约束说明";
+            this.elements.genreGuideSubgenres.textContent = "请选择主类目";
+            this.elements.genreGuideDescription.textContent = "这里会显示当前题材的题材说明、允许元素和禁止元素。该分类系统只参与世界观、卷纲、细纲生成，不参与后续大纲与正文生成。";
+            this.elements.genreGuideAllowed.innerHTML = '<span class="tag muted">等待选择题材</span>';
+            this.elements.genreGuideForbidden.innerHTML = '<span class="tag muted">等待选择题材</span>';
+            return;
+        }
+
+        const subgenreCount = Array.isArray(info.subgenres) ? info.subgenres.length : 0;
+        this.elements.genreGuideTitle.textContent = subgenre ? `${genre} / ${subgenre}` : genre;
+        this.elements.genreGuideSubgenres.textContent = `子题材 ${subgenreCount} 个`;
+        this.elements.genreGuideDescription.textContent = info.description || "当前题材未提供额外说明。";
+        this.elements.genreGuideAllowed.innerHTML = (info.allowed || [])
+            .map((item) => `<span class="tag">${Utils.escapeHTML(item)}</span>`)
+            .join("") || '<span class="tag muted">未设置</span>';
+        this.elements.genreGuideForbidden.innerHTML = (info.forbidden || [])
+            .map((item) => `<span class="tag danger">${Utils.escapeHTML(item)}</span>`)
+            .join("") || '<span class="tag muted">未设置</span>';
+    }
+
+    applyStoredGenreExtensions() {
+        Object.entries(this.novelData.genre_extensions || {}).forEach(([genreName, extension]) => {
+            this.applyGenreExtension(genreName, extension);
+        });
+    }
+
+    applyGenreExtension(genreName, extension) {
+        if (!genreName || !extension || typeof extension !== "object") {
+            return;
+        }
+
+        const existing = NOVEL_GENRES[genreName] || {
+            subgenres: [],
+            description: "",
+            allowed: [],
+            forbidden: []
+        };
+
+        NOVEL_GENRES[genreName] = {
+            subgenres: Array.from(new Set([...(existing.subgenres || []), ...(extension.subgenres || [])])),
+            description: extension.description || existing.description || "",
+            allowed: Array.from(new Set([...(existing.allowed || []), ...(extension.allowed || [])])),
+            forbidden: Array.from(new Set([...(existing.forbidden || []), ...(extension.forbidden || [])]))
+        };
+    }
+
+    storeGenreExtension(genreName, extension) {
+        if (!genreName || !extension || typeof extension !== "object") {
+            return;
+        }
+
+        const current = this.novelData.genre_extensions[genreName] || {
+            subgenres: [],
+            description: "",
+            allowed: [],
+            forbidden: []
+        };
+
+        this.novelData.genre_extensions[genreName] = {
+            subgenres: Array.from(new Set([...(current.subgenres || []), ...(extension.subgenres || [])])),
+            description: extension.description || current.description || "",
+            allowed: Array.from(new Set([...(current.allowed || []), ...(extension.allowed || [])])),
+            forbidden: Array.from(new Set([...(current.forbidden || []), ...(extension.forbidden || [])]))
+        };
+    }
+
+    buildGenreCatalogSummary(limitSubgenres = 5) {
+        return Object.entries(NOVEL_GENRES).map(([genreName, info]) => {
+            const sample = (info.subgenres || []).slice(0, limitSubgenres).join("、");
+            return `- ${genreName}: ${info.description || "暂无说明"}（子类示例：${sample || "无"}）`;
+        }).join("\n");
+    }
+
+    async autoDetectGenre() {
+        const title = this.elements.projectTitle.value.trim();
+        const theme = this.elements.projectTheme.value.trim();
+        const concept = this.elements.projectConcept.value.trim();
+        const detailedOutline = this.elements.detailedOutlineInput?.value?.trim() || "";
+
+        if (!title && !theme && !concept && !detailedOutline) {
+            throw new Error("请至少填写标题、主题、故事概念或详细细纲，再进行题材识别。");
+        }
+
+        await this.runWithLoading("正在智能识别题材...", async () => {
+            const systemPrompt = `你是一位资深网络小说编辑，精通小说题材分类。
+
+【现有分类体系】
+${this.buildGenreCatalogSummary()}
+
+【任务要求】
+1. 根据书名、主题、故事概念和细纲，判断最匹配的主要题材与子题材。
+2. 优先匹配现有分类体系，不要随意发明新题材。
+3. 只有当现有体系明显无法覆盖时，才允许新增主要题材。
+4. 如果只是现有题材下的细分方向，请保留原主要题材，只新增子题材即可。
+5. 输出必须是 JSON，不要输出 Markdown。
+
+【输出格式】
+{
+  "primary_genre": "题材名称",
+  "subgenre": "子题材名称",
+  "is_new_genre": false,
+  "confidence": 0.9,
+  "reasoning": "分析理由",
+  "new_genre_definition": {
+    "description": "新题材描述",
+    "subgenres": ["建议子题材1"],
+    "allowed": ["允许元素1"],
+    "forbidden": ["禁止元素1"]
+  }
+}`;
+
+            const userPrompt = `请分析以下小说信息的题材分类：
+书名：${title || "未填写"}
+核心主题：${theme || "未填写"}
+故事概念：${concept || "未填写"}
+详细细纲摘录：
+${(detailedOutline || concept || "未填写").slice(0, 2200)}`;
+
+            const raw = await this.api.callLLM(userPrompt, systemPrompt, {
+                temperature: 0.35,
+                maxTokens: 2200
+            });
+
+            const result = Utils.parseJsonResponse(raw);
+            if (!result || typeof result !== "object" || Array.isArray(result)) {
+                throw new Error("AI 返回的题材识别结果无法解析。");
+            }
+
+            const primary = String(result.primary_genre || "").trim();
+            const sub = String(result.subgenre || "").trim();
+            const reasoning = String(result.reasoning || "").trim();
+            const isNew = Boolean(result.is_new_genre);
+            const newDef = result.new_genre_definition && typeof result.new_genre_definition === "object"
+                ? result.new_genre_definition
+                : {};
+
+            if (!primary) {
+                throw new Error("AI 没有返回有效的主要题材。");
+            }
+
+            if (isNew && !NOVEL_GENRES[primary]) {
+                const extension = {
+                    subgenres: newDef.subgenres || (sub ? [sub] : []),
+                    description: newDef.description || "AI识别的新题材",
+                    allowed: newDef.allowed || [],
+                    forbidden: newDef.forbidden || []
+                };
+                this.applyGenreExtension(primary, extension);
+                this.storeGenreExtension(primary, extension);
+                Utils.log(`已根据 AI 建议扩展分类系统：新增题材【${primary}】`, "success");
+            } else if (sub) {
+                const existingInfo = NOVEL_GENRES[primary] || {
+                    subgenres: [],
+                    description: "",
+                    allowed: [],
+                    forbidden: []
+                };
+                if (!existingInfo.subgenres.includes(sub)) {
+                    const extension = {
+                        subgenres: [sub],
+                        description: existingInfo.description || "",
+                        allowed: [],
+                        forbidden: []
+                    };
+                    this.applyGenreExtension(primary, extension);
+                    this.storeGenreExtension(primary, extension);
+                    Utils.log(`已根据 AI 建议扩展分类系统：在【${primary}】下新增子题材【${sub}】`, "success");
+                }
+            }
+
+            if (!NOVEL_GENRES[primary]) {
+                throw new Error(`AI 返回了未知题材“${primary}”，但没有附带完整定义。`);
+            }
+
+            this.novelData.outline.genre = primary;
+            this.novelData.genre = primary;
+            this.populateGenreOptions();
+            this.elements.projectGenre.value = primary;
+            this.populateSubgenreOptions(primary);
+
+            const availableSubgenres = NOVEL_GENRES[primary]?.subgenres || [];
+            const finalSubgenre = sub && availableSubgenres.includes(sub)
+                ? sub
+                : (availableSubgenres[0] || "");
+
+            this.elements.projectSubgenre.value = finalSubgenre;
+            this.novelData.outline.subgenre = finalSubgenre;
+            this.novelData.subgenre = finalSubgenre;
+            this.renderGenreGuide();
+            this.persist(true);
+            this.renderDashboard();
+
+            Utils.showMessage(`题材识别完成：${primary}${finalSubgenre ? ` / ${finalSubgenre}` : ""}`, "success");
+            Utils.log(`智能识别完成：${primary}${finalSubgenre ? ` / ${finalSubgenre}` : ""}${reasoning ? `；${reasoning}` : ""}`, "success");
+        });
     }
 
     syncFormFromData() {
@@ -403,6 +640,7 @@ class NovelOutlineWebApp {
         this.elements.projectGenre.value = outline.genre || this.novelData.genre || "";
         this.populateSubgenreOptions(outline.genre || this.novelData.genre || "");
         this.elements.projectSubgenre.value = outline.subgenre || this.novelData.subgenre || "";
+        this.renderGenreGuide();
         this.elements.projectVolumeCount.value = synopsis.volumeCount || synopsis.vol_count || 5;
         this.elements.projectChaptersPerVolume.value = synopsis.chaptersPerVolume || synopsis.chap_count || 20;
         this.elements.projectConcept.value = outline.storyConcept || synopsis.story_concept || "";
@@ -986,6 +1224,19 @@ class NovelOutlineWebApp {
         this.novelData.prompt_state.current_prompt = this.novelData.prompt_state.current_prompt || this.getDefaultPromptTemplate();
         this.novelData.prompt_state.saved_prompts = this.novelData.prompt_state.saved_prompts || {};
         this.novelData.generated_context = this.novelData.generated_context || JSON.parse(JSON.stringify(DEFAULT_NOVEL_DATA.generated_context));
+        this.novelData.genre_extensions = this.novelData.genre_extensions && typeof this.novelData.genre_extensions === "object"
+            ? this.novelData.genre_extensions
+            : {};
+        this.novelData.foreshadows = Array.isArray(this.novelData.foreshadows) ? this.novelData.foreshadows : [];
+        this.novelData.chapter_rhythms = this.novelData.chapter_rhythms && typeof this.novelData.chapter_rhythms === "object"
+            ? this.novelData.chapter_rhythms
+            : {};
+        this.novelData.chapter_emotions = this.novelData.chapter_emotions && typeof this.novelData.chapter_emotions === "object"
+            ? this.novelData.chapter_emotions
+            : {};
+        this.novelData.supporting_characters = this.novelData.supporting_characters && typeof this.novelData.supporting_characters === "object"
+            ? this.novelData.supporting_characters
+            : {};
 
         (outline.volumes || []).forEach((volume) => {
             volume.chapter_synopsis = volume.chapterSynopsis || volume.chapter_synopsis || "";
@@ -1061,6 +1312,72 @@ class NovelOutlineWebApp {
         this.storage.export(fileName, this.novelData);
         Utils.showMessage("已导出 JSON 文件。", "success");
         Utils.log("已导出当前项目。", "success");
+    }
+
+    buildChaptersTxtExport() {
+        const title = this.novelData.outline.title || "未命名小说";
+        const genre = this.novelData.outline.subgenre || this.novelData.outline.genre || this.novelData.subgenre || this.novelData.genre || "";
+        const theme = this.novelData.outline.theme || "";
+        const volumes = (this.novelData.outline.volumes || []).map((volume, index) => ({
+            ...volume,
+            volumeNumber: Number(volume.volume_number || index + 1),
+            chapters: [...(volume.chapters || [])].sort(Utils.chapterSort)
+        }));
+
+        const chapterCount = volumes.reduce((total, volume) => total + volume.chapters.length, 0);
+        if (!chapterCount) {
+            throw new Error("当前还没有可导出的章节。");
+        }
+
+        const lines = [
+            title,
+            genre ? `题材：${genre}` : "",
+            theme ? `主题：${theme}` : "",
+            ""
+        ].filter(Boolean);
+
+        volumes.forEach((volume, volumeIndex) => {
+            if (!volume.chapters.length) {
+                return;
+            }
+
+            lines.push(`========== 第${volume.volumeNumber || volumeIndex + 1}卷 ${volume.title || `第${volume.volumeNumber || volumeIndex + 1}卷`} ==========`); 
+            if (volume.summary) {
+                lines.push(volume.summary);
+                lines.push("");
+            }
+
+            volume.chapters.forEach((chapter) => {
+                const chapterNumber = Number(chapter.number || chapter.chapter_number || 0);
+                lines.push(`第${chapterNumber}章 ${chapter.title || "未命名章节"}`);
+                lines.push("");
+
+                const content = String(chapter.content || "").trim();
+                if (content) {
+                    lines.push(content);
+                } else {
+                    lines.push("【暂无正文】");
+                    if (chapter.summary) {
+                        lines.push("");
+                        lines.push("【章节大纲】");
+                        lines.push(String(chapter.summary).trim());
+                    }
+                }
+
+                lines.push("");
+                lines.push("");
+            });
+        });
+
+        return lines.join("\n");
+    }
+
+    exportChaptersTxt() {
+        const baseName = this.novelData.outline.title || "novel-outline";
+        const text = this.buildChaptersTxtExport();
+        Utils.downloadText(text, `${baseName}_chapters_${Date.now()}.txt`);
+        Utils.showMessage("已导出章节 TXT 文件。", "success");
+        Utils.log("已导出章节 TXT。", "success");
     }
 
     async importData(event) {
@@ -1153,7 +1470,8 @@ class NovelOutlineWebApp {
         return {
             title: this.elements.projectTitle.value.trim(),
             concept: this.elements.projectConcept.value.trim(),
-            genre: this.elements.projectSubgenre.value || this.elements.projectGenre.value,
+            genre: this.elements.projectGenre.value,
+            subgenre: this.elements.projectSubgenre.value || this.elements.projectGenre.value,
             theme: this.elements.projectTheme.value.trim(),
             worldbuilding: this.elements.worldbuildingText.value.trim(),
             volumeCount: Number(this.elements.projectVolumeCount.value || 5),
@@ -2384,6 +2702,11 @@ class NovelOutlineWebApp {
             characterChecker: { path: ["character_checker"], fallback: {} },
             appearanceTracker: { path: ["character_appearance_tracker"], fallback: {} },
             dialogueTracker: { path: ["dialogue_tracker"], fallback: {} },
+            worldTracker: { path: ["world_tracker"], fallback: {} },
+            supportingCharacters: { path: ["supporting_characters"], fallback: {} },
+            legacyForeshadows: { path: ["foreshadows"], fallback: [] },
+            chapterRhythms: { path: ["chapter_rhythms"], fallback: {} },
+            chapterEmotions: { path: ["chapter_emotions"], fallback: {} },
             stateSnapshots: { path: ["outline", "state_snapshots"], fallback: {} },
             synopsisData: { path: ["synopsis_data"], fallback: {} }
         };

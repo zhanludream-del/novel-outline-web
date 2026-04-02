@@ -33,7 +33,8 @@
                 <button class="btn btn-ghost" id="btnShowLog" type="button">查看日志</button>
                 <button class="btn btn-ghost" id="btnOpenSettings" type="button">API 设置</button>
                 <button class="btn btn-ghost" id="btnSaveData" type="button">保存</button>
-                <button class="btn btn-primary" id="btnExportData" type="button">导出</button>
+                <button class="btn btn-ghost" id="btnExportTxt" type="button">导出TXT</button>
+                <button class="btn btn-primary" id="btnExportData" type="button">导出JSON</button>
                 <button class="btn btn-secondary" id="btnImportData" type="button">导入</button>
             </div>
         </header>
@@ -177,6 +178,31 @@
                                 <span>子题材</span>
                                 <select class="input" id="projectSubgenre"></select>
                             </label>
+
+                            <div class="field field-actions">
+                                <span>智能识别</span>
+                                <button class="btn btn-secondary" id="btnAutoDetectGenre" type="button">智能识别题材</button>
+                            </div>
+
+                            <div class="field field-full">
+                                <div class="genre-guide-card">
+                                    <div class="genre-guide-head">
+                                        <strong id="genreGuideTitle">题材约束说明</strong>
+                                        <span id="genreGuideSubgenres" class="genre-guide-meta">请选择主类目</span>
+                                    </div>
+                                    <p id="genreGuideDescription" class="genre-guide-description">这里会显示当前题材的题材说明、允许元素和禁止元素。该分类系统只参与世界观、卷纲、细纲生成，不参与后续大纲与正文生成。</p>
+                                    <div class="genre-guide-grid">
+                                        <div class="genre-guide-block">
+                                            <span class="genre-guide-label">允许元素</span>
+                                            <div id="genreGuideAllowed" class="tag-list"></div>
+                                        </div>
+                                        <div class="genre-guide-block">
+                                            <span class="genre-guide-label">禁止元素</span>
+                                            <div id="genreGuideForbidden" class="tag-list"></div>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
 
                             <label class="field">
                                 <span>计划卷数</span>
@@ -617,6 +643,26 @@
                             <label class="field">
                                 <span>`dialogue_tracker`</span>
                                 <textarea class="input textarea code-textarea system-editor" id="editorDialogueTracker" rows="10"></textarea>
+                            </label>
+                            <label class="field">
+                                <span>`world_tracker`</span>
+                                <textarea class="input textarea code-textarea system-editor" id="editorWorldTracker" rows="10"></textarea>
+                            </label>
+                            <label class="field">
+                                <span>`supporting_characters`</span>
+                                <textarea class="input textarea code-textarea system-editor" id="editorSupportingCharacters" rows="10"></textarea>
+                            </label>
+                            <label class="field">
+                                <span>`foreshadows`</span>
+                                <textarea class="input textarea code-textarea system-editor" id="editorLegacyForeshadows" rows="10"></textarea>
+                            </label>
+                            <label class="field">
+                                <span>`chapter_rhythms`</span>
+                                <textarea class="input textarea code-textarea system-editor" id="editorChapterRhythms" rows="10"></textarea>
+                            </label>
+                            <label class="field">
+                                <span>`chapter_emotions`</span>
+                                <textarea class="input textarea code-textarea system-editor" id="editorChapterEmotions" rows="10"></textarea>
                             </label>
                             <label class="field">
                                 <span>`outline.state_snapshots`</span>

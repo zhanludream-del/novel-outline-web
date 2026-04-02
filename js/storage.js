@@ -60,6 +60,9 @@ class StorageManager {
         );
         merged.genre = merged.genre || merged.outline.genre || "";
         merged.subgenre = merged.subgenre || merged.outline.subgenre || "";
+        merged.genre_extensions = merged.genre_extensions && typeof merged.genre_extensions === "object"
+            ? merged.genre_extensions
+            : {};
         merged.outline.genre = merged.outline.genre || merged.genre || "";
         merged.outline.subgenre = merged.outline.subgenre || merged.subgenre || "";
         merged.synopsisData = this.normalizeSynopsisData(merged.synopsisData || merged.synopsis_data || {});
@@ -73,6 +76,16 @@ class StorageManager {
         merged.generatedChapterTexts = merged.generatedChapterTexts || {};
         merged.used_extras_characters = Array.isArray(merged.used_extras_characters) ? merged.used_extras_characters : [];
         merged.used_temp_subplots = Array.isArray(merged.used_temp_subplots) ? merged.used_temp_subplots : [];
+        merged.foreshadows = Array.isArray(merged.foreshadows) ? merged.foreshadows : [];
+        merged.chapter_rhythms = merged.chapter_rhythms && typeof merged.chapter_rhythms === "object"
+            ? merged.chapter_rhythms
+            : {};
+        merged.chapter_emotions = merged.chapter_emotions && typeof merged.chapter_emotions === "object"
+            ? merged.chapter_emotions
+            : {};
+        merged.supporting_characters = merged.supporting_characters && typeof merged.supporting_characters === "object"
+            ? merged.supporting_characters
+            : {};
         this.syncTopLevelChapterContent(merged);
         return merged;
     }
