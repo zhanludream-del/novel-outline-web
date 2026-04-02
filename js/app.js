@@ -6,6 +6,7 @@ class NovelOutlineWebApp {
         this.generator = new NovelGenerator(this.api);
         this.state = {
             activeTab: "dashboard",
+            activeChapterSubview: window.localStorage.getItem("novel_outline_chapter_subview") || "batch",
             selectedChapterId: null,
             editingCharacterId: null,
             logVisible: window.localStorage.getItem("novel_outline_log_visible") === "1",
@@ -28,6 +29,8 @@ class NovelOutlineWebApp {
             navItems: Array.from(document.querySelectorAll(".nav-item")),
             jumpButtons: Array.from(document.querySelectorAll("[data-jump-tab]")),
             tabPanels: Array.from(document.querySelectorAll(".tab-panel")),
+            chapterSubviewButtons: Array.from(document.querySelectorAll("[data-chapter-subview]")),
+            chapterSubviewPanels: Array.from(document.querySelectorAll("[data-chapter-subview-panel]")),
             importFileInput: document.getElementById("importFileInput"),
 
             statTitle: document.getElementById("statTitle"),
@@ -62,6 +65,8 @@ class NovelOutlineWebApp {
             chapterVolumeSelect: document.getElementById("chapterVolumeSelect"),
             chapterStart: document.getElementById("chapterStart"),
             chapterEnd: document.getElementById("chapterEnd"),
+            chapterBatchPreview: document.getElementById("chapterBatchPreview"),
+            chapterBatchList: document.getElementById("chapterBatchList"),
             chapterList: document.getElementById("chapterList"),
             chapterEditorHeading: document.getElementById("chapterEditorHeading"),
             chapterNumberInput: document.getElementById("chapterNumberInput"),
@@ -223,6 +228,10 @@ class NovelOutlineWebApp {
             button.addEventListener("click", () => this.switchTab(button.dataset.jumpTab));
         });
 
+        this.elements.chapterSubviewButtons.forEach((button) => {
+            button.addEventListener("click", () => this.switchChapterSubview(button.dataset.chapterSubview));
+        });
+
         this.bindProjectField("projectTitle", ["outline", "title"]);
         this.bindProjectField("projectTheme", ["outline", "theme"]);
         this.bindProjectField("projectConcept", ["outline", "storyConcept"]);
@@ -288,6 +297,9 @@ class NovelOutlineWebApp {
             this.clearChapterEditor();
         });
 
+        this.elements.chapterStart.addEventListener("input", () => this.renderChapterBatchPreview());
+        this.elements.chapterEnd.addEventListener("input", () => this.renderChapterBatchPreview());
+
         this.elements.promptFrequencySelect.addEventListener("change", () => {
             this.novelData.prompt_state.chapter_frequency = this.elements.promptFrequencySelect.value;
             this.persist(true);
@@ -295,6 +307,7 @@ class NovelOutlineWebApp {
 
         this.elements.outlineVolumeList.addEventListener("input", (event) => this.handleVolumeInput(event));
         this.elements.outlineVolumeList.addEventListener("click", (event) => this.handleVolumeActions(event));
+        this.elements.chapterBatchList.addEventListener("click", (event) => this.handleChapterBatchListClick(event));
         this.elements.chapterList.addEventListener("click", (event) => this.handleChapterListClick(event));
         this.elements.characterList.addEventListener("click", (event) => this.handleCharacterListClick(event));
 
@@ -678,6 +691,8 @@ ${(detailedOutline || concept || "未填写").slice(0, 2200)}`;
         this.renderVolumeSelectors();
         this.renderVolumeCards();
         this.renderChapterList();
+        this.renderChapterBatchPreview();
+        this.switchChapterSubview(this.state.activeChapterSubview, true);
         this.renderCharacterList();
         this.renderAdvancedState();
     }
@@ -739,6 +754,7 @@ ${(detailedOutline || concept || "未填写").slice(0, 2200)}`;
 
         this.elements.synopsisCurrentVolume.value = volumes[currentSynopsisValue - 1] ? currentSynopsisValue : "1";
         this.elements.chapterVolumeSelect.value = volumes[currentChapterValue - 1] ? currentChapterValue : "1";
+        this.renderChapterBatchPreview();
     }
 
     renderVolumeCards() {
@@ -785,11 +801,13 @@ ${(detailedOutline || concept || "未填写").slice(0, 2200)}`;
     renderChapterList() {
         const volume = this.getCurrentChapterVolume();
         if (!volume || volume.chapters.length === 0) {
-            this.elements.chapterList.innerHTML = '<div class="empty-state">当前卷还没有章节。可以先批量生成章纲，或者手动新建一章。</div>';
+            const emptyHTML = '<div class="empty-state">当前卷还没有章节。可以先在“批量章纲”里跑四批生成，再切到“单章正文”逐章扩写。</div>';
+            this.elements.chapterBatchList.innerHTML = emptyHTML;
+            this.elements.chapterList.innerHTML = emptyHTML;
             return;
         }
 
-        this.elements.chapterList.innerHTML = volume.chapters.map((chapter) => `
+        const cardsHTML = volume.chapters.map((chapter) => `
             <article class="chapter-card ${chapter.id === this.state.selectedChapterId ? "active" : ""}" data-chapter-id="${chapter.id}">
                 <div class="chapter-card-head">
                     <div class="chapter-meta">
@@ -803,6 +821,9 @@ ${(detailedOutline || concept || "未填写").slice(0, 2200)}`;
                 </div>
             </article>
         `).join("");
+
+        this.elements.chapterBatchList.innerHTML = cardsHTML;
+        this.elements.chapterList.innerHTML = cardsHTML;
     }
 
     buildChapterBadgeHTML(chapter) {
@@ -1090,6 +1111,7 @@ ${(detailedOutline || concept || "未填写").slice(0, 2200)}`;
 
         if (action === "focus") {
             this.switchTab("chapters");
+            this.switchChapterSubview("batch");
             this.elements.chapterVolumeSelect.value = String(volumeIndex + 1);
             this.state.selectedChapterId = null;
             this.renderChapterList();
@@ -1120,6 +1142,15 @@ ${(detailedOutline || concept || "未填写").slice(0, 2200)}`;
         this.selectChapter(card.dataset.chapterId);
     }
 
+    handleChapterBatchListClick(event) {
+        const card = event.target.closest("[data-chapter-id]");
+        if (!card) {
+            return;
+        }
+        this.selectChapter(card.dataset.chapterId);
+        this.switchChapterSubview("draft");
+    }
+
     handleCharacterListClick(event) {
         const actionButton = event.target.closest("[data-character-action]");
         if (!actionButton) {
@@ -1146,6 +1177,21 @@ ${(detailedOutline || concept || "未填写").slice(0, 2200)}`;
             panel.classList.toggle("active", panel.id === `tab-${tabName}`);
         });
         this.toggleSidebar(false);
+    }
+
+    switchChapterSubview(viewName, silent = false) {
+        const safeView = viewName === "draft" ? "draft" : "batch";
+        this.state.activeChapterSubview = safeView;
+        this.elements.chapterSubviewButtons.forEach((button) => {
+            button.classList.toggle("active", button.dataset.chapterSubview === safeView);
+        });
+        this.elements.chapterSubviewPanels.forEach((panel) => {
+            panel.classList.toggle("active", panel.dataset.chapterSubviewPanel === safeView);
+        });
+        window.localStorage.setItem("novel_outline_chapter_subview", safeView);
+        if (!silent && safeView === "draft" && this.state.selectedChapterId) {
+            this.renderChapterList();
+        }
     }
 
     toggleSidebar(show) {
@@ -1640,6 +1686,51 @@ ${(detailedOutline || concept || "未填写").slice(0, 2200)}`;
         return this.novelData.outline.volumes[volumeNumber - 1];
     }
 
+    splitRangeIntoBatches(startChapter, endChapter, batchCount = 4) {
+        const total = Math.max(0, endChapter - startChapter + 1);
+        if (!total) {
+            return [];
+        }
+
+        const normalizedCount = Math.max(1, Math.min(batchCount, total));
+        const baseSize = Math.floor(total / normalizedCount);
+        const remainder = total % normalizedCount;
+        const segments = [];
+        let cursor = startChapter;
+
+        for (let index = 0; index < normalizedCount; index += 1) {
+            const size = baseSize + (index < remainder ? 1 : 0);
+            const segmentStart = cursor;
+            const segmentEnd = cursor + size - 1;
+            segments.push({
+                batchIndex: index + 1,
+                totalBatches: normalizedCount,
+                start: segmentStart,
+                end: segmentEnd
+            });
+            cursor = segmentEnd + 1;
+        }
+
+        return segments;
+    }
+
+    renderChapterBatchPreview() {
+        const startChapter = Number(this.elements.chapterStart.value || 0);
+        const endChapter = Number(this.elements.chapterEnd.value || 0);
+        if (!startChapter || !endChapter || startChapter > endChapter) {
+            this.elements.chapterBatchPreview.innerHTML = '<div class="empty-state compact">设置起止章后，这里会显示固定四批的生成拆分。</div>';
+            return;
+        }
+
+        const segments = this.splitRangeIntoBatches(startChapter, endChapter, 4);
+        this.elements.chapterBatchPreview.innerHTML = segments.map((segment) => `
+            <article class="batch-preview-card">
+                <span>第 ${segment.batchIndex}/${segment.totalBatches} 批</span>
+                <strong>第 ${segment.start}-${segment.end} 章</strong>
+            </article>
+        `).join("");
+    }
+
     async generateChapters() {
         const volume = this.getCurrentChapterVolume();
         const volumeNumber = Number(this.elements.chapterVolumeSelect.value || 1);
@@ -1676,35 +1767,46 @@ ${(detailedOutline || concept || "未填写").slice(0, 2200)}`;
                 Utils.log(`智能检测：已有 ${skipped} 章存在，将只生成缺失的 ${missingNumbers.length} 章。`, "info");
             }
 
-            const segments = this.findGapSegments(missingNumbers);
-            segments.forEach(([segStart, segEnd]) => {
-                Utils.log(`缺口：第 ${segStart}-${segEnd} 章`, "info");
-            });
-
-            const BATCH_SIZE = 15;
+            const batchSegments = this.splitRangeIntoBatches(startChapter, endChapter, 4);
             const MAX_RETRIES_PER_BATCH = 3;
             const generatedAll = [];
 
-            for (const [segmentStart, segmentEnd] of segments) {
-                let currentStart = segmentStart;
+            for (const batch of batchSegments) {
+                const batchMissingNumbers = [];
+                for (let number = batch.start; number <= batch.end; number += 1) {
+                    if (!existingNumbers.has(number)) {
+                        batchMissingNumbers.push(number);
+                    }
+                }
 
-                while (currentStart <= segmentEnd) {
-                    const currentEnd = Math.min(currentStart + BATCH_SIZE - 1, segmentEnd);
+                if (!batchMissingNumbers.length) {
+                    Utils.log(`第 ${batch.batchIndex}/${batch.totalBatches} 批（第 ${batch.start}-${batch.end} 章）已齐全，跳过。`, "info");
+                    continue;
+                }
+
+                Utils.log(`第 ${batch.batchIndex}/${batch.totalBatches} 批：准备生成第 ${batch.start}-${batch.end} 章。`, "info");
+
+                const gapSegments = this.findGapSegments(batchMissingNumbers);
+                gapSegments.forEach(([segStart, segEnd]) => {
+                    Utils.log(`第 ${batch.batchIndex} 批缺口：第 ${segStart}-${segEnd} 章`, "info");
+                });
+
+                for (const [segmentStart, segmentEnd] of gapSegments) {
                     let attempt = 0;
                     let success = false;
 
                     while (!success && attempt < MAX_RETRIES_PER_BATCH) {
                         attempt += 1;
-                        Utils.log(`正在生成第 ${currentStart}-${currentEnd} 章（尝试 ${attempt}/${MAX_RETRIES_PER_BATCH}）...`, "info");
+                        Utils.log(`正在生成第 ${batch.batchIndex}/${batch.totalBatches} 批 · 第 ${segmentStart}-${segmentEnd} 章（尝试 ${attempt}/${MAX_RETRIES_PER_BATCH}）...`, "info");
 
                         try {
                             const generated = await this.generator.generateChapterOutlinesBatch({
                                 project: this.novelData,
                                 volume,
                                 volumeNumber,
-                                startChapter: currentStart,
-                                endChapter: currentEnd,
-                                existingChapters: volume.chapters.filter((chapter) => Number(chapter.number || 0) < currentStart)
+                                startChapter: segmentStart,
+                                endChapter: segmentEnd,
+                                existingChapters: volume.chapters.filter((chapter) => Number(chapter.number || 0) < segmentStart)
                             });
 
                             generated.forEach((chapter) => {
@@ -1716,14 +1818,12 @@ ${(detailedOutline || concept || "未填写").slice(0, 2200)}`;
                             this.renderChapterList();
                             success = true;
                         } catch (error) {
-                            Utils.log(`第 ${currentStart}-${currentEnd} 章生成失败：${error.message || error}`, "error");
+                            Utils.log(`第 ${batch.batchIndex} 批 · 第 ${segmentStart}-${segmentEnd} 章生成失败：${error.message || error}`, "error");
                             if (attempt >= MAX_RETRIES_PER_BATCH) {
                                 throw error;
                             }
                         }
                     }
-
-                    currentStart = currentEnd + 1;
                 }
             }
 
@@ -1745,7 +1845,7 @@ ${(detailedOutline || concept || "未填写").slice(0, 2200)}`;
         }
 
         const currentMax = volume.chapters.reduce((max, chapter) => Math.max(max, Number(chapter.number || 0)), 0);
-        const batchSize = 15;
+        const continueRangeSize = 16;
         const existingNumbers = volume.chapters
             .map((chapter) => Number(chapter.number || 0))
             .filter(Boolean)
@@ -1770,7 +1870,8 @@ ${(detailedOutline || concept || "未填写").slice(0, 2200)}`;
         }
 
         this.elements.chapterStart.value = String(currentMax + 1);
-        this.elements.chapterEnd.value = String(currentMax + batchSize);
+        this.elements.chapterEnd.value = String(currentMax + continueRangeSize);
+        this.renderChapterBatchPreview();
         await this.generateChapters();
     }
 

@@ -17,6 +17,12 @@
         padding: 16px 18px;
     }
 
+    body::before,
+    body::after,
+    .hero-card::after {
+        display: none;
+    }
+
     .menu-btn {
         display: inline-flex;
     }
@@ -55,6 +61,7 @@
 
     .dashboard-grid,
     .chapter-layout,
+    .chapter-batch-preview,
     .form-grid,
     .form-grid.three-column,
     .form-grid.narrow-grid,
@@ -69,6 +76,13 @@
     .topbar-actions {
         flex-wrap: wrap;
         justify-content: flex-end;
+    }
+
+    .hero-card,
+    .panel,
+    .stat-card,
+    .sidebar {
+        box-shadow: 0 14px 28px rgba(204, 214, 223, 0.2);
     }
 
     .log-drawer {
@@ -86,7 +100,8 @@
     .topbar-actions,
     .panel-actions,
     .quick-actions,
-    .modal-actions {
+    .modal-actions,
+    .chapter-subtabs {
         width: 100%;
         justify-content: stretch;
         flex-wrap: wrap;
@@ -96,7 +111,8 @@
     .panel-actions .btn,
     .quick-actions .btn,
     .modal-actions .btn,
-    .field-actions .btn {
+    .field-actions .btn,
+    .chapter-subtab {
         flex: 1 1 100%;
     }
 
@@ -167,6 +183,15 @@
     .hero-card {
         padding: 18px;
         border-radius: 22px;
+    }
+
+    .genre-guide-card,
+    .summary-list div,
+    .milestone-item,
+    .volume-card,
+    .chapter-card,
+    .character-card {
+        border-radius: 18px;
     }
 
     .chapter-card-head,

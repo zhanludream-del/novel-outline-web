@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
-    <meta name="theme-color" content="#17313d">
+    <meta name="theme-color" content="#4a5f72">
     <meta name="apple-mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-status-bar-style" content="default">
     <meta name="apple-mobile-web-app-title" content="小说大纲">
@@ -319,85 +319,114 @@
                         <div class="panel-head">
                             <div>
                                 <p class="section-kicker">章节生成</p>
-                                <h2>批量章纲与单章正文</h2>
-                            </div>
-                            <div class="panel-actions">
-                                <button class="btn btn-primary" id="btnGenerateChapters" type="button">批量生成章纲</button>
-                                <button class="btn btn-ghost" id="btnContinueChapters" type="button">续写缺失章节</button>
-                                <button class="btn btn-ghost" id="btnDetectGaps" type="button">检测章节缺口</button>
+                                <h2>拆开的章节工作台</h2>
                             </div>
                         </div>
-
-                        <div class="form-grid three-column">
-                            <label class="field">
-                                <span>卷</span>
-                                <select class="input" id="chapterVolumeSelect"></select>
-                            </label>
-                            <label class="field">
-                                <span>起始章</span>
-                                <input class="input" id="chapterStart" type="number" min="1" value="1">
-                            </label>
-                            <label class="field">
-                                <span>结束章</span>
-                                <input class="input" id="chapterEnd" type="number" min="1" value="5">
-                            </label>
+                        <div class="chapter-subtabs">
+                            <button class="chapter-subtab active" data-chapter-subview="batch" type="button">批量章纲</button>
+                            <button class="chapter-subtab" data-chapter-subview="draft" type="button">单章正文</button>
                         </div>
                     </div>
 
-                    <div class="chapter-layout">
-                        <section class="panel chapter-list-panel">
+                    <div class="chapter-subview active" data-chapter-subview-panel="batch">
+                        <div class="panel">
                             <div class="panel-head">
                                 <div>
-                                    <p class="section-kicker">章节列表</p>
-                                    <h3>当前卷</h3>
-                                </div>
-                            </div>
-                            <div class="chapter-list" id="chapterList"></div>
-                        </section>
-
-                        <section class="panel chapter-editor-panel">
-                            <div class="panel-head">
-                                <div>
-                                    <p class="section-kicker">章节编辑</p>
-                                    <h3 id="chapterEditorHeading">未选择章节</h3>
+                                    <p class="section-kicker">批量章纲</p>
+                                    <h3>固定四批生成</h3>
                                 </div>
                                 <div class="panel-actions">
-                                    <button class="btn btn-primary" id="btnExpandChapterContent" type="button">AI 扩写正文</button>
+                                    <button class="btn btn-primary" id="btnGenerateChapters" type="button">批量生成章纲</button>
+                                    <button class="btn btn-ghost" id="btnContinueChapters" type="button">续写缺失章节</button>
+                                    <button class="btn btn-ghost" id="btnDetectGaps" type="button">检测章节缺口</button>
                                 </div>
                             </div>
 
-                            <div class="form-grid narrow-grid">
+                            <div class="form-grid three-column">
                                 <label class="field">
-                                    <span>章节号</span>
-                                    <input class="input" id="chapterNumberInput" type="number" min="1" placeholder="例如 12">
+                                    <span>卷</span>
+                                    <select class="input" id="chapterVolumeSelect"></select>
                                 </label>
                                 <label class="field">
-                                    <span>章节标题</span>
-                                    <input class="input" id="chapterTitleInput" type="text" placeholder="章节标题">
+                                    <span>起始章</span>
+                                    <input class="input" id="chapterStart" type="number" min="1" value="1">
+                                </label>
+                                <label class="field">
+                                    <span>结束章</span>
+                                    <input class="input" id="chapterEnd" type="number" min="1" value="5">
                                 </label>
                             </div>
 
-                            <label class="field">
-                                <span>章节大纲 / 摘要</span>
-                                <textarea class="input textarea" id="chapterSummaryInput" rows="8" placeholder="这里建议保存章纲、重点场景、情绪线和钩子。"></textarea>
-                            </label>
+                            <div class="chapter-batch-preview" id="chapterBatchPreview"></div>
+                        </div>
 
-                            <label class="field">
-                                <span>章节设定提醒</span>
-                                <textarea class="input textarea" id="chapterSettingNoteInput" rows="5" placeholder="这一章特有的限制、禁止事项、人物秘密保护等，保存后会参与后续扩写。"></textarea>
-                            </label>
-
-                            <label class="field">
-                                <span>章节正文草稿</span>
-                                <textarea class="input textarea chapter-textarea" id="chapterContentInput" rows="18" placeholder="AI 扩写后的正文或你手动写的草稿。"></textarea>
-                            </label>
-
-                            <div class="panel-actions align-end">
-                                <button class="btn btn-ghost" id="btnCopyChapter" type="button">复制正文</button>
-                                <button class="btn btn-secondary" id="btnSaveChapter" type="button">保存章节</button>
-                                <button class="btn btn-danger" id="btnDeleteChapter" type="button">删除章节</button>
+                        <div class="panel">
+                            <div class="panel-head">
+                                <div>
+                                    <p class="section-kicker">章纲概览</p>
+                                    <h3>当前卷已有章纲</h3>
+                                </div>
                             </div>
-                        </section>
+                            <div class="chapter-list" id="chapterBatchList"></div>
+                        </div>
+                    </div>
+
+                    <div class="chapter-subview" data-chapter-subview-panel="draft">
+                        <div class="chapter-layout">
+                            <section class="panel chapter-list-panel">
+                                <div class="panel-head">
+                                    <div>
+                                        <p class="section-kicker">单章正文</p>
+                                        <h3>选择章节后扩写</h3>
+                                    </div>
+                                </div>
+                                <div class="chapter-list" id="chapterList"></div>
+                            </section>
+
+                            <section class="panel chapter-editor-panel">
+                                <div class="panel-head">
+                                    <div>
+                                        <p class="section-kicker">章节编辑</p>
+                                        <h3 id="chapterEditorHeading">未选择章节</h3>
+                                    </div>
+                                    <div class="panel-actions">
+                                        <button class="btn btn-primary" id="btnExpandChapterContent" type="button">AI 扩写正文</button>
+                                    </div>
+                                </div>
+
+                                <div class="form-grid narrow-grid">
+                                    <label class="field">
+                                        <span>章节号</span>
+                                        <input class="input" id="chapterNumberInput" type="number" min="1" placeholder="例如 12">
+                                    </label>
+                                    <label class="field">
+                                        <span>章节标题</span>
+                                        <input class="input" id="chapterTitleInput" type="text" placeholder="章节标题">
+                                    </label>
+                                </div>
+
+                                <label class="field">
+                                    <span>章节大纲 / 摘要</span>
+                                    <textarea class="input textarea" id="chapterSummaryInput" rows="8" placeholder="这里建议保存章纲、重点场景、情绪线和钩子。"></textarea>
+                                </label>
+
+                                <label class="field">
+                                    <span>章节设定提醒</span>
+                                    <textarea class="input textarea" id="chapterSettingNoteInput" rows="5" placeholder="这一章特有的限制、禁止事项、人物秘密保护等，保存后会参与后续扩写。"></textarea>
+                                </label>
+
+                                <label class="field">
+                                    <span>章节正文草稿</span>
+                                    <textarea class="input textarea chapter-textarea" id="chapterContentInput" rows="18" placeholder="AI 扩写后的正文或你手动写的草稿。"></textarea>
+                                </label>
+
+                                <div class="panel-actions align-end">
+                                    <button class="btn btn-ghost" id="btnCopyChapter" type="button">复制正文</button>
+                                    <button class="btn btn-secondary" id="btnSaveChapter" type="button">保存章节</button>
+                                    <button class="btn btn-danger" id="btnDeleteChapter" type="button">删除章节</button>
+                                </div>
+                            </section>
+                        </div>
                     </div>
                 </section>
 
