@@ -1,0 +1,686 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+    <meta name="theme-color" content="#17313d">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="default">
+    <meta name="apple-mobile-web-app-title" content="小说大纲">
+    <title>晨曦微露小说大纲生成器 Web</title>
+    <link rel="manifest" href="manifest.webmanifest">
+    <link rel="icon" href="icons/app-icon.svg" type="image/svg+xml">
+    <link rel="apple-touch-icon" href="icons/app-icon.svg">
+    <link rel="stylesheet" href="css/style.css">
+    <link rel="stylesheet" href="css/mobile.css">
+</head>
+<body>
+    <div class="app-shell">
+        <header class="topbar">
+            <div class="topbar-left">
+                <button class="icon-btn menu-btn" id="menuToggle" type="button" aria-label="打开菜单">☰</button>
+                <div class="brand-block">
+                    <p class="brand-kicker">晨曦微露</p>
+                    <div class="brand-row">
+                        <h1>小说大纲生成器 Web</h1>
+                        <span class="version-chip">v2.0</span>
+                    </div>
+                    <p class="brand-subtitle">桌面版功能继续迁移中，现阶段优先保证手机和电脑都能顺手使用。</p>
+                </div>
+            </div>
+
+            <div class="topbar-actions">
+                <button class="btn btn-ghost" id="btnOpenSettings" type="button">API 设置</button>
+                <button class="btn btn-ghost" id="btnSaveData" type="button">保存</button>
+                <button class="btn btn-primary" id="btnExportData" type="button">导出</button>
+                <button class="btn btn-secondary" id="btnImportData" type="button">导入</button>
+            </div>
+        </header>
+
+        <div class="sidebar-backdrop" id="sidebarBackdrop"></div>
+
+        <div class="workspace">
+            <aside class="sidebar" id="sidebar">
+                <nav class="nav-list" aria-label="主导航">
+                    <button class="nav-item active" data-tab="dashboard" type="button">
+                        <span class="nav-label">工作台</span>
+                        <span class="nav-desc">查看全局概况</span>
+                    </button>
+                    <button class="nav-item" data-tab="planner" type="button">
+                        <span class="nav-label">细纲生成</span>
+                        <span class="nav-desc">概念到卷纲</span>
+                    </button>
+                    <button class="nav-item" data-tab="outline" type="button">
+                        <span class="nav-label">卷纲管理</span>
+                        <span class="nav-desc">手动整理结构</span>
+                    </button>
+                    <button class="nav-item" data-tab="chapters" type="button">
+                        <span class="nav-label">章节工作台</span>
+                        <span class="nav-desc">批量生成与编辑</span>
+                    </button>
+                    <button class="nav-item" data-tab="characters" type="button">
+                        <span class="nav-label">人物库</span>
+                        <span class="nav-desc">人物卡与关系</span>
+                    </button>
+                    <button class="nav-item" data-tab="advanced" type="button">
+                        <span class="nav-label">高级系统</span>
+                        <span class="nav-desc">提示词与追踪器</span>
+                    </button>
+                </nav>
+
+                <div class="sidebar-note">
+                    <p>当前版本适合：</p>
+                    <ul>
+                        <li>手机上整理小说结构</li>
+                        <li>电脑上批量生成卷纲和章节</li>
+                        <li>本地保存、JSON 导入导出</li>
+                    </ul>
+                </div>
+            </aside>
+
+            <main class="main-content">
+                <section class="tab-panel active" id="tab-dashboard">
+                    <div class="hero-card">
+                        <div>
+                            <p class="section-kicker">总览</p>
+                            <h2>把桌面版的创作流程，整理成更轻的 Web 工作流</h2>
+                            <p class="hero-copy">这里会自动汇总标题、卷数、章节和人物信息。无论是在电脑继续搭结构，还是用手机临时改章纲，都能在一个页面里完成。</p>
+                        </div>
+                        <div class="quick-actions">
+                            <button class="btn btn-primary" data-jump-tab="planner" type="button">开始生成细纲</button>
+                            <button class="btn btn-ghost" data-jump-tab="chapters" type="button">继续章节工作</button>
+                        </div>
+                    </div>
+
+                    <div class="stats-grid">
+                        <article class="stat-card">
+                            <span class="stat-label">小说标题</span>
+                            <strong class="stat-value" id="statTitle">未命名</strong>
+                        </article>
+                        <article class="stat-card">
+                            <span class="stat-label">卷数</span>
+                            <strong class="stat-value" id="statVolumes">0</strong>
+                        </article>
+                        <article class="stat-card">
+                            <span class="stat-label">章节数</span>
+                            <strong class="stat-value" id="statChapters">0</strong>
+                        </article>
+                        <article class="stat-card">
+                            <span class="stat-label">人物数</span>
+                            <strong class="stat-value" id="statCharacters">0</strong>
+                        </article>
+                    </div>
+
+                    <div class="dashboard-grid">
+                        <section class="panel">
+                            <div class="panel-head">
+                                <div>
+                                    <p class="section-kicker">项目摘要</p>
+                                    <h3>当前设定</h3>
+                                </div>
+                            </div>
+                            <dl class="summary-list">
+                                <div>
+                                    <dt>题材</dt>
+                                    <dd id="summaryGenre">未设置</dd>
+                                </div>
+                                <div>
+                                    <dt>核心主题</dt>
+                                    <dd id="summaryTheme">未设置</dd>
+                                </div>
+                                <div>
+                                    <dt>故事概念</dt>
+                                    <dd id="summaryConcept">还没有填写故事概念。</dd>
+                                </div>
+                            </dl>
+                        </section>
+
+                        <section class="panel">
+                            <div class="panel-head">
+                                <div>
+                                    <p class="section-kicker">最近状态</p>
+                                    <h3>当前进度</h3>
+                                </div>
+                            </div>
+                            <div class="milestone-list" id="dashboardMilestones"></div>
+                        </section>
+                    </div>
+                </section>
+
+                <section class="tab-panel" id="tab-planner">
+                    <div class="panel">
+                        <div class="panel-head">
+                            <div>
+                                <p class="section-kicker">第一步</p>
+                                <h2>基础设定与细纲生成</h2>
+                            </div>
+                        </div>
+
+                        <div class="form-grid two-column">
+                            <label class="field">
+                                <span>小说标题</span>
+                                <input class="input" id="projectTitle" type="text" placeholder="例如：我在修真界开便利店">
+                            </label>
+
+                            <label class="field">
+                                <span>核心主题</span>
+                                <input class="input" id="projectTheme" type="text" placeholder="例如：普通人如何撬动世界规则">
+                            </label>
+
+                            <label class="field">
+                                <span>主类目</span>
+                                <select class="input" id="projectGenre"></select>
+                            </label>
+
+                            <label class="field">
+                                <span>子题材</span>
+                                <select class="input" id="projectSubgenre"></select>
+                            </label>
+
+                            <label class="field">
+                                <span>计划卷数</span>
+                                <input class="input" id="projectVolumeCount" type="number" min="1" value="5">
+                            </label>
+
+                            <label class="field">
+                                <span>每卷计划章节数</span>
+                                <input class="input" id="projectChaptersPerVolume" type="number" min="1" value="20">
+                            </label>
+
+                            <label class="field field-full">
+                                <span>故事概念</span>
+                                <textarea class="input textarea" id="projectConcept" rows="6" placeholder="用一两段话说清主角、设定、冲突和爽点。"></textarea>
+                            </label>
+                        </div>
+                    </div>
+
+                    <div class="panel">
+                        <div class="panel-head">
+                            <div>
+                                <p class="section-kicker">第二步</p>
+                                <h3>AI 生成辅助</h3>
+                            </div>
+                            <div class="panel-actions">
+                                <button class="btn btn-primary" id="btnGenerateWorldbuilding" type="button">生成世界观</button>
+                                <button class="btn btn-primary" id="btnGenerateVolumes" type="button">生成卷纲</button>
+                            </div>
+                        </div>
+
+                        <div class="form-grid">
+                            <label class="field field-full">
+                                <span>世界观设定</span>
+                                <textarea class="input textarea" id="worldbuildingText" rows="8" placeholder="这里会保存 AI 生成或你手动整理的世界观。"></textarea>
+                            </label>
+
+                            <label class="field field-full">
+                                <span>卷纲汇总</span>
+                                <textarea class="input textarea" id="volumeSynopsisText" rows="10" placeholder="生成卷纲后会自动写入这里，方便整体查看。"></textarea>
+                            </label>
+                        </div>
+                    </div>
+
+                    <div class="panel">
+                        <div class="panel-head">
+                            <div>
+                                <p class="section-kicker">第三步</p>
+                                <h3>章节细纲</h3>
+                            </div>
+                            <div class="panel-actions">
+                                <button class="btn btn-primary" id="btnGenerateChapterSynopsis" type="button">生成当前卷细纲</button>
+                                <button class="btn btn-ghost" id="btnGenerateAllSynopsis" type="button">批量生成所有卷细纲</button>
+                            </div>
+                        </div>
+
+                        <div class="form-grid narrow-grid">
+                            <label class="field">
+                                <span>当前卷</span>
+                                <select class="input" id="synopsisCurrentVolume"></select>
+                            </label>
+                            <div class="field field-actions">
+                                <span>导入</span>
+                                <button class="btn btn-secondary" id="btnImportSynopsisToOutline" type="button">把细纲导入卷纲管理</button>
+                            </div>
+                        </div>
+
+                        <label class="field">
+                            <span>章节细纲输出</span>
+                            <textarea class="input textarea" id="synopsisOutput" rows="16" placeholder="章节细纲会按卷写入这里，同时同步保存到对应卷。"></textarea>
+                        </label>
+
+                        <div class="panel-actions align-end">
+                            <button class="btn btn-ghost" id="btnCopySynopsis" type="button">复制细纲</button>
+                        </div>
+                    </div>
+                </section>
+
+                <section class="tab-panel" id="tab-outline">
+                    <div class="panel">
+                        <div class="panel-head">
+                            <div>
+                                <p class="section-kicker">全局规划</p>
+                                <h2>卷纲与总结构</h2>
+                            </div>
+                            <div class="panel-actions">
+                                <button class="btn btn-primary" id="btnGenerateGlobalPlan" type="button">生成全局规划</button>
+                                <button class="btn btn-ghost" id="btnAddVolume" type="button">新增一卷</button>
+                            </div>
+                        </div>
+
+                        <label class="field">
+                            <span>全局规划</span>
+                            <textarea class="input textarea" id="globalPlanText" rows="10" placeholder="整本书的主线推进、阶段目标和转折点。"></textarea>
+                        </label>
+                    </div>
+
+                    <div class="panel">
+                        <div class="panel-head">
+                            <div>
+                                <p class="section-kicker">卷纲编辑</p>
+                                <h3>逐卷整理</h3>
+                            </div>
+                            <div class="panel-actions">
+                                <button class="btn btn-danger" id="btnClearVolumes" type="button">清空所有卷</button>
+                            </div>
+                        </div>
+
+                        <div class="volume-stack" id="outlineVolumeList"></div>
+                    </div>
+                </section>
+
+                <section class="tab-panel" id="tab-chapters">
+                    <div class="panel">
+                        <div class="panel-head">
+                            <div>
+                                <p class="section-kicker">章节生成</p>
+                                <h2>批量章纲与单章正文</h2>
+                            </div>
+                            <div class="panel-actions">
+                                <button class="btn btn-primary" id="btnGenerateChapters" type="button">批量生成章纲</button>
+                                <button class="btn btn-ghost" id="btnContinueChapters" type="button">续写缺失章节</button>
+                                <button class="btn btn-ghost" id="btnDetectGaps" type="button">检测章节缺口</button>
+                            </div>
+                        </div>
+
+                        <div class="form-grid three-column">
+                            <label class="field">
+                                <span>卷</span>
+                                <select class="input" id="chapterVolumeSelect"></select>
+                            </label>
+                            <label class="field">
+                                <span>起始章</span>
+                                <input class="input" id="chapterStart" type="number" min="1" value="1">
+                            </label>
+                            <label class="field">
+                                <span>结束章</span>
+                                <input class="input" id="chapterEnd" type="number" min="1" value="5">
+                            </label>
+                        </div>
+                    </div>
+
+                    <div class="chapter-layout">
+                        <section class="panel chapter-list-panel">
+                            <div class="panel-head">
+                                <div>
+                                    <p class="section-kicker">章节列表</p>
+                                    <h3>当前卷</h3>
+                                </div>
+                            </div>
+                            <div class="chapter-list" id="chapterList"></div>
+                        </section>
+
+                        <section class="panel chapter-editor-panel">
+                            <div class="panel-head">
+                                <div>
+                                    <p class="section-kicker">章节编辑</p>
+                                    <h3 id="chapterEditorHeading">未选择章节</h3>
+                                </div>
+                                <div class="panel-actions">
+                                    <button class="btn btn-primary" id="btnExpandChapterContent" type="button">AI 扩写正文</button>
+                                </div>
+                            </div>
+
+                            <div class="form-grid narrow-grid">
+                                <label class="field">
+                                    <span>章节号</span>
+                                    <input class="input" id="chapterNumberInput" type="number" min="1" placeholder="例如 12">
+                                </label>
+                                <label class="field">
+                                    <span>章节标题</span>
+                                    <input class="input" id="chapterTitleInput" type="text" placeholder="章节标题">
+                                </label>
+                            </div>
+
+                            <label class="field">
+                                <span>章节大纲 / 摘要</span>
+                                <textarea class="input textarea" id="chapterSummaryInput" rows="8" placeholder="这里建议保存章纲、重点场景、情绪线和钩子。"></textarea>
+                            </label>
+
+                            <label class="field">
+                                <span>章节设定提醒</span>
+                                <textarea class="input textarea" id="chapterSettingNoteInput" rows="5" placeholder="这一章特有的限制、禁止事项、人物秘密保护等，保存后会参与后续扩写。"></textarea>
+                            </label>
+
+                            <label class="field">
+                                <span>章节正文草稿</span>
+                                <textarea class="input textarea chapter-textarea" id="chapterContentInput" rows="18" placeholder="AI 扩写后的正文或你手动写的草稿。"></textarea>
+                            </label>
+
+                            <div class="panel-actions align-end">
+                                <button class="btn btn-ghost" id="btnCopyChapter" type="button">复制正文</button>
+                                <button class="btn btn-secondary" id="btnSaveChapter" type="button">保存章节</button>
+                                <button class="btn btn-danger" id="btnDeleteChapter" type="button">删除章节</button>
+                            </div>
+                        </section>
+                    </div>
+                </section>
+
+                <section class="tab-panel" id="tab-characters">
+                    <div class="panel">
+                        <div class="panel-head">
+                            <div>
+                                <p class="section-kicker">人物库</p>
+                                <h2>人物卡与关系整理</h2>
+                            </div>
+                        </div>
+
+                        <div class="form-grid two-column">
+                            <label class="field">
+                                <span>姓名</span>
+                                <input class="input" id="characterName" type="text" placeholder="角色姓名">
+                            </label>
+
+                            <label class="field">
+                                <span>身份定位</span>
+                                <input class="input" id="characterIdentity" type="text" placeholder="例如：便利店老板 / 魔界使者">
+                            </label>
+
+                            <label class="field">
+                                <span>年龄</span>
+                                <input class="input" id="characterAge" type="text" placeholder="例如：24">
+                            </label>
+
+                            <label class="field">
+                                <span>性别</span>
+                                <input class="input" id="characterGender" type="text" placeholder="例如：女">
+                            </label>
+
+                            <label class="field">
+                                <span>能力特长</span>
+                                <input class="input" id="characterAbilities" type="text" placeholder="技能、外挂或专业能力">
+                            </label>
+
+                            <label class="field">
+                                <span>目标动机</span>
+                                <input class="input" id="characterGoals" type="text" placeholder="这个角色最想得到什么">
+                            </label>
+
+                            <label class="field field-full">
+                                <span>性格特点</span>
+                                <textarea class="input textarea" id="characterPersonality" rows="4" placeholder="尽量写出鲜明矛盾点。"></textarea>
+                            </label>
+
+                            <label class="field field-full">
+                                <span>背景故事</span>
+                                <textarea class="input textarea" id="characterBackground" rows="5" placeholder="过去经历、伤口、秘密和立场。"></textarea>
+                            </label>
+
+                            <label class="field">
+                                <span>外貌描述</span>
+                                <textarea class="input textarea" id="characterAppearance" rows="4" placeholder="有辨识度的外形、穿着、气质。"></textarea>
+                            </label>
+
+                            <label class="field">
+                                <span>人物关系</span>
+                                <textarea class="input textarea" id="characterRelationships" rows="4" placeholder="和主角、配角、敌对势力的关系。"></textarea>
+                            </label>
+                        </div>
+
+                        <div class="panel-actions align-end">
+                            <button class="btn btn-ghost" id="btnResetCharacterForm" type="button">清空表单</button>
+                            <button class="btn btn-primary" id="btnSaveCharacter" type="button">保存人物</button>
+                        </div>
+                    </div>
+
+                    <div class="panel">
+                        <div class="panel-head">
+                            <div>
+                                <p class="section-kicker">人物列表</p>
+                                <h3>已创建人物</h3>
+                            </div>
+                        </div>
+
+                        <div class="character-grid" id="characterList"></div>
+                    </div>
+                </section>
+
+                <section class="tab-panel" id="tab-advanced">
+                    <div class="panel">
+                        <div class="panel-head">
+                            <div>
+                                <p class="section-kicker">高级设定</p>
+                                <h2>详细大纲与全局约束</h2>
+                            </div>
+                        </div>
+
+                        <div class="form-grid">
+                            <label class="field field-full">
+                                <span>详细大纲</span>
+                                <textarea class="input textarea" id="detailedOutlineInput" rows="10" placeholder="这里对齐桌面版的 detailed_outline，用来容纳完整剧情设定、卷结构说明和边界规则。"></textarea>
+                            </label>
+
+                            <label class="field field-full">
+                                <span>全局设定提醒</span>
+                                <textarea class="input textarea" id="globalSettingNoteInput" rows="8" placeholder="例如：非穿越、禁止角色改名、某秘密必须到第 30 章后才能揭露等。"></textarea>
+                            </label>
+                        </div>
+                    </div>
+
+                    <div class="panel">
+                        <div class="panel-head">
+                            <div>
+                                <p class="section-kicker">提示词管理</p>
+                                <h3>章节生成 Prompt</h3>
+                            </div>
+                            <div class="panel-actions">
+                                <button class="btn btn-ghost" id="btnLoadDefaultPrompt" type="button">载入默认模板</button>
+                                <button class="btn btn-secondary" id="btnCopyPrompt" type="button">复制 Prompt</button>
+                            </div>
+                        </div>
+
+                        <div class="form-grid three-column">
+                            <label class="field">
+                                <span>频道倾向</span>
+                                <select class="input" id="promptFrequencySelect">
+                                    <option value="male">男频</option>
+                                    <option value="female">女频</option>
+                                </select>
+                            </label>
+
+                            <label class="field">
+                                <span>已保存模板</span>
+                                <select class="input" id="savedPromptSelect"></select>
+                            </label>
+
+                            <label class="field">
+                                <span>保存名称</span>
+                                <input class="input" id="promptNameInput" type="text" placeholder="例如：通用正文模板">
+                            </label>
+                        </div>
+
+                        <div class="panel-actions">
+                            <button class="btn btn-primary" id="btnSavePromptTemplate" type="button">保存模板</button>
+                            <button class="btn btn-ghost" id="btnApplyPromptTemplate" type="button">载入模板</button>
+                            <button class="btn btn-danger" id="btnDeletePromptTemplate" type="button">删除模板</button>
+                        </div>
+
+                        <label class="field">
+                            <span>当前 Prompt 模板</span>
+                            <textarea class="input textarea code-textarea" id="currentPromptTemplateInput" rows="18" placeholder="支持占位符：{{title}} {{genre}} {{theme}} {{outline}} {{prev_content}} {{next_outline}} {{worldbuilding}} {{global_setting_note}} {{chapter_setting_note}} {{relevant_characters}}"></textarea>
+                        </label>
+                    </div>
+
+                    <div class="panel">
+                        <div class="panel-head">
+                            <div>
+                                <p class="section-kicker">系统数据</p>
+                                <h3>桌面版追踪器 JSON 面板</h3>
+                            </div>
+                            <div class="panel-actions">
+                                <button class="btn btn-ghost" id="btnRefreshSystemEditors" type="button">刷新面板</button>
+                                <button class="btn btn-primary" id="btnSaveSystemEditors" type="button">保存系统 JSON</button>
+                            </div>
+                        </div>
+
+                        <div class="system-grid">
+                            <label class="field">
+                                <span>`outline.story_state`</span>
+                                <textarea class="input textarea code-textarea system-editor" id="editorOutlineStoryState" rows="10"></textarea>
+                            </label>
+                            <label class="field">
+                                <span>`story_state`</span>
+                                <textarea class="input textarea code-textarea system-editor" id="editorStoryState" rows="10"></textarea>
+                            </label>
+                            <label class="field">
+                                <span>`name_locker`</span>
+                                <textarea class="input textarea code-textarea system-editor" id="editorNameLocker" rows="10"></textarea>
+                            </label>
+                            <label class="field">
+                                <span>`foreshadow_manager`</span>
+                                <textarea class="input textarea code-textarea system-editor" id="editorForeshadowManager" rows="10"></textarea>
+                            </label>
+                            <label class="field">
+                                <span>`secret_matrix`</span>
+                                <textarea class="input textarea code-textarea system-editor" id="editorSecretMatrix" rows="10"></textarea>
+                            </label>
+                            <label class="field">
+                                <span>`dynamic_tracker`</span>
+                                <textarea class="input textarea code-textarea system-editor" id="editorDynamicTracker" rows="10"></textarea>
+                            </label>
+                            <label class="field">
+                                <span>`timeline_tracker`</span>
+                                <textarea class="input textarea code-textarea system-editor" id="editorTimelineTracker" rows="10"></textarea>
+                            </label>
+                            <label class="field">
+                                <span>`chapter_snapshot`</span>
+                                <textarea class="input textarea code-textarea system-editor" id="editorChapterSnapshot" rows="10"></textarea>
+                            </label>
+                            <label class="field">
+                                <span>`foreshadow_tracker`</span>
+                                <textarea class="input textarea code-textarea system-editor" id="editorForeshadowTracker" rows="10"></textarea>
+                            </label>
+                            <label class="field">
+                                <span>`personality_enforcer`</span>
+                                <textarea class="input textarea code-textarea system-editor" id="editorPersonalityEnforcer" rows="10"></textarea>
+                            </label>
+                            <label class="field">
+                                <span>`character_checker`</span>
+                                <textarea class="input textarea code-textarea system-editor" id="editorCharacterChecker" rows="10"></textarea>
+                            </label>
+                            <label class="field">
+                                <span>`character_appearance_tracker`</span>
+                                <textarea class="input textarea code-textarea system-editor" id="editorAppearanceTracker" rows="10"></textarea>
+                            </label>
+                            <label class="field">
+                                <span>`dialogue_tracker`</span>
+                                <textarea class="input textarea code-textarea system-editor" id="editorDialogueTracker" rows="10"></textarea>
+                            </label>
+                            <label class="field">
+                                <span>`outline.state_snapshots`</span>
+                                <textarea class="input textarea code-textarea system-editor" id="editorStateSnapshots" rows="10"></textarea>
+                            </label>
+                            <label class="field field-full">
+                                <span>`synopsis_data`</span>
+                                <textarea class="input textarea code-textarea system-editor" id="editorSynopsisData" rows="12"></textarea>
+                            </label>
+                        </div>
+                    </div>
+                </section>
+            </main>
+        </div>
+    </div>
+
+    <div class="modal" id="settingsModal" aria-hidden="true">
+        <div class="modal-card">
+            <div class="modal-head">
+                <div>
+                    <p class="section-kicker">本地配置</p>
+                    <h2>API 设置</h2>
+                </div>
+                <button class="icon-btn" id="btnCloseSettings" type="button" aria-label="关闭设置">✕</button>
+            </div>
+
+            <div class="modal-body">
+                <div class="form-grid">
+                    <label class="field">
+                        <span>提供商</span>
+                        <select class="input" id="settingProvider">
+                            <option value="doubao">豆包 / 火山引擎</option>
+                            <option value="openai">OpenAI</option>
+                            <option value="custom">自定义兼容接口</option>
+                        </select>
+                    </label>
+
+                    <label class="field">
+                        <span>模型名</span>
+                        <input class="input" id="settingModel" type="text" placeholder="例如：doubao-pro-32k / gpt-4o-mini">
+                    </label>
+
+                    <label class="field field-full">
+                        <span>API Base URL</span>
+                        <input class="input" id="settingApiBase" type="text" placeholder="例如：https://api.openai.com/v1">
+                    </label>
+
+                    <label class="field field-full">
+                        <span>API Key</span>
+                        <input class="input" id="settingApiKey" type="password" placeholder="仅保存在当前浏览器本地">
+                    </label>
+
+                    <label class="field">
+                        <span>温度</span>
+                        <input class="input" id="settingTemperature" type="number" step="0.1" min="0" max="2" value="0.7">
+                    </label>
+
+                    <label class="field">
+                        <span>最大 tokens</span>
+                        <input class="input" id="settingMaxTokens" type="number" min="256" step="256" value="4000">
+                    </label>
+                </div>
+
+                <p class="modal-hint">提示：这个 Web 版仍然是纯前端方案，API Key 只保存在浏览器本地，不会上传到别的服务器。</p>
+            </div>
+
+            <div class="modal-actions">
+                <button class="btn btn-secondary" id="btnCancelSettings" type="button">取消</button>
+                <button class="btn btn-primary" id="btnSaveSettings" type="button">保存设置</button>
+            </div>
+        </div>
+    </div>
+
+    <div class="loading-overlay" id="loadingOverlay" aria-hidden="true">
+        <div class="loading-card">
+            <div class="spinner"></div>
+            <p id="loadingText">AI 正在处理中...</p>
+        </div>
+    </div>
+
+    <section class="log-drawer" id="logDrawer">
+        <div class="log-head">
+            <div>
+                <p class="section-kicker">运行日志</p>
+                <h3>本地调试面板</h3>
+            </div>
+            <button class="btn btn-ghost btn-small" id="btnToggleLog" type="button">收起</button>
+        </div>
+        <div class="log-body" id="logContent"></div>
+    </section>
+
+    <input id="importFileInput" type="file" accept=".json,application/json" hidden>
+
+    <script src="js/config.js"></script>
+    <script src="js/storage.js"></script>
+    <script src="js/utils.js"></script>
+    <script src="js/api.js"></script>
+    <script src="js/generator.js"></script>
+    <script src="js/app.js"></script>
+</body>
+</html>

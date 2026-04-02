@@ -1,0 +1,10 @@
+{
+  "defaultPrompt": "11111.txt",
+  "prompts": [
+    {
+      "name": "11111",
+      "file": "11111.txt",
+      "label": "桌面版提示词 11111"
+    }
+  ]
+}

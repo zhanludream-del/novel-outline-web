@@ -1,0 +1,126 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>按钮测试</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            padding: 20px;
+        }
+        .error {
+            color: red;
+            background: #ffe0e0;
+            padding: 10px;
+            margin: 10px 0;
+            border-radius: 4px;
+        }
+        .success {
+            color: green;
+            background: #e0ffe0;
+            padding: 10px;
+            margin: 10px 0;
+            border-radius: 4px;
+        }
+        .warning {
+            color: orange;
+            background: #fff4e0;
+            padding: 10px;
+            margin: 10px 0;
+            border-radius: 4px;
+        }
+        pre {
+            background: #f5f5f5;
+            padding: 10px;
+            border-radius: 4px;
+            overflow-x: auto;
+        }
+        button {
+            padding: 10px 20px;
+            margin: 5px;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            background: #2196f3;
+            color: white;
+        }
+        button:hover {
+            background: #1976d2;
+        }
+    </style>
+</head>
+<body>
+    <h1>JavaScript 加载诊断</h1>
+    
+    <div id="diagnostics"></div>
+    
+    <h2>按钮测试</h2>
+    <button onclick="testClick()">测试按钮1 (onclick)</button>
+    <button id="testBtn2">测试按钮2 (addEventListener)</button>
+    <button id="testBtn3">测试按钮3 (jQuery风格)</button>
+    
+    <div id="output"></div>
+
+    <script src="js/config.js"></script>
+    <script src="js/storage.js"></script>
+    <script src="js/utils.js"></script>
+    <script>
+        // 诊断信息
+        const diagnostics = document.getElementById('diagnostics');
+        const output = document.getElementById('output');
+        
+        let html = '<h3>模块加载检查：</h3>';
+        
+        // 检查各个模块
+        const checks = {
+            'NOVEL_GENRES (config.js)': typeof NOVEL_GENRES !== 'undefined',
+            'DEFAULT_NOVEL_DATA (config.js)': typeof DEFAULT_NOVEL_DATA !== 'undefined',
+            'StorageManager (storage.js)': typeof StorageManager !== 'undefined',
+            'storage (storage.js)': typeof storage !== 'undefined',
+            'Utils (utils.js)': typeof Utils !== 'undefined',
+            'localStorage': typeof localStorage !== 'undefined'
+        };
+        
+        for (const [name, exists] of Object.entries(checks)) {
+            html += `<div class="${exists ? 'success' : 'error'}">${name}: ${exists ? '✓ 已加载' : '✗ 未加载'}</div>`;
+        }
+        
+        // 尝试创建storage实例
+        html += '<h3>Storage实例测试：</h3>';
+        try {
+            if (typeof storage !== 'undefined') {
+                const data = storage.load();
+                html += `<div class="success">✓ storage.load() 成功</div>`;
+                html += `<pre>${JSON.stringify(data, null, 2).substring(0, 500)}...</pre>`;
+            } else if (typeof StorageManager !== 'undefined') {
+                html += `<div class="warning">⚠ storage未定义，但StorageManager存在</div>`;
+                const sm = new StorageManager();
+                const data = sm.load();
+                html += `<div class="success">✓ new StorageManager().load() 成功</div>`;
+                html += `<pre>${JSON.stringify(data, null, 2).substring(0, 500)}...</pre>`;
+            } else {
+                html += `<div class="error">✗ StorageManager和storage都未定义</div>`;
+            }
+        } catch (error) {
+            html += `<div class="error">✗ Storage错误: ${error.message}</div>`;
+            html += `<pre>${error.stack}</pre>`;
+        }
+        
+        diagnostics.innerHTML = html;
+        
+        // 按钮测试
+        function testClick() {
+            output.innerHTML = '<div class="success">✓ onclick方式成功！按钮可以点击！</div>';
+        }
+        
+        document.getElementById('testBtn2').addEventListener('click', function() {
+            output.innerHTML = '<div class="success">✓ addEventListener方式成功！按钮可以点击！</div>';
+        });
+        
+        document.getElementById('testBtn3').onclick = function() {
+            output.innerHTML = '<div class="success">✓ onclick属性方式成功！按钮可以点击！</div>';
+        };
+    </script>
+</body>
+</html>

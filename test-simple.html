@@ -1,0 +1,272 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>简化版测试</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            font-family: 'Microsoft YaHei', Arial, sans-serif;
+            background: #f5f5f5;
+            padding: 20px;
+        }
+        .container { max-width: 800px; margin: 0 auto; }
+        .panel {
+            background: white;
+            padding: 20px;
+            margin: 10px 0;
+            border-radius: 8px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+        .btn {
+            padding: 10px 20px;
+            margin: 5px;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 14px;
+        }
+        .btn-primary { background: #2196f3; color: white; }
+        .btn-success { background: #4caf50; color: white; }
+        .btn-danger { background: #f44336; color: white; }
+        .btn:hover { opacity: 0.9; }
+        .input {
+            width: 100%;
+            padding: 10px;
+            margin: 5px 0;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+        }
+        textarea {
+            width: 100%;
+            min-height: 100px;
+            padding: 10px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+        }
+        .log {
+            background: #f5f5f5;
+            padding: 10px;
+            margin: 10px 0;
+            border-radius: 4px;
+            font-family: monospace;
+            font-size: 12px;
+            max-height: 300px;
+            overflow-y: auto;
+        }
+        .success { color: green; }
+        .error { color: red; }
+        .warning { color: orange; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>晨曦微露AI创作软件 - 简化版测试</h1>
+        
+        <div class="panel">
+            <h2>1. 系统检查</h2>
+            <div id="systemCheck"></div>
+        </div>
+        
+        <div class="panel">
+            <h2>2. API配置</h2>
+            <input type="text" id="apiKey" class="input" placeholder="输入API Key">
+            <button class="btn btn-primary" id="btnSaveAPI">保存API配置</button>
+            <div id="apiStatus"></div>
+        </div>
+        
+        <div class="panel">
+            <h2>3. 基础功能测试</h2>
+            <input type="text" id="testTitle" class="input" placeholder="小说标题" value="测试小说">
+            <input type="text" id="testConcept" class="input" placeholder="故事概念" value="测试故事概念">
+            <button class="btn btn-success" id="btnTestWorldbuilding">测试生成世界观</button>
+            <button class="btn btn-primary" id="btnTestData">测试数据存储</button>
+            <button class="btn btn-danger" id="btnTestClear">清空日志</button>
+            <div class="log" id="log"></div>
+        </div>
+        
+        <div class="panel">
+            <h2>4. 结果输出</h2>
+            <textarea id="output" readonly placeholder="结果将显示在这里..."></textarea>
+        </div>
+    </div>
+
+    <script src="js/config.js"></script>
+    <script src="js/storage.js"></script>
+    <script src="js/utils.js"></script>
+    <script src="js/api.js"></script>
+    <script src="js/generator.js"></script>
+    
+    <script>
+        // 日志系统
+        function log(message, type = 'info') {
+            const logDiv = document.getElementById('log');
+            const timestamp = new Date().toLocaleTimeString();
+            const color = type === 'error' ? 'error' : type === 'success' ? 'success' : '';
+            logDiv.innerHTML += `<div class="${color}">[${timestamp}] ${message}</div>`;
+            logDiv.scrollTop = logDiv.scrollHeight;
+        }
+        
+        // 系统检查
+        function checkSystem() {
+            const check = document.getElementById('systemCheck');
+            const results = {
+                'NOVEL_GENRES': typeof NOVEL_GENRES !== 'undefined',
+                'DEFAULT_NOVEL_DATA': typeof DEFAULT_NOVEL_DATA !== 'undefined',
+                'StorageManager': typeof StorageManager !== 'undefined',
+                'storage': typeof storage !== 'undefined',
+                'AIAPIClient': typeof AIAPIClient !== 'undefined',
+                'NovelGenerator': typeof NovelGenerator !== 'undefined',
+                'Utils': typeof Utils !== 'undefined',
+                'LocalStorage': typeof localStorage !== 'undefined'
+            };
+            
+            let html = '<table style="width:100%">';
+            for (const [name, ok] of Object.entries(results)) {
+                html += `<tr><td>${name}</td><td style="color:${ok ? 'green' : 'red'}">${ok ? '✓' : '✗'}</td></tr>`;
+            }
+            html += '</table>';
+            
+            const allOk = Object.values(results).every(v => v);
+            html += `<p style="margin-top:10px;color:${allOk ? 'green' : 'red'};font-weight:bold">
+                ${allOk ? '✓ 所有模块已加载' : '✗ 部分模块未加载'}
+            </p>`;
+            
+            check.innerHTML = html;
+            log('系统检查完成', allOk ? 'success' : 'error');
+        }
+        
+        // 全局变量
+        let apiClient, generator;
+        
+        // 初始化
+        window.addEventListener('DOMContentLoaded', () => {
+            log('页面加载完成，开始初始化...', 'info');
+            
+            try {
+                checkSystem();
+                
+                // 创建API客户端
+                if (typeof AIAPIClient !== 'undefined') {
+                    apiClient = new AIAPIClient();
+                    log('API客户端创建成功', 'success');
+                }
+                
+                // 创建生成器
+                if (typeof NovelGenerator !== 'undefined' && apiClient) {
+                    const app = {
+                        api: apiClient,
+                        showMessage: (msg, type) => log(msg, type)
+                    };
+                    generator = new NovelGenerator(app);
+                    log('生成器创建成功', 'success');
+                }
+                
+                // 绑定按钮事件
+                bindEvents();
+                
+                log('初始化完成！', 'success');
+            } catch (error) {
+                log('初始化失败: ' + error.message, 'error');
+                console.error(error);
+            }
+        });
+        
+        // 绑定事件
+        function bindEvents() {
+            // 保存API配置
+            document.getElementById('btnSaveAPI').addEventListener('click', () => {
+                const apiKey = document.getElementById('apiKey').value;
+                if (!apiKey) {
+                    log('请输入API Key', 'error');
+                    return;
+                }
+                
+                try {
+                    apiConfigStorage.save({
+                        provider: 'doubao',
+                        apiKey: apiKey,
+                        apiBase: 'https://ark.cn-beijing.volces.com/api/v3',
+                        model: 'doubao-pro-4k',
+                        temperature: 0.8,
+                        maxTokens: 2000
+                    });
+                    log('API配置保存成功', 'success');
+                    document.getElementById('apiStatus').innerHTML = '<span class="success">✓ 已保存</span>';
+                } catch (error) {
+                    log('保存失败: ' + error.message, 'error');
+                }
+            });
+            
+            // 测试生成世界观
+            document.getElementById('btnTestWorldbuilding').addEventListener('click', async () => {
+                const title = document.getElementById('testTitle').value;
+                const concept = document.getElementById('testConcept').value;
+                
+                if (!title || !concept) {
+                    log('请填写标题和概念', 'error');
+                    return;
+                }
+                
+                if (!generator) {
+                    log('生成器未初始化', 'error');
+                    return;
+                }
+                
+                log('开始生成世界观...');
+                document.getElementById('btnTestWorldbuilding').disabled = true;
+                
+                try {
+                    const result = await generator.generateWorldbuilding(title, concept, '玄幻');
+                    
+                    if (result.success) {
+                        log('世界观生成成功！', 'success');
+                        document.getElementById('output').value = result.worldbuilding;
+                    } else {
+                        log('生成失败: ' + result.error, 'error');
+                    }
+                } catch (error) {
+                    log('生成出错: ' + error.message, 'error');
+                    console.error(error);
+                } finally {
+                    document.getElementById('btnTestWorldbuilding').disabled = false;
+                }
+            });
+            
+            // 测试数据存储
+            document.getElementById('btnTestData').addEventListener('click', () => {
+                try {
+                    // 保存数据
+                    const testData = {
+                        outline: {
+                            title: '测试小说',
+                            theme: '测试主题',
+                            characters: [],
+                            volumes: [],
+                            global_plan: '测试规划'
+                        }
+                    };
+                    
+                    storage.save(testData);
+                    log('数据保存成功', 'success');
+                    
+                    // 读取数据
+                    const loaded = storage.load();
+                    log('数据读取成功: ' + JSON.stringify(loaded.outline.title), 'success');
+                    
+                    document.getElementById('output').value = JSON.stringify(loaded, null, 2);
+                } catch (error) {
+                    log('数据存储测试失败: ' + error.message, 'error');
+                }
+            });
+            
+            // 清空日志
+            document.getElementById('btnTestClear').addEventListener('click', () => {
+                document.getElementById('log').innerHTML = '';
+                log('日志已清空');
+            });
+        }
+    </script>
+</body>
+</html>

@@ -1,0 +1,251 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>晨曦微露AI创作软件 Web版</title>
+    <link rel="stylesheet" href="css/style.css">
+    <link rel="stylesheet" href="css/mobile.css">
+</head>
+<body>
+    <!-- 顶部导航栏 -->
+    <header class="header">
+        <div class="header-left">
+            <h1>晨曦微露AI创作软件</h1>
+            <span class="version">Web v1.0</span>
+        </div>
+        <div class="header-right">
+            <button class="btn btn-primary" id="btnSettings">⚙️ 设置</button>
+            <button class="btn btn-success" id="btnSave">💾 保存</button>
+            <button class="btn btn-info" id="btnExport">📤 导出</button>
+            <button class="btn btn-warning" id="btnImport">📥 导入</button>
+        </div>
+    </header>
+
+    <!-- 主容器 -->
+    <div class="main-container">
+        <!-- 侧边栏 -->
+        <aside class="sidebar" id="sidebar">
+            <nav class="nav-menu">
+                <button class="nav-item active" data-tab="tab-synopsis">📋 细纲生成器</button>
+                <button class="nav-item" data-tab="tab-outline">📖 大纲管理</button>
+                <button class="nav-item" data-tab="tab-chapter">📝 章节生成</button>
+                <button class="nav-item" data-tab="tab-character">👥 人物管理</button>
+                <button class="nav-item" data-tab="tab-settings">⚙️ API配置</button>
+            </nav>
+        </aside>
+
+        <!-- 主内容区 -->
+        <main class="content" id="content">
+            <!-- 细纲生成器 -->
+            <div class="tab-content active" id="tab-synopsis">
+                <div class="panel">
+                    <h2>第一步：输入故事概念</h2>
+                    <div class="form-group">
+                        <label>小说标题：</label>
+                        <input type="text" id="novelTitle" class="input" placeholder="输入小说标题">
+                    </div>
+                    <div class="form-group">
+                        <label>小说类型：</label>
+                        <select id="novelGenre" class="select">
+                            <option value="">请选择类型</option>
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label>子类型：</label>
+                        <select id="novelSubgenre" class="select">
+                            <option value="">请选择子类型</option>
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label>故事概念：</label>
+                        <textarea id="storyConcept" class="textarea" rows="4" placeholder="简要描述您的故事核心概念..."></textarea>
+                    </div>
+                </div>
+
+                <div class="panel">
+                    <h2>第二步：生成细纲</h2>
+                    <div class="form-group">
+                        <label>卷数：</label>
+                        <input type="number" id="volumeCount" class="input" value="3" min="1" max="20">
+                    </div>
+                    <div class="button-group">
+                        <button class="btn btn-primary" id="btnGenWorldbuilding">🌍 生成世界观</button>
+                        <button class="btn btn-primary" id="btnGenVolumeSynopsis">📖 生成卷概要</button>
+                        <button class="btn btn-success" id="btnGenChapterSynopsis">📝 生成章节细纲</button>
+                    </div>
+                </div>
+
+                <div class="panel">
+                    <h2>第三步：查看结果</h2>
+                    <div class="form-group">
+                        <label>世界观设定：</label>
+                        <textarea id="worldbuilding" class="textarea" rows="6" readonly placeholder="点击上方按钮生成..."></textarea>
+                    </div>
+                    <div class="form-group">
+                        <label>卷概要：</label>
+                        <textarea id="volumeSynopsis" class="textarea" rows="8" readonly placeholder="点击上方按钮生成..."></textarea>
+                    </div>
+                    <div class="form-group">
+                        <label>章节细纲：</label>
+                        <textarea id="chapterSynopsis" class="textarea" rows="10" readonly placeholder="点击上方按钮生成..."></textarea>
+                    </div>
+                </div>
+            </div>
+
+            <!-- 大纲管理 -->
+            <div class="tab-content" id="tab-outline">
+                <div class="panel">
+                    <h2>大纲信息</h2>
+                    <div class="form-group">
+                        <label>全局规划：</label>
+                        <textarea id="globalPlan" class="textarea" rows="6" placeholder="输入全局规划..."></textarea>
+                    </div>
+                    <div class="form-group">
+                        <label>用户指令：</label>
+                        <textarea id="userContext" class="textarea" rows="4" placeholder="输入特殊要求..."></textarea>
+                    </div>
+                    <div class="button-group">
+                        <button class="btn btn-success" id="btnSaveOutline">💾 保存大纲</button>
+                        <button class="btn btn-primary" id="btnGenGlobalPlan">🔄 生成全局规划</button>
+                    </div>
+                </div>
+
+                <div class="panel">
+                    <h2>卷列表</h2>
+                    <div id="volumeList"></div>
+                </div>
+            </div>
+
+            <!-- 章节生成 -->
+            <div class="tab-content" id="tab-chapter">
+                <div class="panel">
+                    <h2>章节批量生成</h2>
+                    <div class="form-group">
+                        <label>选择卷：</label>
+                        <select id="chapterVolumeSelect" class="select">
+                            <option value="1">第1卷</option>
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label>起始章节号：</label>
+                        <input type="number" id="chapterStart" class="input" value="1" min="1">
+                    </div>
+                    <div class="form-group">
+                        <label>结束章节号：</label>
+                        <input type="number" id="chapterEnd" class="input" value="20" min="1">
+                    </div>
+                    <div class="button-group">
+                        <button class="btn btn-success" id="btnGenChapters">🚀 批量生成</button>
+                        <button class="btn btn-primary" id="btnContinueChapters">➡️ 续写章节</button>
+                        <button class="btn btn-info" id="btnDetectGaps">🔍 检测缺口</button>
+                    </div>
+                </div>
+
+                <div class="panel">
+                    <h2>生成进度</h2>
+                    <div id="chapterProgress">等待开始...</div>
+                </div>
+
+                <div class="panel">
+                    <h2>章节列表</h2>
+                    <div id="chapterList"></div>
+                </div>
+            </div>
+
+            <!-- 人物管理 -->
+            <div class="tab-content" id="tab-character">
+                <div class="panel">
+                    <h2>添加角色</h2>
+                    <div class="form-group">
+                        <label>角色姓名：</label>
+                        <input type="text" id="charName" class="input" placeholder="输入角色姓名">
+                    </div>
+                    <div class="form-group">
+                        <label>角色身份：</label>
+                        <input type="text" id="charIdentity" class="input" placeholder="主角/配角/反派等">
+                    </div>
+                    <div class="form-group">
+                        <label>角色性格：</label>
+                        <textarea id="charPersonality" class="textarea" rows="3" placeholder="性格描述（至少30字）"></textarea>
+                    </div>
+                    <div class="form-group">
+                        <label>角色背景：</label>
+                        <textarea id="charBackground" class="textarea" rows="3" placeholder="背景故事（至少50字）"></textarea>
+                    </div>
+                    <div class="button-group">
+                        <button class="btn btn-success" id="btnAddCharacter">➕ 添加角色</button>
+                        <button class="btn btn-primary" id="btnBatchGenChars">🤖 批量生成</button>
+                    </div>
+                </div>
+
+                <div class="panel">
+                    <h2>角色列表</h2>
+                    <div id="characterList"></div>
+                </div>
+            </div>
+
+            <!-- API配置 -->
+            <div class="tab-content" id="tab-settings">
+                <div class="panel">
+                    <h2>API 配置</h2>
+                    <div class="form-group">
+                        <label>选择服务商：</label>
+                        <select id="apiProvider" class="select">
+                            <option value="doubao">豆包</option>
+                            <option value="openai">OpenAI</option>
+                            <option value="claude">Claude</option>
+                            <option value="custom">自定义</option>
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label>API Key：</label>
+                        <input type="password" id="apiKey" class="input" placeholder="输入API密钥">
+                    </div>
+                    <div class="form-group">
+                        <label>API地址：</label>
+                        <input type="text" id="apiBase" class="input" placeholder="https://api.example.com/v1">
+                    </div>
+                    <div class="form-group">
+                        <label>模型名称：</label>
+                        <input type="text" id="modelName" class="input" placeholder="gpt-4, doubao-pro等">
+                    </div>
+                    <div class="form-group">
+                        <label>Temperature：</label>
+                        <input type="number" id="temperature" class="input" value="0.7" min="0" max="2" step="0.1">
+                    </div>
+                    <div class="form-group">
+                        <label>Max Tokens：</label>
+                        <input type="number" id="maxTokens" class="input" value="4000" min="100" max="32000">
+                    </div>
+                    <div class="button-group">
+                        <button class="btn btn-primary" id="btnSaveAPI">💾 保存配置</button>
+                        <button class="btn btn-success" id="btnTestAPI">🧪 测试连接</button>
+                    </div>
+                </div>
+            </div>
+        </main>
+    </div>
+
+    <!-- 设置弹窗 -->
+    <div class="modal" id="settingsModal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h2>系统设置</h2>
+                <button class="close-btn" data-close="settingsModal">&times;</button>
+            </div>
+            <div class="modal-body">
+                <p>设置内容...</p>
+            </div>
+        </div>
+    </div>
+
+    <!-- JavaScript 文件 -->
+    <script src="js/config.js"></script>
+    <script src="js/storage.js"></script>
+    <script src="js/api.js"></script>
+    <script src="js/utils.js"></script>
+    <script src="js/generator.js"></script>
+    <script src="js/app.js"></script>
+</body>
+</html>
