@@ -3518,7 +3518,17 @@ class NovelGenerator {
     }
 
     extractRoleCandidatesFromChapters(project, chapters, volumeNumber) {
-        const existingNames = new Set((project.outline.characters || []).map((character) => character.name).filter(Boolean));
+        const existingNames = new Set();
+        (project.outline.characters || []).forEach((character) => {
+            const primaryName = String(character.name || "").trim();
+            if (primaryName) {
+                existingNames.add(primaryName);
+            }
+            Utils.ensureArrayFromText(character.aliases || character["别名"] || "")
+                .map((alias) => String(alias || "").trim())
+                .filter(Boolean)
+                .forEach((alias) => existingNames.add(alias));
+        });
         const vagueLabels = new Set(["男主", "女主", "师尊", "反派", "主角", "配角", "众人", "路人", "黑衣人"]);
         const roleMap = {};
 
@@ -3541,6 +3551,9 @@ class NovelGenerator {
             Utils.ensureArrayFromText(chapter.characters).forEach((name) => addRole(name, `第${chapter.number}章出场人物`));
 
             const summary = chapter.summary || "";
+            this.extractOutlineCharacterEntries(summary).forEach((entry) => {
+                addRole(entry.name, entry.description || `第${chapter.number}章出场人物`);
+            });
             const sceneMatch = summary.match(/【出场人物】([\s\S]*?)(?:【|$)/);
             if (sceneMatch?.[1]) {
                 sceneMatch[1]
@@ -3573,6 +3586,44 @@ class NovelGenerator {
         });
 
         return roleMap;
+    }
+
+    extractOutlineCharacterEntries(summary) {
+        const text = String(summary || "");
+        if (!text.trim()) {
+            return [];
+        }
+
+        const sectionMatch = text.match(/【出场人物】\s*([\s\S]*?)(?=\n【|$)/);
+        const section = sectionMatch?.[1] ? String(sectionMatch[1]).trim() : "";
+        if (!section) {
+            return [];
+        }
+
+        const entries = [];
+        section.split(/\r?\n/).forEach((line) => {
+            const rawLine = line.trim();
+            if (!rawLine || (!rawLine.startsWith("-") && !rawLine.startsWith("•"))) {
+                return;
+            }
+
+            const cleaned = rawLine.replace(/^[•-]\s*/, "");
+            const nameMatch = cleaned.match(/^([\u4e00-\u9fa5]{2,4})/);
+            const name = String(nameMatch?.[1] || "").trim();
+            if (!name) {
+                return;
+            }
+
+            const description = cleaned
+                .replace(new RegExp(`^${name}`), "")
+                .replace(/^[（(：:\s-]+/, "")
+                .replace(/[）)]$/, "")
+                .trim();
+
+            entries.push({ name, description });
+        });
+
+        return entries;
     }
 
     buildEstablishedRelationshipText(project, focusNames = []) {
