@@ -30,21 +30,33 @@ class NovelGenerator {
         const genreConstraint = this.buildGenreConstraint(genre, subgenre || genre);
         const systemPrompt = [
             genreConstraint,
-            "你是一名资深中文网文策划编辑。",
-            "请根据小说标题、题材、主题和故事概念，生成适合长篇连载的世界观设定。",
-            "输出纯文本，不要使用 markdown 标题。"
+            "你是世界书构建专家“默默”，一位资深网文策划编辑，擅长构建宏大且富有创意的世界观设定。",
+            "请根据用户提供的世界观元素和故事概念，生成一段完整的世界观设定描述。",
+            "",
+            "【输出格式要求】",
+            "输出一段连贯的世界观描述文字（200-350字），包含以下要素：",
+            "1. 世界背景设定（时代、地点、基本规则）",
+            "2. 核心能量/修炼体系",
+            "3. 主要势力或组织",
+            "4. 特殊设定（系统、金手指等）",
+            "5. 核心冲突或矛盾",
+            "",
+            "【内容风格铁律】",
+            "- 简单易懂、直白、口语化",
+            "- 像讲故事一样描述，不要用论文式语言",
+            "- 禁止使用晦涩、抽象的词汇",
+            "- 直接输出世界观描述，不要任何标题、标记或额外说明"
         ].filter(Boolean).join("\n");
 
         const userPrompt = [
-            `小说标题：${title}`,
+            `小说标题：《${title || "未命名小说"}》`,
             `题材：${subgenre || genre || "未指定"}`,
             `核心主题：${theme || "未指定"}`,
-            `故事概念：${concept || "暂无"}`,
             "",
-            "请生成 300-500 字的世界观设定，要求：",
-            "1. 解释世界规则、冲突来源和人物生存逻辑。",
-            "2. 能直接服务后续卷纲、细纲和正文生成。",
-            "3. 语言风格偏网文策划，不写成百科词条。"
+            "【故事概念】",
+            concept || "暂无",
+            "",
+            "请根据以上信息，生成一段完整的世界观设定描述（200-350字），要求内容充实、层次丰富、逻辑清晰。"
         ].filter(Boolean).join("\n");
 
         return (await this.api.callLLM(userPrompt, systemPrompt, {
@@ -53,28 +65,61 @@ class NovelGenerator {
         })).trim();
     }
 
-    async generateVolumeSynopsis({ title, concept, genre, theme, worldbuilding, volumeCount, chaptersPerVolume, subgenre }) {
+    async generateVolumeSynopsis({ project, title, concept, genre, theme, worldbuilding, volumeCount, chaptersPerVolume, subgenre }) {
         const genreConstraint = this.buildGenreConstraint(genre, subgenre || genre);
+        const innovationPrompt = this.buildVolumeInnovationPrompt(project, concept, worldbuilding);
         const systemPrompt = [
             genreConstraint,
-            "你是一名资深长篇网文总策划。",
-            "请把一个故事拆成多卷卷纲，输出 JSON 数组。",
-            "每一卷都必须体现目标、冲突、高点和卷末钩子。"
+            `你是世界书构建专家“默默”，一位资深网文策划编辑，擅长构建宏大且富有创意的故事架构。`,
+            `请根据用户提供的世界观元素和故事概念，规划一部${volumeCount}卷的网络小说的卷概要。`,
+            "",
+            "【内容风格铁律】",
+            "你的所有输出都必须简单易懂、直白、口语化。要像一个优秀的故事员对朋友讲故事一样，而不是一个学者在写论文。绝对禁止使用任何晦涩、抽象、拗口或“高概念”的词汇和句子。",
+            "",
+            "【创意设计原则】",
+            "1. 使用分支节点思维：每卷都是一个关键的“故事节点”，代表故事中的重要转折点",
+            "2. 设置明确的角色目标和动机：无论剧情如何发展，主角都有清晰的长期目标",
+            "3. 利用世界设定作为故事框架：重要地点、事件和潜在冲突要贯穿始终",
+            "4. 设计被动响应而非主导叙事：让读者感觉他们在跟随故事，同时故事自然引导",
+            "",
+            "【多分支剧情设计】",
+            "- 每卷必须包含主线剧情和至少一条潜在支线",
+            "- 主线是推动故事前进的核心事件",
+            "- 支线是丰富世界观、深化人物的辅助剧情",
+            "- 各卷之间要有“钩子”——前一卷埋下的伏笔在后续卷中揭晓",
+            "",
+            "【每卷结局指令（必须严格执行）】",
+            `1. 非最终卷（第1卷到第${Math.max(1, volumeCount - 1)}卷）：每卷结尾必须设置强悬念钩子，引出下一卷的新冲突`,
+            "- 卷末必须出现：新的敌人/新的秘密/新的目标/新的地点/新的人物",
+            "- 禁止普通结尾，禁止“故事告一段落”的感觉",
+            "- 必须让读者强烈期待下一卷的内容",
+            `2. 最终卷（第${volumeCount}卷）：必须是真正的大结局`,
+            "- 解决所有主要悬念和伏笔",
+            "- 主角完成最终目标或获得最终成长",
+            "- 给予读者满足感和完整感，可以有开放式余韵，但不能是“待续”",
+            "",
+            "【输出要求】",
+            "1. 输出必须是 JSON 数组，不要输出任何额外说明或 markdown 标记",
+            "2. 每卷必须体现目标、困难、转折、高潮和卷末钩子",
+            "3. 各卷之间要有明确的剧情递进关系，体现“铺垫-冲突-高潮-缓和-新冲突”的节奏",
+            "4. 绝对不能有重复的剧情元素",
+            "5. 不能出现逻辑漏洞（如角色死而复生、能力忽高忽低、时间线混乱等）"
         ].filter(Boolean).join("\n");
 
         const userPrompt = [
-            `小说标题：${title}`,
+            `小说标题：《${title || "未命名小说"}》`,
             `题材：${subgenre || genre || "未指定"}`,
             `核心主题：${theme || "未指定"}`,
             `故事概念：${concept || "暂无"}`,
             `计划卷数：${volumeCount}`,
             `每卷计划章节数：${chaptersPerVolume}`,
             `世界观：${worldbuilding || "暂无"}`,
+            innovationPrompt ? `【反套路与创新建议】\n${innovationPrompt}` : "",
             "",
             "请输出 JSON 数组，每个对象包含：",
             "volume_number: 卷序号",
             "title: 卷名",
-            "summary: 本卷 150-240 字摘要，要说明起承转合和卷内高潮",
+            "summary: 本卷 150-250 字剧情概要，务必包含主线和至少一条支线，并说明主角目标、困难、关键转折、成长或新信息",
             "cliffhanger: 卷末钩子，一句话",
             "",
             "不要输出 JSON 之外的说明。"
@@ -109,10 +154,13 @@ class NovelGenerator {
             genre,
             subgenre || project?.outline?.subgenre || project?.subgenre || genre
         );
+        const usedPlotsContext = this.buildUsedPlotsSummary(project, volumeNumber);
+        const innovationPrompt = this.buildSynopsisInnovationPrompt(project, volumeNumber, concept, volumeSummary);
+        const previousVolumeEnding = this.buildPreviousVolumeEnding(project, volumeNumber);
         const systemPrompt = [
             genreConstraint,
             "你是一名中文长篇小说章节细纲策划编辑。",
-            "请严格根据当前卷卷纲、世界观、前置卷细纲和人物一致性约束，拆解出当前卷的章节细纲。",
+            "请严格根据当前卷卷纲、世界观、前置卷细纲、已用剧情去重要求和人物一致性约束，拆解出当前卷的章节细纲。",
             "输出必须是 JSON 数组，不要输出任何额外解释。"
         ].filter(Boolean).join("\n");
 
@@ -125,12 +173,15 @@ class NovelGenerator {
         );
 
         const userPrompt = [
-            `小说标题：${title}`,
+            `小说标题：《${title || "未命名小说"}》`,
             `题材：${subgenre || genre || "未指定"}`,
             `故事概念：${concept || "暂无"}`,
             `世界观：${worldbuilding || "暂无"}`,
             volumeSynopsisContext ? `【卷纲前置】\n${volumeSynopsisContext}` : "",
             previousChapterSynopsisContext ? `【前置细纲衔接】\n${previousChapterSynopsisContext}` : "",
+            previousVolumeEnding ? `【上一卷结尾（用于衔接）】\n${previousVolumeEnding}` : "",
+            usedPlotsContext,
+            innovationPrompt ? `【反套路与创新建议】\n${innovationPrompt}` : "",
             synopsisConsistencyContext,
             `当前卷：第 ${volumeNumber} 卷`,
             `计划章节数：${chapterCount}`,
@@ -146,9 +197,14 @@ class NovelGenerator {
             "",
             "额外要求：",
             "1. 章节之间必须层层递进，不能重复同一冲突。",
-            "2. 人物说话方式、行为逻辑、关系进展必须符合已有人设。",
-            "3. 如果出现男主、女主、师尊、反派等模糊代称，必须替换成真实姓名。",
-            "4. 尚未正式见面的人物，不能在细纲里提前写成熟人互动。"
+            "2. 已经在前面卷细纲中使用过的核心情节，不得重复或变相重复。",
+            "3. 每一章的核心事件必须是新的、不同的剧情推进点。",
+            "4. 每章都要服务当前卷主线，同时兼顾支线、伏笔或人物关系推进。",
+            "5. 如果桥段过于套路化，必须主动做变化，不要照搬常见模板。",
+            "6. 要注意当前卷与上一卷结尾的衔接，不能断层。",
+            "7. 人物说话方式、行为逻辑、关系进展必须符合已有人设。",
+            "8. 如果出现男主、女主、师尊、反派等模糊代称，必须替换成真实姓名。",
+            "9. 尚未正式见面的人物，不能在细纲里提前写成熟人互动。"
         ].filter(Boolean).join("\n");
 
         const parsed = await this.requestJSONArray(systemPrompt, userPrompt, {
@@ -163,43 +219,6 @@ class NovelGenerator {
             emotion_curve: item.emotion_curve || "",
             synopsis: item.synopsis || ""
         }));
-    }
-
-    async generateGlobalPlan({ project, title, theme, concept, worldbuilding, volumes, detailedOutline, chapterSynopsisText }) {
-        const systemPrompt = [
-            "你是一名长篇中文网文总编。",
-            "请根据详细大纲、世界观、卷纲和细纲，写出整本书的全局规划。",
-            "输出纯文本，不要使用 markdown 标题。"
-        ].join("\n");
-
-        const volumeText = (volumes || []).map((volume, index) =>
-            `第${index + 1}卷《${volume.title || `第${index + 1}卷`}》：${volume.summary || "暂无摘要"}`
-        ).join("\n");
-
-        const outlineContext = this.limitContext(detailedOutline || project?.outline?.detailed_outline || "", 5000);
-        const synopsisContext = chapterSynopsisText || this.buildAllChapterSynopsisContext(project, Number.MAX_SAFE_INTEGER);
-
-        const userPrompt = [
-            `小说标题：${title}`,
-            `核心主题：${theme || "未指定"}`,
-            `故事概念：${concept || "暂无"}`,
-            `世界观：${worldbuilding || "暂无"}`,
-            outlineContext ? `【详细大纲】\n${outlineContext}` : "",
-            volumeText ? `【卷纲】\n${volumeText}` : "",
-            synopsisContext ? `【章节细纲汇总】\n${this.limitContext(synopsisContext, 5000)}` : "",
-            "",
-            "请输出 500-1000 字的全局规划，包含：",
-            "1. 主线推进与阶段目标。",
-            "2. 卷与卷之间的承接关系。",
-            "3. 关键人物线与情感线。",
-            "4. 中后期升级空间与重大转折。",
-            "5. 注意不要把后续卷内容提前压缩到前期章节里。"
-        ].filter(Boolean).join("\n");
-
-        return (await this.api.callLLM(userPrompt, systemPrompt, {
-            temperature: 0.68,
-            maxTokens: 2600
-        })).trim();
     }
 
     async generateChapterOutlinesBatch({ project, volume, volumeNumber, startChapter, endChapter, existingChapters }) {
@@ -218,8 +237,9 @@ class NovelGenerator {
         const plotUnitContext = this.buildPlotUnitContext(startChapter, endChapter);
 
         const systemPrompt = [
-            "你是一名执行力很强的网文主编助手。",
-            "你的唯一任务是把详细大纲、世界观、全书规划、当前卷卷纲和当前卷细纲，转化为标准化章节大纲 JSON。",
+            "你是一个执行力极强的网文主编助手。",
+            "你的唯一任务是将用户提供的【详细细纲】转化为标准格式的章节大纲。",
+            "不要自己编！不要自己编！严格照着细纲写！",
             "必须严格遵守当前卷边界，不得提前串卷，不得擅自改写主线。",
             guardContext,
             consistencyContext
@@ -231,7 +251,6 @@ class NovelGenerator {
             `题材：${project.outline.subgenre || project.outline.genre || "未指定"}`,
             `故事概念：${project.outline.storyConcept || "暂无"}`,
             `世界观：${project.outline.worldbuilding || "暂无"}`,
-            `全书规划：${project.outline.global_plan_text || project.outline.global_plan || "暂无"}`,
             volumeSynopsisContext ? `【卷纲前置】\n${volumeSynopsisContext}` : "",
             allChapterSynopsisContext ? `【细纲前置】\n${allChapterSynopsisContext}` : "",
             plotUnitContext ? `【8章剧情单元规则】\n${plotUnitContext}` : "",
@@ -241,11 +260,29 @@ class NovelGenerator {
             characterDigest ? `【已有角色与人设】\n${characterDigest}` : "",
             existingSummary ? `【前情提要】\n${existingSummary}` : "",
             "",
+            "【绝对原则】",
+            "1. 剧情不可重复：已有章节已经写过的事件，后面不得再次出现相同或高度相似的桥段。",
+            "2. 你本次生成的多个章节之间也不能重复，每一章的核心事件都必须是全新的。",
+            "3. 角色状态必须延续前文：位置、伤势、情绪、装备、时间线都不能断裂。",
+            "4. 新引入角色必须符合当前场景和剧情逻辑。",
+            "5. 如果细纲里包含后续卷内容，严禁压缩写进当前卷。",
+            "",
+            "【输出格式标准（System 9）】",
+            "summary 字段必须严格包含以下标签，并保留空行结构：",
+            "【章节目标】",
+            "【出场人物】",
+            "【场景】",
+            "【核心事件】",
+            "【情绪曲线】",
+            "【情节推进】",
+            "【伏笔处理】",
+            "【下章铺垫】",
+            "",
             `请生成第 ${startChapter} 章到第 ${endChapter} 章的章节大纲。`,
             "输出 JSON 数组，每个对象必须包含：",
             "chapter_number: 章节号",
             "title: 章节标题",
-            "summary: System 9 风格章节大纲，至少包含【章节目标】【出场人物】【场景】【核心事件】【情绪曲线】【情节推进】【伏笔处理】【下章铺垫】",
+            "summary: 严格遵守 System 9 模板，内容充实，不要缺字段",
             "key_event: 核心事件",
             "emotion_curve: 情绪曲线",
             "characters: 出场人物数组",
@@ -256,9 +293,13 @@ class NovelGenerator {
             "",
             "特别要求：",
             "1. next_chapter_setup 是下章铺垫，不是预告；只能写状态、氛围、悬念、暗示，不能直接写结果。",
-            "2. 细纲里涉及的人物称呼必须尽量使用真实姓名。",
-            "3. 人物行为和关系推进必须与既有人设一致。",
-            "4. 第 8 章、第 16 章等单元收束章要负责为下一单元做悬念铺垫。"
+            "2. summary 中的【下章铺垫】也必须遵守同样规则：只埋因，不写果。",
+            "3. summary 中的【情节推进】必须保留“1.【类型标签】内容”的格式。",
+            "4. 【出场人物】必须使用“- 姓名（简介）”的格式。",
+            "5. 细纲里涉及的人物称呼必须尽量使用真实姓名。",
+            "6. 人物行为和关系推进必须与既有人设一致。",
+            "7. 第 8 章、第 16 章等单元收束章要负责为下一单元做悬念铺垫。",
+            "8. JSON 中严禁输出 markdown 代码块标记。"
         ].filter(Boolean).join("\n");
 
         const parsed = await this.requestJSONArray(systemPrompt, userPrompt, {
@@ -294,7 +335,8 @@ class NovelGenerator {
 
         const title = project.outline?.title || "未命名小说";
         const theme = project.outline?.theme || "暂无";
-        const globalPlan = project.outline?.global_plan_text || project.outline?.global_plan || "";
+        const detailedOutline = project.outline?.detailed_outline || "";
+        const worldbuilding = project.outline?.worldbuilding || "";
         const existingCharacters = project.outline?.characters || [];
         const existingCharsText = existingCharacters.length
             ? existingCharacters.map((character) => [
@@ -334,16 +376,20 @@ class NovelGenerator {
             const batchStr = batchItems.map(([label, desc]) => `- ${label}${desc ? `（${desc}）` : ""}`).join("\n");
 
             const systemPrompt = [
-                `你是一位资深网文主编，擅长为小说《${title}》批量创建完整人物设定。`,
+                "你是一位资深网文主编，擅长设定复杂、立体、有反差感的人物角色。",
+                `现在需要为小说《${title}》中的多个角色批量创建完整的人物设定。`,
                 "",
                 "【小说信息】",
-                `标题：${title}`,
+                `标题：《${title}》`,
                 `主题：${theme}`,
                 "",
-                "【全书规划】",
-                this.limitContext(globalPlan, 800) || "暂无规划",
+                "【世界观】",
+                this.limitContext(worldbuilding, 600) || "暂无世界观",
                 "",
-                "【已有角色及其背景（必须保持关系一致性）】",
+                "【详细大纲】",
+                this.limitContext(detailedOutline, 800) || "暂无细纲",
+                "",
+                "【已有角色及其背景（必须保持关系一致性！）】",
                 existingCharsText,
                 "",
                 "【需要生成人设的角色描述】",
@@ -352,19 +398,20 @@ class NovelGenerator {
                 "【严格要求】",
                 `1. 输出必须是 JSON 数组，包含 ${batchItems.length} 个角色对象。`,
                 "2. 每个角色必须包含所有字段：name, identity, age, gender, personality, background, appearance, abilities, goals, relationships 以及对应中文字段。",
-                "3. personality / 性格特点 不少于30字。",
-                "4. background / 背景故事 不少于50字。",
-                "5. appearance / 外貌描述 不少于30字。",
-                "6. 关系一致性极其重要：新角色身份和背景必须与已有角色保持逻辑一致，relationships 字段中必须明确写出与已有角色的关系。",
-                "7. 若已有角色已经占据某个地位，新角色不能无故取代。",
+                "3. personality / 性格特点：必须包含核心性格特点，字数不少于30字。",
+                "4. background / 背景故事：必须包含核心冲突和与故事的关联，字数不少于50字。",
+                "5. appearance / 外貌描述：必须有画面感，字数不少于30字。",
+                "6. 关系一致性极其重要：新角色的身份和背景必须与已有角色保持逻辑一致。",
+                "7. 若已有角色设定了某个地位，新角色不能无故取代，必须在 relationships 字段中明确说明与已有角色的关系。",
                 "8. 角色设定必须符合当前小说的世界观和剧情发展。",
-                "9. 不要包含 markdown 标记，直接返回纯 JSON 数组。",
+                "9. 各角色之间要有差异化，避免雷同。",
+                "10. 不要包含任何 markdown 标记，直接返回纯 JSON 数组。",
                 "",
                 "【输出格式示例】",
                 `[${JSON.stringify(exampleChar, null, 2)}]`
             ].join("\n");
 
-            const parsed = await this.requestJSONArray(systemPrompt, `请为以上 ${batchItems.length} 个角色批量生成完整人物设定。`, {
+            const parsed = await this.requestJSONArray(systemPrompt, `请为以上 ${batchItems.length} 个角色批量生成完整的人物设定，确保每个角色都有完整的中英文字段。`, {
                 temperature: 0.75,
                 maxTokens: 12000,
                 timeout: 240000
@@ -428,7 +475,7 @@ class NovelGenerator {
         const systemPrompt = [
             "你是一名擅长长篇中文网文的章节写手。",
             "请根据已经确认的章节大纲扩写正文草稿。",
-            "必须严格遵守：全局设定、本章设定、角色锁定、世界观、全书规划、人物一致性、动态状态、章末快照衔接。",
+            "必须严格遵守：全局设定、本章设定、角色锁定、世界观、人物一致性、动态状态、章末快照衔接。",
             "必须完成本章结尾铺垫任务，但绝对不能把下一章核心事件提前写出来。",
             "正文写完后，必须按要求追加状态输出和追踪输出。",
             guardContext,
@@ -498,7 +545,6 @@ class NovelGenerator {
     buildHiddenSecretGuard(project, chapterNumber) {
         const text = [
             project.outline?.detailed_outline || "",
-            project.outline?.global_plan_text || project.outline?.global_plan || "",
             project.outline?.user_context || ""
         ].join("\n");
         if (!text) {
@@ -784,10 +830,6 @@ class NovelGenerator {
         if (project.outline?.worldbuilding) {
             sections.push(`【世界观核心设定】\n${this.limitContext(project.outline.worldbuilding, 1200)}`);
         }
-        const plan = project.outline?.global_plan_text || project.outline?.global_plan || "";
-        if (plan) {
-            sections.push(`【全书规划】\n${this.limitContext(plan, 1500)}`);
-        }
         const detailed = project.outline?.detailed_outline || "";
         if (detailed) {
             sections.push(`【详细大纲参考】\n${this.limitContext(detailed, 1800)}`);
@@ -892,7 +934,7 @@ class NovelGenerator {
                 "{{next_chapter_forbidden_preview}}",
                 "",
                 "写作要求：",
-                "1. 必须严格遵守本章大纲、全局设定、本章设定、世界观、全书规划和角色锁定。",
+                "1. 必须严格遵守本章大纲、全局设定、本章设定、世界观、详细大纲参考和角色锁定。",
                 "2. 开头必须承接前文五章和章末快照，中间推进剧情，结尾完成本章铺垫任务。",
                 "3. 人物行为、对话、物品、技能、身份、时间地点必须与既有状态一致。",
                 "4. 不要把下一章核心事件提前展开，只能做铺垫。",
@@ -908,7 +950,7 @@ class NovelGenerator {
             title: project.outline.title || "",
             genre: project.outline.subgenre || project.outline.genre || "",
             theme: project.outline.theme || "",
-            world_and_plan_context: worldAndPlanContext || "【世界观核心设定】暂无\n\n【全书规划】暂无",
+            world_and_plan_context: worldAndPlanContext || "【世界观核心设定】暂无\n\n【详细大纲参考】暂无",
             relevant_characters: characterDigest || "暂无明确角色设定",
             outline: chapter.summary || "",
             prev_content: prevContent || "暂无前文",
@@ -1186,6 +1228,22 @@ class NovelGenerator {
         }).filter(Boolean).join("\n\n");
     }
 
+    buildVolumeInnovationPrompt(project, concept, worldbuilding) {
+        const history = (project?.outline?.volumes || [])
+            .map((volume, index) => ({ index, summary: volume.summary || "" }))
+            .filter((item) => item.summary.trim())
+            .map((item) => `第${item.index + 1}卷：${item.summary}`)
+            .slice(-4);
+
+        return [
+            "优先规避套路化卷纲：重复打脸、机械升级、同构副本、只靠反转硬拽剧情。",
+            "每卷最好有新的目标、新的压力源、新的信息增量和新的卷末钩子。",
+            history.length ? `已有卷纲参考：\n${history.join("\n")}` : "",
+            concept ? `故事概念提醒：${this.limitContext(concept, 500)}` : "",
+            worldbuilding ? `世界观提醒：${this.limitContext(worldbuilding, 500)}` : ""
+        ].filter(Boolean).join("\n");
+    }
+
     buildPreviousChapterSynopsisContext(project, currentVolumeNumber) {
         if (!project?.outline?.volumes?.length || currentVolumeNumber <= 1) {
             return "";
@@ -1198,6 +1256,67 @@ class NovelGenerator {
             })
             .filter(Boolean)
             .join("\n\n");
+    }
+
+    buildUsedPlotsSummary(project, currentVolumeNumber) {
+        const allPrevChapters = [];
+        (project?.outline?.volumes || [])
+            .slice(0, Math.max(0, currentVolumeNumber - 1))
+            .forEach((volume) => {
+                const synopsis = volume.chapterSynopsis || volume.chapter_synopsis || "";
+                synopsis
+                    .split("\n")
+                    .map((line) => line.trim())
+                    .filter(Boolean)
+                    .forEach((line) => allPrevChapters.push(line));
+            });
+
+        if (!allPrevChapters.length) {
+            return "";
+        }
+
+        return [
+            "【以下情节已经使用过，绝对禁止重复或变相重复】",
+            this.limitContext(allPrevChapters.join("\n"), 3600),
+            `（共 ${allPrevChapters.length} 条前置细纲记录）`
+        ].join("\n");
+    }
+
+    buildSynopsisInnovationPrompt(project, volumeNumber, concept, volumeSummary) {
+        const recentSynopsis = [];
+        (project?.outline?.volumes || [])
+            .slice(0, Math.max(0, volumeNumber - 1))
+            .forEach((volume) => {
+                const synopsis = volume.chapterSynopsis || volume.chapter_synopsis || "";
+                if (synopsis) {
+                    recentSynopsis.push(synopsis);
+                }
+            });
+
+        return [
+            "优先规避套路化桥段：重复打脸、机械升级、无意义误会、为了反转而反转。",
+            "如果当前卷需要战斗、修炼、探索、对话桥段，请尽量换角度设计，不要复制前文结构。",
+            recentSynopsis.length ? `最近前文参考：\n${this.limitContext(recentSynopsis.slice(-2).join("\n"), 1200)}` : "",
+            volumeSummary ? `当前卷方向：${this.limitContext(volumeSummary, 400)}` : "",
+            concept ? `故事概念提醒：${this.limitContext(concept, 300)}` : ""
+        ].filter(Boolean).join("\n");
+    }
+
+    buildPreviousVolumeEnding(project, currentVolumeNumber) {
+        if (!project?.outline?.volumes?.length || currentVolumeNumber <= 1) {
+            return "";
+        }
+        const previousVolume = project.outline.volumes[currentVolumeNumber - 2];
+        const synopsis = previousVolume?.chapterSynopsis || previousVolume?.chapter_synopsis || "";
+        if (!synopsis) {
+            return "";
+        }
+        return synopsis
+            .split("\n")
+            .map((line) => line.trim())
+            .filter(Boolean)
+            .slice(-3)
+            .join("\n");
     }
 
     buildAllChapterSynopsisContext(project, upToVolumeNumber) {

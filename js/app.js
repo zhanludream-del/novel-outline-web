@@ -59,7 +59,6 @@ class NovelOutlineWebApp {
             volumeSynopsisText: document.getElementById("volumeSynopsisText"),
             synopsisCurrentVolume: document.getElementById("synopsisCurrentVolume"),
             synopsisOutput: document.getElementById("synopsisOutput"),
-            globalPlanText: document.getElementById("globalPlanText"),
             outlineVolumeList: document.getElementById("outlineVolumeList"),
 
             chapterVolumeSelect: document.getElementById("chapterVolumeSelect"),
@@ -125,7 +124,6 @@ class NovelOutlineWebApp {
             btnGenerateAllSynopsis: document.getElementById("btnGenerateAllSynopsis"),
             btnImportSynopsisToOutline: document.getElementById("btnImportSynopsisToOutline"),
             btnCopySynopsis: document.getElementById("btnCopySynopsis"),
-            btnGenerateGlobalPlan: document.getElementById("btnGenerateGlobalPlan"),
             btnAddVolume: document.getElementById("btnAddVolume"),
             btnClearVolumes: document.getElementById("btnClearVolumes"),
             btnGenerateChapters: document.getElementById("btnGenerateChapters"),
@@ -238,9 +236,6 @@ class NovelOutlineWebApp {
         this.bindProjectField("worldbuildingText", ["outline", "worldbuilding"]);
         this.bindProjectField("volumeSynopsisText", ["synopsisData", "volumeSynopsis"]);
         this.bindProjectField("synopsisOutput", ["synopsisData", "synopsisOutput"]);
-        this.bindProjectField("globalPlanText", ["outline", "global_plan_text"], (value) => {
-            this.novelData.outline.global_plan = value;
-        });
         this.bindProjectField("detailedOutlineInput", ["outline", "detailed_outline"]);
         this.bindProjectField("globalSettingNoteInput", ["global_setting_note"]);
         this.bindProjectField("currentPromptTemplateInput", ["prompt_state", "current_prompt"]);
@@ -343,7 +338,6 @@ class NovelOutlineWebApp {
         this.elements.btnGenerateAllSynopsis.addEventListener("click", () => this.safeAsync(() => this.generateAllVolumeSynopsis()));
         this.elements.btnImportSynopsisToOutline.addEventListener("click", () => this.importSynopsisToOutline());
         this.elements.btnCopySynopsis.addEventListener("click", () => Utils.copyText(this.elements.synopsisOutput.value));
-        this.elements.btnGenerateGlobalPlan.addEventListener("click", () => this.safeAsync(() => this.generateGlobalPlan()));
         this.elements.btnAddVolume.addEventListener("click", () => this.addVolume());
         this.elements.btnClearVolumes.addEventListener("click", () => this.clearVolumes());
 
@@ -677,7 +671,6 @@ ${(detailedOutline || concept || "未填写").slice(0, 2200)}`;
         this.elements.worldbuildingText.value = outline.worldbuilding || synopsis.worldbuilding || "";
         this.elements.volumeSynopsisText.value = synopsis.volumeSynopsis || synopsis.volume_synopsis || "";
         this.elements.synopsisOutput.value = synopsis.synopsisOutput || synopsis.synopsis_output || "";
-        this.elements.globalPlanText.value = outline.global_plan_text || outline.global_plan || "";
         this.elements.detailedOutlineInput.value = outline.detailed_outline || "";
         this.elements.globalSettingNoteInput.value = this.novelData.global_setting_note || "";
         if (!this.novelData.prompt_state.current_prompt) {
@@ -1585,7 +1578,10 @@ ${(detailedOutline || concept || "未填写").slice(0, 2200)}`;
     async generateVolumeSynopsis() {
         const payload = this.validateProjectBase();
         await this.runWithLoading("正在生成卷纲...", async () => {
-            const volumes = await this.generator.generateVolumeSynopsis(payload);
+            const volumes = await this.generator.generateVolumeSynopsis({
+                project: this.novelData,
+                ...payload
+            });
             const oldVolumes = this.novelData.outline.volumes.slice();
 
             this.novelData.outline.volumes = volumes.map((item, index) => {
@@ -1684,32 +1680,6 @@ ${(detailedOutline || concept || "未填写").slice(0, 2200)}`;
         this.renderVolumeCards();
         this.switchTab("outline");
         Utils.showMessage("已把章节细纲同步到卷纲管理。", "success");
-    }
-
-    async generateGlobalPlan() {
-        if (!this.novelData.outline.volumes.some((volume) => volume.summary)) {
-            throw new Error("请先生成至少一卷卷纲。");
-        }
-
-        await this.runWithLoading("正在生成全局规划...", async () => {
-            const result = await this.generator.generateGlobalPlan({
-                project: this.novelData,
-                title: this.novelData.outline.title,
-                theme: this.novelData.outline.theme,
-                concept: this.novelData.outline.storyConcept,
-                worldbuilding: this.novelData.outline.worldbuilding,
-                volumes: this.novelData.outline.volumes,
-                detailedOutline: this.novelData.outline.detailed_outline || "",
-                chapterSynopsisText: this.buildCombinedChapterSynopsisText()
-            });
-
-            this.novelData.outline.global_plan = result;
-            this.novelData.outline.global_plan_text = result;
-            this.elements.globalPlanText.value = result;
-            this.persist(true);
-            Utils.showMessage("全局规划已生成。", "success");
-            Utils.log("全局规划生成完成。", "success");
-        });
     }
 
     getCurrentChapterVolume() {
