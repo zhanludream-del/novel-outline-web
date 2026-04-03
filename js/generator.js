@@ -1264,6 +1264,131 @@ class NovelGenerator {
         });
     }
 
+    extractSummarySection(summary, sectionTitle) {
+        const text = String(summary || "");
+        if (!text.trim()) {
+            return "";
+        }
+        const match = text.match(new RegExp(`【${sectionTitle}】([\\s\\S]*?)(?=\\n【|$)`));
+        return match?.[1] ? String(match[1]).trim() : "";
+    }
+
+    buildFallbackProgressLines(item = {}, coreEvent = "") {
+        const base = String(coreEvent || item.key_event || "").trim() || `围绕《${item.title || "当前章节"}》推进主线事件`;
+        const progress = [
+            `1.【承接】先承接上一章留下的状态、人物情绪与未完事项，把本章矛盾自然接起来，并让主角明确本章要处理的核心问题。`,
+            `2.【推进】围绕“${Utils.summarizeText(base, 36)}”展开行动，让人物通过对话、博弈、观察或行动把局势往前推一步。`,
+            `3.【受阻】在推进过程中加入新的阻力、误判、代价或局势变化，避免一条线平推到底，让本章中段真正形成波折。`,
+            `4.【变化】让人物关系、信息认知、资源状态或场上局势发生实质变化，使本章读完后能看出主线确实前进了。`,
+            `5.【收束】在本章结尾收住本章阶段结果，同时留下能被下一章直接接住的状态变化、悬念或余波。`
+        ];
+        return progress.join("\n");
+    }
+
+    normalizeCharacterSection(item = {}, existingSection = "") {
+        const existing = String(existingSection || "").trim();
+        if (existing) {
+            const lines = existing
+                .split(/\r?\n/)
+                .map((line) => line.trim())
+                .filter(Boolean)
+                .map((line) => line.startsWith("- ") ? line : `- ${line.replace(/^[•\-]\s*/, "")}`);
+            return lines.join("\n");
+        }
+
+        const characters = Utils.ensureArrayFromText(item.characters);
+        if (characters.length) {
+            return characters.slice(0, 8).map((name) => `- ${name}（本章相关人物）`).join("\n");
+        }
+
+        return "- 主角（承接当前主线）";
+    }
+
+    normalizeForeshadowSection(item = {}, existingSection = "") {
+        const existing = String(existingSection || "").trim();
+        if (existing) {
+            return existing;
+        }
+        const foreshadows = Utils.ensureArrayFromText(item.foreshadows);
+        if (foreshadows.length) {
+            return [
+                `- 新埋：${foreshadows.slice(0, 2).join("；")}`,
+                "- 回收：如无明确回收点，可在正文中通过细节呼应前文伏笔"
+            ].join("\n");
+        }
+        return "- 新埋：结合当前冲突埋下轻度悬念或信息差\n- 回收：如有前文伏笔，可在本章做轻度呼应";
+    }
+
+    normalizeProgressSection(item = {}, existingSection = "", coreEvent = "") {
+        const existing = String(existingSection || "").trim();
+        if (!existing) {
+            return this.buildFallbackProgressLines(item, coreEvent);
+        }
+
+        const lines = existing
+            .split(/\r?\n/)
+            .map((line) => line.trim())
+            .filter(Boolean);
+        const normalized = lines.map((line, index) => {
+            if (/^\d+\.\s*【.+?】/.test(line)) {
+                return line;
+            }
+            const cleaned = line.replace(/^[•\-]\s*/, "");
+            return `${index + 1}.【推进】${cleaned}`;
+        });
+
+        while (normalized.length < 5) {
+            const fallbackLines = this.buildFallbackProgressLines(item, coreEvent).split("\n");
+            normalized.push(fallbackLines[normalized.length] || `${normalized.length + 1}.【推进】围绕当前主线继续推进，并补足必要的过程细节。`);
+        }
+
+        return normalized.slice(0, 5).join("\n");
+    }
+
+    normalizeSystem9Summary(item = {}) {
+        const source = String(item.summary || "").trim();
+        const chapterTitle = String(item.title || `第${item.chapter_number || item.number || "?"}章`).trim();
+        const rawGoal = this.extractSummarySection(source, "章节目标");
+        const rawCharacters = this.extractSummarySection(source, "出场人物");
+        const rawScene = this.extractSummarySection(source, "场景");
+        const rawCoreEvent = this.extractSummarySection(source, "核心事件");
+        const rawEmotion = this.extractSummarySection(source, "情绪曲线");
+        const rawProgress = this.extractSummarySection(source, "情节推进");
+        const rawForeshadow = this.extractSummarySection(source, "伏笔处理");
+        const rawHook = this.extractSummarySection(source, "下章铺垫");
+
+        const coreEvent = String(rawCoreEvent || item.key_event || "").trim()
+            || `${chapterTitle}围绕当前卷主线展开新的关键推进，并推动人物关系或局势发生明确变化。`;
+        const goal = String(rawGoal || "").trim()
+            || `围绕“${Utils.summarizeText(coreEvent, 30)}”推进本章主目标，并让当前矛盾取得阶段性结果。`;
+        const scene = String(rawScene || "").trim()
+            || "当前卷主场景中与本章冲突直接相关的地点，气氛需要服务本章主要矛盾。";
+        const emotion = String(rawEmotion || item.emotion_curve || "").trim()
+            || "承压→对抗→余波";
+        const characters = this.normalizeCharacterSection(item, rawCharacters);
+        const progress = this.normalizeProgressSection(item, rawProgress, coreEvent);
+        const foreshadow = this.normalizeForeshadowSection(item, rawForeshadow);
+        const hookRaw = String(rawHook || "").trim()
+            || this.toHookStyleText(
+                item.next_chapter_setup?.suspense_hook
+                || item.next_chapter_setup?.state_setup
+                || item.next_chapter_setup?.atmosphere_setup
+                || "本章收尾后，异样已经逼近，但真正的变化还没有完全揭开。"
+            );
+        const hook = this.containsSpoilerStyleHook(hookRaw) ? this.toHookStyleText(hookRaw) : hookRaw;
+
+        return [
+            `【章节目标】\n${goal}`,
+            `【出场人物】\n${characters}`,
+            `【场景】\n${scene}`,
+            `【核心事件】\n${coreEvent}`,
+            `【情绪曲线】\n${emotion}`,
+            `【情节推进】\n${progress}`,
+            `【伏笔处理】\n${foreshadow}`,
+            `【下章铺垫】\n${hook}`
+        ].join("\n\n");
+    }
+
     sanitizeChapterOutlineHookData(item = {}) {
         const nextSetup = item.next_chapter_setup && typeof item.next_chapter_setup === "object"
             ? { ...item.next_chapter_setup }
@@ -1275,7 +1400,7 @@ class NovelGenerator {
             }
         });
 
-        const summary = this.replaceSummarySection(item.summary || "", "下章铺垫", (body) => {
+        let summary = this.replaceSummarySection(item.summary || "", "下章铺垫", (body) => {
             if (!body) {
                 return body;
             }
@@ -1292,6 +1417,12 @@ class NovelGenerator {
                 })
                 .filter(Boolean);
             return cleanedLines.join("\n");
+        });
+
+        summary = this.normalizeSystem9Summary({
+            ...item,
+            summary,
+            next_chapter_setup: nextSetup
         });
 
         return {
