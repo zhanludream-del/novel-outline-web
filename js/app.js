@@ -219,7 +219,7 @@ class NovelOutlineWebApp {
 
         const params = new URLSearchParams(window.location.search);
         const urlVersion = params.get("v");
-        const buildVersion = "2026.04.03-b";
+        const buildVersion = "2026.04.03-c";
         const label = urlVersion ? `版本 ${urlVersion}` : `版本 ${buildVersion}`;
 
         this.elements.appVersionChip.textContent = label;
@@ -4355,6 +4355,11 @@ ${(detailedOutline || concept || "未填写").slice(0, 2200)}`;
         }
 
         const task = async () => {
+            const roleCandidates = Object.entries(
+                this.generator.extractRoleCandidatesFromChapters(this.novelData, outlineChapters, volumeNumber) || {}
+            );
+            const estimatedBatches = Math.max(1, Math.ceil(roleCandidates.length / 8));
+
             Utils.updateLoading("正在从大纲里提取角色线索...", {
                 progress: 10,
                 detail: "先同步章纲中的出场人物"
@@ -4366,8 +4371,9 @@ ${(detailedOutline || concept || "未填写").slice(0, 2200)}`;
 
             Utils.updateLoading("角色线索提取完成，开始分批生成人设...", {
                 progress: 18,
-                detail: `已预同步 ${preseeded.added + preseeded.updated} 条角色信息`
+                detail: `识别到 ${roleCandidates.length} 名候选角色，共 ${estimatedBatches} 批`
             });
+            Utils.log(`人物补全任务已开始：识别到 ${roleCandidates.length} 名候选角色，共 ${estimatedBatches} 批。`, "info");
 
             const generatedCharacters = await this.generator.generateCharactersFromOutlines({
                 project: this.novelData,
