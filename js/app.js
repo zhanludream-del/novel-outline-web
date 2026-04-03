@@ -2327,7 +2327,7 @@ ${(detailedOutline || concept || "未填写").slice(0, 2200)}`;
                 chapter.line || `第${chapter.chapter_number}章：${chapter.title} - ${chapter.synopsis || chapter.key_event || ""}`
             ).join("\n");
 
-            const synopsisSyncResult = this.generator.mergeSynopsisStateFromGeneratedChapters(
+            const synopsisSyncResult = await this.generator.syncSynopsisStateFromGeneratedChapters(
                 this.novelData,
                 chapters,
                 volumeNumber,
@@ -2351,6 +2351,9 @@ ${(detailedOutline || concept || "未填写").slice(0, 2200)}`;
 
             if (synopsisSyncResult.mainMappings.length) {
                 Utils.log(`第 ${volumeNumber} 卷主角映射已更新：${synopsisSyncResult.mainMappings.join("，")}`, "success");
+            }
+            if (synopsisSyncResult.conservativeMainMappings?.length) {
+                Utils.log(`第 ${volumeNumber} 卷保守识别补充了主角锁定：${synopsisSyncResult.conservativeMainMappings.join("，")}`, "success");
             }
             if (synopsisSyncResult.supportingMappings.length) {
                 Utils.log(`第 ${volumeNumber} 卷配角映射已更新：${synopsisSyncResult.supportingMappings.join("，")}`, "success");

@@ -2184,6 +2184,118 @@ class NovelGenerator {
         };
     }
 
+    async syncSynopsisStateFromGeneratedChapters(project, chapters, volumeNumber, inputs = {}) {
+        const syncResult = this.mergeSynopsisStateFromGeneratedChapters(project, chapters, volumeNumber, inputs);
+        const conservativeResult = await this.resolveMainCharacterNamesFromSynopsis({
+            project,
+            chapters,
+            volumeNumber,
+            concept: inputs.concept || "",
+            volumeSummary: inputs.volumeSummary || ""
+        });
+
+        return {
+            ...syncResult,
+            conservativeMainMappings: conservativeResult.appliedMappings || [],
+            conservativeEvidence: conservativeResult.evidence || {}
+        };
+    }
+
+    async resolveMainCharacterNamesFromSynopsis({ project, chapters, volumeNumber, concept, volumeSummary }) {
+        const synopsisData = this.restoreSynopsisMainCharacters(project);
+        const chapterLines = (chapters || [])
+            .map((chapter) => chapter.line || `第${chapter.chapter_number || chapter.number}章：${chapter.title || ""} - ${chapter.synopsis || chapter.key_event || ""}`)
+            .filter(Boolean);
+
+        if (!chapterLines.length) {
+            return { appliedMappings: [], evidence: {} };
+        }
+
+        const unresolvedRoles = ["男主", "女主"].filter((role) => {
+            if (synopsisData.main_characters?.[role]) {
+                return false;
+            }
+            return (this.getSynopsisRoleAliases()[role] || []).some((alias) =>
+                chapterLines.some((line) => String(line).includes(alias)) ||
+                String(concept || "").includes(alias) ||
+                String(volumeSummary || "").includes(alias)
+            );
+        });
+
+        if (!unresolvedRoles.length) {
+            return { appliedMappings: [], evidence: {} };
+        }
+
+        const mappingLines = Object.entries(synopsisData.vague_to_name_mapping || {})
+            .slice(0, 20)
+            .map(([vagueTerm, specificName]) => `- ${vagueTerm} -> ${specificName}`);
+        const prompt = [
+            `请根据以下信息，识别第${volumeNumber}卷章节细纲里已经明确建立的主角名字。`,
+            "",
+            `待识别角色：${unresolvedRoles.join("、")}`,
+            "",
+            "规则：",
+            "1. 只能返回章节细纲里已经实际出现过的具体中文名字，绝对不能新起名。",
+            "2. 如果证据不足，必须返回空字符串，不要猜。",
+            "3. 同一个名字不能同时分配给两个角色。",
+            "4. 如果某个角色已经有锁定名字，就不要改写。",
+            "5. 重点是帮助后续卷沿用已确定名字，不要把配角误判成主角。",
+            "",
+            "输出严格 JSON：",
+            '{',
+            '  "main_characters": {"男主": "", "女主": ""},',
+            '  "confidence": {"男主": "高/中/低", "女主": "高/中/低"},',
+            '  "evidence": {"男主": "简述依据", "女主": "简述依据"}',
+            '}',
+            "",
+            `故事概念：\n${concept || "暂无"}`,
+            "",
+            `分卷概要：\n${volumeSummary || "暂无"}`,
+            "",
+            `当前已知映射：\n${mappingLines.length ? mappingLines.join("\n") : "（暂无）"}`,
+            "",
+            `章节细纲：\n${chapterLines.join("\n")}`
+        ].join("\n");
+
+        let parsed = null;
+        try {
+            const raw = await this.api.callLLM(
+                prompt,
+                "你是角色映射校对助手。只做保守识别，不要补写剧情，不要发散解释。",
+                {
+                    temperature: 0.1,
+                    maxTokens: 1200
+                }
+            );
+            parsed = Utils.parseJsonResponse(raw);
+        } catch (error) {
+            return { appliedMappings: [], evidence: {} };
+        }
+
+        if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
+            return { appliedMappings: [], evidence: {} };
+        }
+
+        const appliedMappings = [];
+        const evidence = {};
+        unresolvedRoles.forEach((role) => {
+            const name = String(parsed.main_characters?.[role] || "").trim();
+            const confidence = String(parsed.confidence?.[role] || "").trim();
+            const reason = String(parsed.evidence?.[role] || "").trim();
+            if (!name || !["高", "中"].includes(confidence)) {
+                return;
+            }
+            if (this.applySynopsisMainCharacter(project, role, name, volumeNumber)) {
+                appliedMappings.push(`${role}→${name}`);
+                if (reason) {
+                    evidence[role] = reason;
+                }
+            }
+        });
+
+        return { appliedMappings, evidence };
+    }
+
     composeChapterPrompt({
         project,
         volume,
@@ -2670,11 +2782,80 @@ class NovelGenerator {
             return "";
         }
 
+        const repeatRiskSummary = this.buildSynopsisRepeatRiskSummary(allPrevChapters);
         return [
             "【以下情节已经使用过，绝对禁止重复或变相重复】",
             this.limitContext(allPrevChapters.join("\n"), 3600),
+            repeatRiskSummary,
             `（共 ${allPrevChapters.length} 条前置细纲记录）`
-        ].join("\n");
+        ].filter(Boolean).join("\n");
+    }
+
+    extractSynopsisEventBody(line) {
+        const text = String(line || "").trim();
+        if (!text) {
+            return "";
+        }
+        const match = text.match(/^第\s*\d+\s*章[：:、.\-）)]?\s*(.+?)\s*[—\-－–]\s*(.+)$/);
+        if (match) {
+            return `${match[1].trim()} ${match[2].trim()}`.trim();
+        }
+        return text.replace(/^第\s*\d+\s*章[：:、.\-）)]?\s*/, "").trim();
+    }
+
+    normalizeSynopsisEventFingerprint(text) {
+        return String(text || "")
+            .replace(/[第卷章节：:、.\-—－–\s]/g, "")
+            .replace(/[，。！？；、“”"']/g, "")
+            .slice(0, 24);
+    }
+
+    buildSynopsisRepeatRiskSummary(lines) {
+        const eventMap = new Map();
+        const keywordRules = [
+            { label: "比赛/考核", pattern: /比武|擂台|竞赛|比赛|考核|测试/g },
+            { label: "修炼/突破", pattern: /修炼|闭关|突破|参悟/g },
+            { label: "探索/秘境", pattern: /探索|秘境|寻宝|探险/g },
+            { label: "身份揭露", pattern: /身份|真相|揭露|曝光/g },
+            { label: "冲突对峙", pattern: /争执|对峙|冲突|交锋/g }
+        ];
+
+        (lines || []).forEach((line) => {
+            const body = this.extractSynopsisEventBody(line);
+            const fingerprint = this.normalizeSynopsisEventFingerprint(body);
+            if (!fingerprint) {
+                return;
+            }
+            if (!eventMap.has(fingerprint)) {
+                eventMap.set(fingerprint, { body, count: 0 });
+            }
+            eventMap.get(fingerprint).count += 1;
+        });
+
+        const repeatedEvents = Array.from(eventMap.values())
+            .filter((item) => item.count >= 2)
+            .sort((left, right) => right.count - left.count)
+            .slice(0, 5);
+
+        const joinedText = (lines || []).join("\n");
+        const repeatedPatterns = keywordRules
+            .map((item) => ({ ...item, count: (joinedText.match(item.pattern) || []).length }))
+            .filter((item) => item.count >= 4)
+            .slice(0, 4);
+
+        if (!repeatedEvents.length && !repeatedPatterns.length) {
+            return "";
+        }
+
+        return [
+            "【重复风险摘要】",
+            repeatedEvents.length
+                ? `这些事件表达在前文里已经多次出现，请避免同构复写：\n${repeatedEvents.map((item) => `- ${this.limitContext(item.body, 48)}（约 ${item.count} 次）`).join("\n")}`
+                : "",
+            repeatedPatterns.length
+                ? `这些桥段类型在前文中偏多，本卷请换角度、换阻力、换结果：\n${repeatedPatterns.map((item) => `- ${item.label}（约 ${item.count} 次）`).join("\n")}`
+                : ""
+        ].filter(Boolean).join("\n");
     }
 
     buildSynopsisInnovationPrompt(project, volumeNumber, concept, volumeSummary) {
