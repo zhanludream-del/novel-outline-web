@@ -3325,7 +3325,8 @@ ${(detailedOutline || concept || "未填写").slice(0, 2200)}`;
             "<<<CHARACTER_APPEARANCE>>>",
             "<<<END_STATE>>>"
         ]);
-        const extraCharactersBlock = this.extractDelimitedBlock(rawContent, "<<<EXTRA_CHARACTERS>>>", ["<<<END_EXTRA>>>"]);
+        const extraCharactersBlock = this.extractDelimitedBlock(rawContent, "<<<EXTRA_CHARACTERS>>>", ["<<<END_EXTRA>>>"])
+            || this.extractLooseExtraBlock(rawContent);
         const foreshadowsBlock = this.extractDelimitedBlock(rawContent, "<<<FORESHADOWS>>>", ["<<<END_FORESHADOWS>>>"]);
         const personalityChangeBlock = this.extractDelimitedBlock(rawContent, "<<<PERSONALITY_CHANGE>>>", ["<<<END_PERSONALITY_CHANGE>>>"]);
         const appearanceBlock = this.extractDelimitedBlock(rawContent, "<<<CHARACTER_APPEARANCE>>>", ["<<<END_APPEARANCE>>>"]);
@@ -3404,7 +3405,34 @@ ${(detailedOutline || concept || "未填写").slice(0, 2200)}`;
                 : startIndex + startMarker.length + blockContent.length;
             cleaned = `${cleaned.slice(0, startIndex)}\n${cleaned.slice(removeEndIndex)}`;
         });
+        cleaned = cleaned.replace(/\n?(?:龙套角色[:：][\s\S]*?)(?:<<<END_EXTRA>>>|\s*$)/u, "\n");
+        cleaned = cleaned.replace(/\n?(?:临时支线[:：][\s\S]*?)(?:<<<END_EXTRA>>>|\s*$)/u, "\n");
         return cleaned.replace(/\n{3,}/g, "\n\n");
+    }
+
+    extractLooseExtraBlock(content) {
+        const text = String(content || "");
+        if (!text) {
+            return "";
+        }
+
+        const startCandidates = [
+            text.lastIndexOf("龙套角色："),
+            text.lastIndexOf("龙套角色:"),
+            text.lastIndexOf("临时支线："),
+            text.lastIndexOf("临时支线:")
+        ].filter((index) => index >= 0);
+
+        if (!startCandidates.length) {
+            return "";
+        }
+
+        const startIndex = Math.min(...startCandidates);
+        const after = text.slice(startIndex);
+        const endMarkerIndex = after.indexOf("<<<END_EXTRA>>>");
+        const block = endMarkerIndex >= 0 ? after.slice(0, endMarkerIndex) : after;
+        const trimmed = block.trim();
+        return /^(龙套角色|临时支线)[:：]/m.test(trimmed) ? trimmed : "";
     }
 
     parseStateJsonBlock(block) {

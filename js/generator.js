@@ -1736,8 +1736,10 @@
             }
         });
 
-        const body = source.slice(0, splitIndex).trimEnd();
+        let body = source.slice(0, splitIndex).trimEnd();
         const tail = source.slice(splitIndex);
+        body = body.replace(/\n?(?:龙套角色[:：][\s\S]*?)(?:<<<END_EXTRA>>>|\s*$)/u, "").trimEnd();
+        body = body.replace(/\n?(?:临时支线[:：][\s\S]*?)(?:<<<END_EXTRA>>>|\s*$)/u, "").trimEnd();
         const paragraphs = body.split(/\r?\n{2,}/);
         if (!paragraphs.length) {
             return source;
