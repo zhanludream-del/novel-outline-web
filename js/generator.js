@@ -334,6 +334,8 @@ class NovelGenerator {
             "特别要求：",
             "1. next_chapter_setup 是下章铺垫，不是预告；只能写状态、氛围、悬念、暗示，不能直接写结果。",
             "2. summary 中的【下章铺垫】也必须遵守同样规则：只埋因，不写果。",
+            "2.1 绝对禁止写“下章将会/下一章会/身份将曝光/敌人将来袭/马上会发生什么”这类预告句。",
+            "2.2 正确写法是：重伤昏迷、异样眼神、远处异动、发现线索、空气骤沉、警报响起；错误写法是直接把下章事件和结果说出来。",
             "3. summary 中的【情节推进】必须保留“1.【类型标签】内容”的格式。",
             "4. 【出场人物】必须使用“- 姓名（简介）”的格式。",
             "5. 细纲里涉及的人物称呼必须尽量使用真实姓名。",
@@ -348,12 +350,18 @@ class NovelGenerator {
             timeout: 240000
         });
 
-        return parsed.map((item, index) => ({
+        return parsed.map((item, index) => {
+            const normalized = this.sanitizeChapterOutlineHookData({
+                ...item,
+                summary: item.summary || item.synopsis || "",
+                next_chapter_setup: item.next_chapter_setup || {}
+            });
+            return {
             uuid: item.uuid || Utils.uid("chapter"),
             number: Number(item.chapter_number || startChapter + index),
             chapter_number: Number(item.chapter_number || startChapter + index),
             title: item.title || `第${startChapter + index}章`,
-            summary: item.summary || item.synopsis || "",
+            summary: normalized.summary || "",
             content: item.content || "",
             keyEvent: item.key_event || "",
             key_event: item.key_event || "",
@@ -362,8 +370,9 @@ class NovelGenerator {
             characters: Utils.ensureArrayFromText(item.characters),
             foreshadows: Utils.ensureArrayFromText(item.foreshadows),
             plot_unit: item.plot_unit || {},
-            next_chapter_setup: item.next_chapter_setup || {}
-        }));
+            next_chapter_setup: normalized.next_chapter_setup || {}
+        };
+        });
     }
 
     async generateCharactersFromOutlines({ project, chapters, volumeNumber }) {
@@ -563,11 +572,13 @@ class NovelGenerator {
             extraOutputProtocol
         });
 
-        return (await this.api.callLLM(userPrompt, systemPrompt, {
+        const rawContent = await this.api.callLLM(userPrompt, systemPrompt, {
             temperature: 0.82,
             maxTokens: 6500,
             timeout: 240000
-        })).trim();
+        });
+
+        return this.sanitizeGeneratedChapterContent(rawContent, nextOutline).trim();
     }
 
     async filterAiFlavorText(text, project = {}) {
@@ -1085,6 +1096,153 @@ class NovelGenerator {
         lines.push("上一章已经发生的事件，不要再写成“即将发生”“正要发生”或重复发生。");
         lines.push("如果上章到本章之间需要过桥动作，请自然补上，不要生硬跳切。");
         return lines.join("\n");
+    }
+
+    containsSpoilerStyleHook(text) {
+        const value = String(text || "").trim();
+        if (!value) {
+            return false;
+        }
+        const patterns = [
+            /下章/,
+            /下一章/,
+            /将会/,
+            /即将/,
+            /马上(?:就)?会/,
+            /随后(?:就)?会/,
+            /身份(?:即将|将要|就要)?曝光/,
+            /真相(?:即将|将要|就要)?大白/,
+            /敌人(?:即将|将要|就要)?来袭/,
+            /将获得/,
+            /将死去/,
+            /将突破/,
+            /将揭露/,
+            /将揭晓/
+        ];
+        return patterns.some((pattern) => pattern.test(value));
+    }
+
+    toHookStyleText(text) {
+        const source = String(text || "").trim();
+        if (!source) {
+            return "";
+        }
+
+        let output = source
+            .replace(/下一章[^。！？\n]*[。！？]?/g, "")
+            .replace(/下章[^。！？\n]*[。！？]?/g, "")
+            .replace(/将会|即将|马上(?:就)?会|随后(?:就)?会|就要/g, "")
+            .replace(/身份曝光/g, "身份疑云浮动")
+            .replace(/真相大白/g, "真相的裂缝露了出来")
+            .replace(/敌人来袭/g, "远处异动逼近")
+            .replace(/将获得[^，。！？\n]*/g, "隐约感到某种机缘正在逼近")
+            .replace(/将突破[^，。！？\n]*/g, "体内的变化已经压不住")
+            .replace(/将揭露[^，。！？\n]*/g, "异样的线索正在逼近核心")
+            .replace(/将揭晓[^，。！？\n]*/g, "答案仿佛只差最后一层")
+            .replace(/\s+/g, " ")
+            .trim();
+
+        output = output.replace(/^[，。；：、\s]+|[，；：、\s]+$/g, "").trim();
+        if (!output) {
+            output = "异样已经逼近，却还没人看清真正会发生什么。";
+        }
+        if (!/[。！？]$/.test(output)) {
+            output += "。";
+        }
+        return output;
+    }
+
+    replaceSummarySection(summary, sectionTitle, transformer) {
+        const text = String(summary || "");
+        if (!text.trim()) {
+            return text;
+        }
+        const pattern = new RegExp(`(【${sectionTitle}】)([\\s\\S]*?)(?=\\n【|$)`);
+        return text.replace(pattern, (match, header, body) => {
+            const nextBody = transformer(String(body || "").trim());
+            return `${header}\n${nextBody}`;
+        });
+    }
+
+    sanitizeChapterOutlineHookData(item = {}) {
+        const nextSetup = item.next_chapter_setup && typeof item.next_chapter_setup === "object"
+            ? { ...item.next_chapter_setup }
+            : {};
+
+        Object.keys(nextSetup).forEach((key) => {
+            if (this.containsSpoilerStyleHook(nextSetup[key])) {
+                nextSetup[key] = this.toHookStyleText(nextSetup[key]);
+            }
+        });
+
+        const summary = this.replaceSummarySection(item.summary || "", "下章铺垫", (body) => {
+            if (!body) {
+                return body;
+            }
+            const cleanedLines = body
+                .split(/\r?\n/)
+                .map((line) => {
+                    const trimmed = line.trim();
+                    if (!trimmed) {
+                        return "";
+                    }
+                    return this.containsSpoilerStyleHook(trimmed)
+                        ? this.toHookStyleText(trimmed)
+                        : trimmed;
+                })
+                .filter(Boolean);
+            return cleanedLines.join("\n");
+        });
+
+        return {
+            ...item,
+            summary,
+            next_chapter_setup: nextSetup
+        };
+    }
+
+    sanitizeGeneratedChapterContent(text, nextOutline) {
+        const source = String(text || "");
+        if (!source.trim()) {
+            return source;
+        }
+
+        const markers = ["<<<STATE_JSON>>>", "<<<EXTRA_CHARACTERS>>>", "<<<FORESHADOWS>>>", "<<<PERSONALITY_CHANGE>>>", "<<<CHARACTER_APPEARANCE>>>"];
+        let splitIndex = source.length;
+        markers.forEach((marker) => {
+            const index = source.indexOf(marker);
+            if (index >= 0 && index < splitIndex) {
+                splitIndex = index;
+            }
+        });
+
+        const body = source.slice(0, splitIndex).trimEnd();
+        const tail = source.slice(splitIndex);
+        const paragraphs = body.split(/\r?\n{2,}/);
+        if (!paragraphs.length) {
+            return source;
+        }
+
+        const lastIndex = paragraphs.length - 1;
+        const lastParagraph = paragraphs[lastIndex].trim();
+        if (this.containsSpoilerStyleHook(lastParagraph)) {
+            paragraphs[lastIndex] = this.toHookStyleText(lastParagraph);
+        }
+
+        if (nextOutline && paragraphs[lastIndex]) {
+            const nextTitle = String(nextOutline.title || "").trim();
+            const nextSummary = String(nextOutline.summary || "").trim();
+            const forbiddenTokens = [
+                nextTitle,
+                ...nextSummary.match(/[\u4e00-\u9fa5A-Za-z0-9]{2,8}/g) || []
+            ].filter((token) => token && token.length >= 2).slice(0, 20);
+
+            if (forbiddenTokens.some((token) => paragraphs[lastIndex].includes(token))) {
+                paragraphs[lastIndex] = this.toHookStyleText(paragraphs[lastIndex]);
+            }
+        }
+
+        return `${paragraphs.join("\n\n")}${tail}`;
     }
 
     buildNameLockGuard(project) {
@@ -2027,17 +2185,18 @@ class NovelGenerator {
                 "写作要求：",
                 "1. 必须严格遵守本章大纲、全局设定、本章设定、世界观、详细大纲参考和角色锁定。",
                 "2. 开头必须承接前文五章和章末快照，中间推进剧情，结尾完成本章铺垫任务。",
-                "3. 人物行为、对话、物品、技能、身份、时间地点必须与既有状态一致。",
-                "4. 不要把下一章核心事件提前展开，只能做铺垫。",
-                "5. 尚未正式见面的角色，不能突然写成熟人互动；模糊称呼尽量改成真实姓名。",
-                "6. 如果上一章情绪还没落下，本章开头要延续那股情绪，不要突然换频道。",
-                "7. 如果前文交接略生硬，要用动作、对话、场景变化自然补桥，不要生硬跳切。",
-                "8. 正文写完后，必须按下面协议追加追踪输出。",
-                "",
-                "{{state_output_protocol}}",
-                "",
-                "{{extra_output_protocol}}"
-            ].join("\n");
+            "3. 人物行为、对话、物品、技能、身份、时间地点必须与既有状态一致。",
+            "4. 不要把下一章核心事件提前展开，只能做铺垫。",
+            "5. 尚未正式见面的角色，不能突然写成熟人互动；模糊称呼尽量改成真实姓名。",
+            "6. 如果上一章情绪还没落下，本章开头要延续那股情绪，不要突然换频道。",
+            "7. 如果前文交接略生硬，要用动作、对话、场景变化自然补桥，不要生硬跳切。",
+            "8. 本章结尾必须停在钩子上，卡在下一章核心事件发生前最有张力的一刻，绝对不能把下一章内容先写进去。",
+            "9. 正文写完后，必须按下面协议追加追踪输出。",
+            "",
+            "{{state_output_protocol}}",
+            "",
+            "{{extra_output_protocol}}"
+        ].join("\n");
 
         const replacements = {
             frequency_prompt: frequencyPrompt,
