@@ -491,6 +491,7 @@ class NovelGenerator {
         const expansionHint = this.buildExpansionHint(chapter.summary || "", chapter.number || 0);
         const nextChapterSetupInstruction = this.buildNextChapterSetupInstruction(chapter);
         const nextChapterForbiddenPreview = this.buildNextChapterForbiddenPreview(nextOutline);
+        const transitionGuide = this.buildChapterTransitionGuide(project, volume, chapter, prevContent);
         const extraOutputProtocol = this.buildExtraOutputProtocol();
         const stateOutputProtocol = this.buildStateOutputProtocol(project, chapter, relevantCharacters);
 
@@ -520,6 +521,7 @@ class NovelGenerator {
             expansionHint,
             nextChapterSetupInstruction,
             nextChapterForbiddenPreview,
+            transitionGuide,
             stateOutputProtocol,
             extraOutputProtocol
         });
@@ -899,10 +901,80 @@ class NovelGenerator {
         if (latest.important_items) parts.push(`重要物品：${Utils.summarizeText(latest.important_items, 80)}`);
         if (Array.isArray(latest["关键信息"]) && latest["关键信息"].length) parts.push(`关键信息：${latest["关键信息"].slice(0, 4).join("、")}`);
         if (latest["下一章预期"]) parts.push(`上章预期本章：${latest["下一章预期"]}`);
+        if (latest.transition_focus) parts.push(`衔接重点：${Utils.summarizeText(latest.transition_focus, 80)}`);
+        if (latest.next_chapter_setup && typeof latest.next_chapter_setup === "object") {
+            const nextSetupParts = [
+                latest.next_chapter_setup.state_setup ? `状态铺垫=${latest.next_chapter_setup.state_setup}` : "",
+                latest.next_chapter_setup.atmosphere_setup ? `氛围铺垫=${latest.next_chapter_setup.atmosphere_setup}` : "",
+                latest.next_chapter_setup.suspense_hook ? `悬念钩子=${latest.next_chapter_setup.suspense_hook}` : ""
+            ].filter(Boolean);
+            if (nextSetupParts.length) {
+                parts.push(`快照内置下章任务：${nextSetupParts.join("；")}`);
+            }
+        }
 
         return parts.length
             ? `【章末快照衔接】\n最近快照：${targetKey}\n${parts.join("\n")}\n新章节要承接这些状态，不要无故跳变。`
             : "";
+    }
+
+    buildChapterTransitionGuide(project, currentVolume, currentChapter, prevContent = "") {
+        const snapshots = project.chapter_snapshot?.snapshots || project.outline?.state_snapshots || {};
+        const keys = Object.keys(snapshots);
+        if (!keys.length) {
+            return prevContent ? "【开章衔接指导】\n本章开头要紧接前文最后一个有效场景，不要平地跳场。" : "";
+        }
+
+        const chapterNumber = Number(currentChapter?.number || currentChapter?.chapter_number || 0);
+        let targetKey = keys[keys.length - 1];
+        if (chapterNumber) {
+            const previous = keys
+                .map((key) => ({
+                    key,
+                    number: Number(String(key).replace(/[^\d]/g, "")) || 0
+                }))
+                .filter((item) => item.number && item.number < chapterNumber)
+                .sort((left, right) => left.number - right.number)
+                .pop();
+            if (previous?.key) {
+                targetKey = previous.key;
+            }
+        }
+
+        const latest = snapshots[targetKey] || {};
+        const lines = ["【开章衔接指导】", `请先承接上一章快照 ${targetKey}，再展开本章剧情。`];
+
+        if (latest.current_location || latest["位置"]) {
+            lines.push(`1. 开场地点优先承接：${latest.current_location || latest["位置"]}`);
+        }
+        if (latest.timeline || latest["时间"]) {
+            lines.push(`2. 时间线继续沿用：${Utils.summarizeText(latest.timeline || latest["时间"], 70)}`);
+        }
+        if (latest.pending_plots) {
+            lines.push(`3. 上章未完事项：${Utils.summarizeText(latest.pending_plots, 90)}`);
+        }
+        if (latest.important_items) {
+            lines.push(`4. 重要物品状态别丢：${Utils.summarizeText(latest.important_items, 90)}`);
+        }
+        if (latest["下一章预期"]) {
+            lines.push(`5. 上章对本章的预期：${Utils.summarizeText(latest["下一章预期"], 120)}`);
+        }
+
+        const setup = currentChapter?.next_chapter_setup || {};
+        const setupHints = [
+            setup.state_setup ? `状态起点：${setup.state_setup}` : "",
+            setup.atmosphere_setup ? `氛围起点：${setup.atmosphere_setup}` : "",
+            setup.suspense_hook ? `悬念起点：${setup.suspense_hook}` : ""
+        ].filter(Boolean);
+        if (setupHints.length) {
+            lines.push(`6. 本章章纲自带衔接任务：${setupHints.join("；")}`);
+        }
+
+        if (prevContent) {
+            lines.push("7. 开头前几段必须紧接前文结尾的动作、情绪或对话，不要无故跳天、跳地点、跳关系状态。");
+        }
+
+        return lines.join("\n");
     }
 
     buildWorldAndPlanContext(project) {
@@ -1387,6 +1459,7 @@ class NovelGenerator {
         expansionHint,
         nextChapterSetupInstruction,
         nextChapterForbiddenPreview,
+        transitionGuide,
         stateOutputProtocol,
         extraOutputProtocol
     }) {
@@ -1430,6 +1503,8 @@ class NovelGenerator {
                 "【本章设定提醒】",
                 "{{chapter_setting_note}}",
                 "",
+                "{{transition_guide}}",
+                "",
                 "{{expansion_hint}}",
                 "",
                 "{{next_chapter_setup_instruction}}",
@@ -1470,6 +1545,7 @@ class NovelGenerator {
             prev_content: prevContent || "暂无前文",
             global_setting_note: project.global_setting_note || "暂无",
             chapter_setting_note: chapter.chapter_setting_note || "暂无",
+            transition_guide: transitionGuide || "【开章衔接指导】请直接承接上一章最后一个有效场景与状态展开，不要平地重开。",
             expansion_hint: expansionHint || "【智能扩写建议】可围绕本章核心事件补充动作细节、人物心理、对话博弈、环境反馈和伏笔呼应。",
             current_volume: volume.title || "",
             current_volume_summary: volume.summary || "",

@@ -2108,7 +2108,7 @@ ${(detailedOutline || concept || "未填写").slice(0, 2200)}`;
 
         const stateData = this.parseStateJsonBlock(stateBlock);
         if (stateData) {
-            this.applyStateUpdate(chapterNumber, chapter.title || `第${chapterNumber}章`, stateData);
+            this.applyStateUpdate(chapterNumber, chapter.title || `第${chapterNumber}章`, stateData, chapter);
             logs.push("已回写状态 JSON 到故事状态/动态追踪/时间线/章末快照。");
         }
 
@@ -2189,7 +2189,7 @@ ${(detailedOutline || concept || "未填写").slice(0, 2200)}`;
         return parsed && typeof parsed === "object" && !Array.isArray(parsed) ? parsed : null;
     }
 
-    applyStateUpdate(chapterNumber, chapterTitle, stateData) {
+    applyStateUpdate(chapterNumber, chapterTitle, stateData, chapter = null) {
         const outlineState = this.novelData.outline.story_state || {};
         outlineState.timeline = stateData.timeline || outlineState.timeline || "";
         outlineState.current_location = stateData.current_location || outlineState.current_location || "";
@@ -2217,15 +2217,23 @@ ${(detailedOutline || concept || "未填写").slice(0, 2200)}`;
         this.novelData.story_state.current_location = outlineState.current_location || "";
         this.novelData.story_state.current_time = outlineState.timeline || "";
 
-        this.recordChapterSnapshot(chapterNumber, chapterTitle, stateData);
+        this.recordChapterSnapshot(chapterNumber, chapterTitle, stateData, chapter);
         this.recordTimelineUpdate(chapterNumber, stateData);
         this.recordDynamicStateUpdate(stateData);
         this.recordWorldTrackerUpdate(chapterNumber, stateData);
         this.recordCharacterCheckerState(chapterNumber, stateData);
     }
 
-    recordChapterSnapshot(chapterNumber, chapterTitle, stateData) {
+    recordChapterSnapshot(chapterNumber, chapterTitle, stateData, chapter = null) {
         const snapshots = this.novelData.chapter_snapshot.snapshots || {};
+        const nextChapterSetup = chapter?.next_chapter_setup || {};
+        const nextChapterExpectation = [
+            nextChapterSetup.state_setup ? `状态铺垫：${nextChapterSetup.state_setup}` : "",
+            nextChapterSetup.atmosphere_setup ? `氛围铺垫：${nextChapterSetup.atmosphere_setup}` : "",
+            nextChapterSetup.suspense_hook ? `悬念钩子：${nextChapterSetup.suspense_hook}` : "",
+            nextChapterSetup.clue_hint ? `线索暗示：${nextChapterSetup.clue_hint}` : "",
+            nextChapterSetup.countdown ? `倒计时：${nextChapterSetup.countdown}` : ""
+        ].filter(Boolean).join("；");
         snapshots[`chapter_${chapterNumber}`] = {
             title: chapterTitle,
             时间: stateData.timeline || "",
@@ -2235,7 +2243,10 @@ ${(detailedOutline || concept || "未填写").slice(0, 2200)}`;
             关键信息: stateData.key_event ? [stateData.key_event] : [],
             current_location: stateData.current_location || "",
             timeline: stateData.timeline || "",
-            下一章预期: ""
+            下一章预期: nextChapterExpectation || stateData.pending_plots || "",
+            next_chapter_setup: nextChapterSetup,
+            transition_focus: nextChapterSetup.state_setup || nextChapterSetup.suspense_hook || stateData.pending_plots || "",
+            key_event: stateData.key_event || ""
         };
         this.novelData.chapter_snapshot.snapshots = snapshots;
         this.novelData.outline.state_snapshots = JSON.parse(JSON.stringify(snapshots));
