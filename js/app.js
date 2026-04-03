@@ -4279,6 +4279,11 @@ ${(detailedOutline || concept || "未填写").slice(0, 2200)}`;
         }
 
         const task = async () => {
+            const preseeded = this.syncCharactersFromOutlineSections(outlineChapters);
+            if (preseeded.added || preseeded.updated) {
+                Utils.log(`已先从章纲【出场人物】同步 ${preseeded.added} 个新角色，补全 ${preseeded.updated} 个角色基础信息。`, "info");
+            }
+
             const generatedCharacters = await this.generator.generateCharactersFromOutlines({
                 project: this.novelData,
                 chapters: outlineChapters,
@@ -4304,6 +4309,123 @@ ${(detailedOutline || concept || "未填写").slice(0, 2200)}`;
         } else {
             await task();
         }
+    }
+
+    getOutlineCharacterExcludedNames() {
+        return new Set([
+            "主角", "男主", "女主", "反派", "路人", "众人", "少年", "少女", "男人", "女人",
+            "师尊", "掌门", "长老", "弟子", "同门", "敌人", "对手", "黑影", "来人", "医者"
+        ]);
+    }
+
+    resolveKnownCharacterName(name) {
+        const cleanName = String(name || "").trim();
+        const mapping = this.novelData.synopsisData?.vague_to_name_mapping || this.novelData.synopsis_data?.vague_to_name_mapping || {};
+        return String(mapping[cleanName] || cleanName).trim();
+    }
+
+    isValidOutlineCharacterName(name) {
+        const resolved = this.resolveKnownCharacterName(name);
+        if (!/^[\u4e00-\u9fa5]{2,4}$/.test(resolved)) {
+            return false;
+        }
+        return !this.getOutlineCharacterExcludedNames().has(resolved);
+    }
+
+    extractCharacterSeedsFromSummary(summary, chapterNumber = 0) {
+        const text = String(summary || "");
+        if (!text.trim()) {
+            return [];
+        }
+
+        const sectionMatch = text.match(/【出场人物】([\s\S]*?)(?=\n【|$)/);
+        const section = sectionMatch?.[1] ? String(sectionMatch[1]).trim() : "";
+        const seeds = [];
+
+        if (section) {
+            section.split(/\r?\n/).forEach((line) => {
+                const cleaned = line.trim().replace(/^[•\-]\s*/, "");
+                if (!cleaned) {
+                    return;
+                }
+                const match = cleaned.match(/^([\u4e00-\u9fa5]{2,4})(?:（([^）]{1,40})）|\(([^)]{1,40})\))?/);
+                const rawName = match?.[1] || cleaned.split(/[（(]/)[0]?.trim() || "";
+                const name = this.resolveKnownCharacterName(rawName);
+                if (!this.isValidOutlineCharacterName(name)) {
+                    return;
+                }
+                const desc = String(match?.[2] || match?.[3] || "").trim();
+                seeds.push({
+                    name,
+                    identity: desc,
+                    source: chapterNumber ? `第${chapterNumber}章出场人物` : "章纲出场人物"
+                });
+            });
+        }
+
+        return seeds;
+    }
+
+    syncCharactersFromOutlineSections(chapters = []) {
+        let added = 0;
+        let updated = 0;
+        const appearanceTracker = this.novelData.character_appearance_tracker || {};
+        appearanceTracker.appearances = appearanceTracker.appearances || {};
+        this.novelData.character_appearance_tracker = appearanceTracker;
+
+        (chapters || []).forEach((chapter) => {
+            const chapterNumber = Number(chapter.number || chapter.chapter_number || 0);
+            const directNames = Utils.ensureArrayFromText(chapter.characters)
+                .map((name) => this.resolveKnownCharacterName(name))
+                .filter((name) => this.isValidOutlineCharacterName(name))
+                .map((name) => ({ name, identity: "", source: chapterNumber ? `第${chapterNumber}章角色数组` : "章纲角色数组" }));
+            const sectionSeeds = this.extractCharacterSeedsFromSummary(chapter.summary || "", chapterNumber);
+            const seeds = [...directNames, ...sectionSeeds];
+
+            seeds.forEach((seed) => {
+                const existingIndex = this.novelData.outline.characters.findIndex((item) => item.name === seed.name);
+                if (existingIndex >= 0) {
+                    const existing = this.novelData.outline.characters[existingIndex];
+                    const nextCharacter = {
+                        ...existing,
+                        identity: existing.identity || seed.identity || "",
+                        background: existing.background || `${seed.source}提及角色，后续可补充背景。`,
+                        relationships: existing.relationships || "",
+                        appearance: existing.appearance || ""
+                    };
+                    if (JSON.stringify(nextCharacter) !== JSON.stringify(existing)) {
+                        this.novelData.outline.characters[existingIndex] = storage.normalizeCharacter(nextCharacter);
+                        updated += 1;
+                    }
+                } else {
+                    this.novelData.outline.characters.push(storage.normalizeCharacter({
+                        id: Utils.uid("character"),
+                        name: seed.name,
+                        identity: seed.identity || "章纲出场角色",
+                        background: `${seed.source}提及角色，后续可补充背景。`,
+                        personality: "",
+                        appearance: "",
+                        abilities: "",
+                        goals: "",
+                        relationships: ""
+                    }));
+                    added += 1;
+                }
+
+                if (chapterNumber) {
+                    if (!appearanceTracker.appearances[seed.name]) {
+                        appearanceTracker.appearances[seed.name] = {
+                            身份: seed.identity || "",
+                            出场章节: [chapterNumber]
+                        };
+                    } else if (!appearanceTracker.appearances[seed.name].出场章节.includes(chapterNumber)) {
+                        appearanceTracker.appearances[seed.name].出场章节.push(chapterNumber);
+                    }
+                }
+            });
+        });
+
+        return { added, updated };
     }
 
     mergeGeneratedCharacters(characters) {
