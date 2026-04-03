@@ -78,18 +78,25 @@
 
 ```
 novel-outline-web/
-├── index.html          # 主页面（双击打开）
+├── index.html
+├── manifest.webmanifest
+├── service-worker.js
 ├── css/
-│   ├── style.css      # 主样式
-│   └── mobile.css     # 移动端样式
+│   ├── style.css
+│   └── mobile.css
+├── icons/
+│   └── app-icon.svg
 ├── js/
-│   ├── config.js      # 配置文件
-│   ├── storage.js     # 数据存储
-│   ├── api.js         # AI API调用
-│   ├── trackers.js    # 追踪系统
-│   ├── utils.js       # 工具函数
-│   └── app.js         # 主应用
-└── README.md          # 本文件
+│   ├── config.js
+│   ├── storage.js
+│   ├── api.js
+│   ├── generator.js
+│   ├── utils.js
+│   └── app.js
+├── prompts/
+│   ├── 11111.txt
+│   └── prompt-manifest.json
+└── README.md
 ```
 
 ## ❓ 常见问题
