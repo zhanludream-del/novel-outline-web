@@ -3,6 +3,13 @@ class NovelGenerator {
         this.api = apiClient;
     }
 
+    getConfiguredMaxTokens(fallback = DEFAULT_API_CONFIG.maxTokens) {
+        const configured = Number(this.api?.getConfig?.().maxTokens ?? fallback ?? DEFAULT_API_CONFIG.maxTokens);
+        return Number.isFinite(configured) && configured > 0
+            ? Math.round(configured)
+            : DEFAULT_API_CONFIG.maxTokens;
+    }
+
     getGenreDefinition(genre) {
         if (!genre || !NOVEL_GENRES || typeof NOVEL_GENRES !== "object") {
             return null;
@@ -61,7 +68,7 @@ class NovelGenerator {
 
         return (await this.api.callLLM(userPrompt, systemPrompt, {
             temperature: 0.75,
-            maxTokens: 1800
+            maxTokens: this.getConfiguredMaxTokens(1800)
         })).trim();
     }
 
@@ -127,7 +134,7 @@ class NovelGenerator {
 
         const parsed = await this.requestJSONArray(systemPrompt, userPrompt, {
             temperature: 0.72,
-            maxTokens: 6000
+            maxTokens: this.getConfiguredMaxTokens(6000)
         });
 
         return parsed.map((item, index) => ({
@@ -225,7 +232,7 @@ class NovelGenerator {
 
         const raw = await this.api.callLLM(userPrompt, systemPrompt, {
             temperature: 0.72,
-            maxTokens: 8000
+            maxTokens: this.getConfiguredMaxTokens(8000)
         });
 
         return this.parseChapterSynopsisLines(raw, chapterCount);
@@ -399,7 +406,7 @@ class NovelGenerator {
 
         const parsed = await this.requestJSONArray(systemPrompt, userPrompt, {
             temperature: 0.75,
-            maxTokens: 12000,
+            maxTokens: this.getConfiguredMaxTokens(12000),
             timeout: 240000
         });
 
@@ -515,7 +522,7 @@ class NovelGenerator {
 
             const parsed = await this.requestJSONArray(systemPrompt, `请为以上 ${batchItems.length} 个角色批量生成完整的人物设定，确保每个角色都有完整的中英文字段。`, {
                 temperature: 0.75,
-                maxTokens: 12000,
+                maxTokens: this.getConfiguredMaxTokens(12000),
                 timeout: 240000
             });
 
@@ -627,7 +634,7 @@ class NovelGenerator {
 
         const rawContent = await this.api.callLLM(userPrompt, systemPrompt, {
             temperature: 0.82,
-            maxTokens: 6500,
+            maxTokens: this.getConfiguredMaxTokens(6500),
             timeout: 240000
         });
 
@@ -743,7 +750,7 @@ class NovelGenerator {
         try {
             const response = await this.api.callLLM(polishPrompt, systemPrompt, {
                 temperature: 0.35,
-                maxTokens: Math.min(8000, excerptText.length * 2 + 1200),
+                maxTokens: Math.min(this.getConfiguredMaxTokens(8000), excerptText.length * 2 + 1200),
                 timeout: 300000
             });
             const rewrittenLines = String(response || "")
@@ -805,7 +812,7 @@ class NovelGenerator {
 
         return this.api.callLLM(repairUserPrompt, repairSystemPrompt, {
             temperature: 0.1,
-            maxTokens: Math.max(2000, Math.min(12000, raw.length * 2)),
+            maxTokens: Math.max(2000, Math.min(this.getConfiguredMaxTokens(12000), raw.length * 2)),
             timeout: options.timeout || 180000,
             retryCount: 1
         });
@@ -2264,7 +2271,7 @@ class NovelGenerator {
                 "你是角色映射校对助手。只做保守识别，不要补写剧情，不要发散解释。",
                 {
                     temperature: 0.1,
-                    maxTokens: 1200
+                    maxTokens: Math.min(this.getConfiguredMaxTokens(1200), 4000)
                 }
             );
             parsed = Utils.parseJsonResponse(raw);

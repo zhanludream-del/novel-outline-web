@@ -759,9 +759,14 @@ ${this.buildGenreCatalogSummary()}
 详细细纲摘录：
 ${(detailedOutline || concept || "未填写").slice(0, 2200)}`;
 
+            const configuredMaxTokens = Number(this.api.getConfig?.().maxTokens ?? DEFAULT_API_CONFIG.maxTokens);
+
             const raw = await this.api.callLLM(userPrompt, systemPrompt, {
                 temperature: 0.35,
-                maxTokens: 2200
+                maxTokens: Math.min(
+                    Number.isFinite(configuredMaxTokens) && configuredMaxTokens > 0 ? configuredMaxTokens : DEFAULT_API_CONFIG.maxTokens,
+                    4000
+                )
             });
 
             const result = Utils.parseJsonResponse(raw);
