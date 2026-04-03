@@ -738,7 +738,12 @@ class NovelGenerator {
     }
 
     async expandChapterContent({ project, volume, chapter }) {
-        const relevantCharacters = this.collectRelevantCharacters(project, `${chapter.summary || ""}\n${chapter.content || ""}`);
+        const chapterOutlineCharacterNames = this.extractChapterOutlineCharacterNames(chapter.summary || "");
+        const relevantCharacters = this.collectRelevantCharacters(
+            project,
+            `${chapter.summary || ""}\n${chapter.content || ""}`,
+            chapterOutlineCharacterNames
+        );
         const characterDigest = this.buildRelevantCharactersInfo(relevantCharacters);
         const volumeNumber = this.getVolumeNumber(project, volume);
         const guardContext = this.buildGenerationGuards(project, volumeNumber, chapter.number || 0);
@@ -2986,7 +2991,36 @@ class NovelGenerator {
         return index >= 0 && index < all.length - 1 ? all[index + 1] : null;
     }
 
-    collectRelevantCharacters(project, contextText) {
+    extractChapterOutlineCharacterNames(summaryText) {
+        const summary = String(summaryText || "");
+        if (!summary.trim()) {
+            return [];
+        }
+
+        const sectionMatch = summary.match(/【出场人物】\s*([\s\S]*?)(?=\n【|$)/);
+        const section = sectionMatch?.[1] ? String(sectionMatch[1]).trim() : "";
+        if (!section) {
+            return [];
+        }
+
+        const names = [];
+        section.split(/\r?\n/).forEach((line) => {
+            const rawLine = String(line || "").trim();
+            if (!rawLine || (!rawLine.startsWith("-") && !rawLine.startsWith("•"))) {
+                return;
+            }
+            const cleaned = rawLine.replace(/^[•-]\s*/, "");
+            const match = cleaned.match(/^([\u4e00-\u9fa5]{2,4})/);
+            const name = String(match?.[1] || "").trim();
+            if (name) {
+                names.push(name);
+            }
+        });
+
+        return Array.from(new Set(names));
+    }
+
+    collectRelevantCharacters(project, contextText, preferredNames = []) {
         const chars = project.outline.characters || [];
         if (!contextText) {
             return chars.filter((character) => character.is_protagonist || character.is_main).slice(0, 6);
@@ -2994,13 +3028,15 @@ class NovelGenerator {
 
         const found = [];
         const seen = new Set();
+        const preferredNameSet = new Set((preferredNames || []).map((name) => String(name || "").trim()).filter(Boolean));
         chars.forEach((character) => {
             const aliases = Array.isArray(character.aliases)
                 ? character.aliases
                 : Utils.ensureArrayFromText(character.aliases || character["别名"]);
             const names = [character.name, ...aliases];
             const identities = Utils.ensureArrayFromText(character.identity || character["身份"] || "");
-            const matched = [...names, ...identities].some((token) => token && token.length >= 2 && contextText.includes(token));
+            const matched = names.some((token) => token && preferredNameSet.has(token))
+                || [...names, ...identities].some((token) => token && token.length >= 2 && contextText.includes(token));
             if (matched && character.name && !seen.has(character.name)) {
                 found.push(character);
                 seen.add(character.name);
@@ -3025,6 +3061,28 @@ class NovelGenerator {
             if (character.goals) chunks.push(`目标：${Utils.summarizeText(character.goals, 70)}`);
             return `- ${character.name || "未命名"}\n  ${chunks.join("\n  ")}`;
         }).join("\n");
+    }
+
+    buildRelevantCharactersInfo(foundChars) {
+        if (!foundChars?.length) {
+            return "";
+        }
+
+        const body = foundChars.map((character) => {
+            const chunks = [];
+            const aliases = Utils.ensureArrayFromText(character.aliases || character["别名"] || "");
+            if (character.identity) chunks.push(`身份：${character.identity}`);
+            if (aliases.length) chunks.push(`固定称呼/别名：${aliases.join("、")}`);
+            if (character.personality) chunks.push(`性格：${Utils.summarizeText(character.personality, 70)}`);
+            if (character.background) chunks.push(`背景：${Utils.summarizeText(character.background, 90)}`);
+            if (character.relationships) chunks.push(`关系：${Utils.summarizeText(character.relationships, 80)}`);
+            if (character.appearance) chunks.push(`外貌：${Utils.summarizeText(character.appearance, 70)}`);
+            if (character.abilities) chunks.push(`能力：${Utils.summarizeText(character.abilities, 70)}`);
+            if (character.goals) chunks.push(`目标：${Utils.summarizeText(character.goals, 70)}`);
+            return `- ${character.name || "未命名"}\n  ${chunks.join("\n  ")}`;
+        }).join("\n");
+
+        return `【本章出场/相关角色设定（防崩坏参考）】\n以下是本章相关角色的设定和固定名字，在正文中必须严格使用这些名字和人设，不得自行更改：\n${body}`;
     }
 
     buildVolumeSynopsisContext(project, currentVolumeNumber) {
