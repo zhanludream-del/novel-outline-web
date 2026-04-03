@@ -757,6 +757,18 @@ button {
     margin-bottom: 18px;
 }
 
+.chapter-selector-bar {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    gap: 14px;
+    align-items: end;
+    margin-bottom: 14px;
+}
+
+.chapter-selector-actions {
+    align-self: end;
+}
+
 .chapter-tool-row {
     margin-bottom: 14px;
 }

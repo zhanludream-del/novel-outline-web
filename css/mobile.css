@@ -64,6 +64,7 @@
     .chapter-meta-grid,
     .chapter-report-grid,
     .chapter-batch-preview,
+    .chapter-selector-bar,
     .form-grid,
     .form-grid.three-column,
     .form-grid.narrow-grid,
@@ -160,6 +161,10 @@
         background: rgba(248, 246, 242, 0.94);
         box-shadow: 0 10px 24px rgba(204, 214, 223, 0.22);
         backdrop-filter: blur(10px);
+    }
+
+    .chapter-selector-actions {
+        width: 100%;
     }
 
     .topbar-actions .btn {

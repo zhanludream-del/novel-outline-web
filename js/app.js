@@ -64,6 +64,7 @@ class NovelOutlineWebApp {
 
             chapterVolumeSelect: document.getElementById("chapterVolumeSelect"),
             chapterEditorVolumeSelect: document.getElementById("chapterEditorVolumeSelect"),
+            chapterQuickSelect: document.getElementById("chapterQuickSelect"),
             chapterStart: document.getElementById("chapterStart"),
             chapterEnd: document.getElementById("chapterEnd"),
             chapterBatchPreview: document.getElementById("chapterBatchPreview"),
@@ -153,6 +154,8 @@ class NovelOutlineWebApp {
             btnAnalyzeChapter: document.getElementById("btnAnalyzeChapter"),
             btnRunChapterQc: document.getElementById("btnRunChapterQc"),
             btnRefreshChapterList: document.getElementById("btnRefreshChapterList"),
+            btnPrevChapter: document.getElementById("btnPrevChapter"),
+            btnNextChapter: document.getElementById("btnNextChapter"),
             btnBatchDeleteChapters: document.getElementById("btnBatchDeleteChapters"),
             btnCopyChapter: document.getElementById("btnCopyChapter"),
             btnClearChapterContent: document.getElementById("btnClearChapterContent"),
@@ -442,6 +445,14 @@ class NovelOutlineWebApp {
                 this.clearChapterEditor();
             });
         }
+        if (this.elements.chapterQuickSelect) {
+            this.elements.chapterQuickSelect.addEventListener("change", () => {
+                const chapterId = String(this.elements.chapterQuickSelect.value || "").trim();
+                if (chapterId) {
+                    this.selectChapter(chapterId);
+                }
+            });
+        }
 
         if (this.elements.chapterStart) {
             this.elements.chapterStart.addEventListener("input", () => this.renderChapterBatchPreview());
@@ -541,6 +552,12 @@ class NovelOutlineWebApp {
         this.elements.btnAnalyzeChapter.addEventListener("click", () => this.analyzeCurrentChapter());
         this.elements.btnRunChapterQc.addEventListener("click", () => this.runCurrentChapterQc());
         this.elements.btnRefreshChapterList.addEventListener("click", () => this.refreshChapterWorkspace());
+        if (this.elements.btnPrevChapter) {
+            this.elements.btnPrevChapter.addEventListener("click", () => this.selectAdjacentChapter(-1));
+        }
+        if (this.elements.btnNextChapter) {
+            this.elements.btnNextChapter.addEventListener("click", () => this.selectAdjacentChapter(1));
+        }
         this.elements.btnBatchDeleteChapters.addEventListener("click", () => this.batchDeleteChapterRange());
         this.elements.btnCopyChapter.addEventListener("click", () => Utils.copyText(this.elements.chapterContentInput.value));
         if (this.elements.btnClearChapterContent) {
@@ -1129,6 +1146,8 @@ ${(detailedOutline || concept || "未填写").slice(0, 2200)}`;
         if (!this.elements.chapterBatchList && !this.elements.chapterList) {
             return;
         }
+        const orderedChapters = [...(volume?.chapters || [])].sort(Utils.chapterSort);
+        this.renderChapterQuickSelect(orderedChapters);
         if (!volume || volume.chapters.length === 0) {
             const emptyHTML = '<div class="empty-state">当前卷还没有章节。可以先在“批量章纲”里生成章纲，再切到“单章正文”逐章扩写。</div>';
             if (this.elements.chapterBatchList) {
@@ -1139,8 +1158,6 @@ ${(detailedOutline || concept || "未填写").slice(0, 2200)}`;
             }
             return;
         }
-
-        const orderedChapters = [...volume.chapters].sort(Utils.chapterSort);
         const cardsHTML = orderedChapters.map((chapter) => `
             <article class="chapter-card ${chapter.id === this.state.selectedChapterId ? "active" : ""}" data-chapter-id="${chapter.id}">
                 <div class="chapter-card-head">
@@ -1162,6 +1179,24 @@ ${(detailedOutline || concept || "未填写").slice(0, 2200)}`;
         if (this.elements.chapterList) {
             this.elements.chapterList.innerHTML = cardsHTML;
         }
+    }
+
+    renderChapterQuickSelect(chapters = []) {
+        if (!this.elements.chapterQuickSelect) {
+            return;
+        }
+
+        if (!chapters.length) {
+            this.elements.chapterQuickSelect.innerHTML = '<option value="">请选择章节</option>';
+            this.elements.chapterQuickSelect.value = "";
+            return;
+        }
+
+        this.elements.chapterQuickSelect.innerHTML = [
+            '<option value="">请选择章节</option>',
+            ...chapters.map((chapter) => `<option value="${chapter.id}">第${chapter.number}章 · ${Utils.escapeHTML(chapter.title || `第${chapter.number}章`)}</option>`)
+        ].join("");
+        this.elements.chapterQuickSelect.value = this.state.selectedChapterId || "";
     }
 
     buildChapterBadgeHTML(chapter) {
@@ -2944,6 +2979,9 @@ ${(detailedOutline || concept || "未填写").slice(0, 2200)}`;
         this.elements.chapterContentInput.value = chapter.content || "";
         this.renderChapterContextPreview(chapter);
         this.renderChapterList();
+        if (this.elements.chapterQuickSelect) {
+            this.elements.chapterQuickSelect.value = chapter.id;
+        }
         this.scrollChapterEditorIntoView();
     }
 
@@ -2955,6 +2993,23 @@ ${(detailedOutline || concept || "未填写").slice(0, 2200)}`;
         this.elements.chapterSettingNoteInput.value = "";
         this.elements.chapterContentInput.value = "";
         this.renderChapterContextPreview(null);
+        if (this.elements.chapterQuickSelect) {
+            this.elements.chapterQuickSelect.value = "";
+        }
+    }
+
+    selectAdjacentChapter(offset) {
+        const volume = this.getCurrentChapterVolume();
+        const chapters = [...(volume?.chapters || [])].sort(Utils.chapterSort);
+        if (!chapters.length) {
+            Utils.showMessage("当前卷还没有章节。", "info");
+            return;
+        }
+
+        const currentIndex = chapters.findIndex((chapter) => chapter.id === this.state.selectedChapterId);
+        const safeIndex = currentIndex >= 0 ? currentIndex : 0;
+        const nextIndex = Math.max(0, Math.min(chapters.length - 1, safeIndex + Number(offset || 0)));
+        this.selectChapter(chapters[nextIndex].id);
     }
 
     scrollChapterEditorIntoView() {
