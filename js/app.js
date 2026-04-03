@@ -865,6 +865,7 @@ ${(detailedOutline || concept || "未填写").slice(0, 2200)}`;
 
     renderAll() {
         this.renderDashboard();
+        this.renderWorkflowHealthDashboard();
         this.renderVolumeSelectors();
         this.renderVolumeCards();
         this.renderChapterList();
@@ -872,6 +873,87 @@ ${(detailedOutline || concept || "未填写").slice(0, 2200)}`;
         this.switchChapterSubview(this.state.activeChapterSubview, true);
         this.renderCharacterList();
         this.renderAdvancedState();
+    }
+
+    renderWorkflowHealthDashboard() {
+        const diagnostics = this.buildWorkflowDiagnostics();
+        const volumes = diagnostics.volumes;
+        const chapters = diagnostics.chapters;
+
+        if (this.elements.statTitle) {
+            this.elements.statTitle.textContent = this.novelData.outline.title || "未命名";
+        }
+        if (this.elements.statVolumes) {
+            this.elements.statVolumes.textContent = String(volumes.length);
+        }
+        if (this.elements.statChapters) {
+            this.elements.statChapters.textContent = String(chapters.length);
+        }
+        if (this.elements.statCharacters) {
+            this.elements.statCharacters.textContent = String(this.novelData.outline.characters.length);
+        }
+        if (this.elements.summaryGenre) {
+            this.elements.summaryGenre.textContent = this.novelData.outline.subgenre || this.novelData.outline.genre || "未设置";
+        }
+        if (this.elements.summaryTheme) {
+            this.elements.summaryTheme.textContent = this.novelData.outline.theme || "未设置";
+        }
+        if (this.elements.summaryConcept) {
+            this.elements.summaryConcept.textContent = this.novelData.outline.storyConcept || "还没有填写故事概念。";
+        }
+        if (!this.elements.dashboardMilestones) {
+            return;
+        }
+
+        const milestones = [
+            {
+                title: `${diagnostics.checks.base ? "已完成" : "待完善"} 基础设定`,
+                text: diagnostics.checks.base
+                    ? "标题、题材和故事概念都已经就位，可以继续推进世界观和卷纲。"
+                    : "先补齐标题、题材和故事概念，后面的生成会稳很多。"
+            },
+            {
+                title: `${diagnostics.checks.worldbuilding ? "已完成" : "待完成"} 世界观`,
+                text: diagnostics.checks.worldbuilding
+                    ? "世界观文本已经存在，后面的卷纲、细纲和正文都会引用这层约束。"
+                    : "建议先生成或填写世界观，再继续往下推。"
+            },
+            {
+                title: `${diagnostics.volumeSummaryCount}/${Math.max(1, volumes.length)} 卷纲`,
+                text: diagnostics.volumeSummaryCount
+                    ? `当前已有 ${diagnostics.volumeSummaryCount} 卷带摘要，卷级骨架已经开始成形。`
+                    : "还没有卷纲摘要，可以先生成卷纲。"
+            },
+            {
+                title: `${diagnostics.chapterSynopsisCount}/${Math.max(1, volumes.length)} 细纲`,
+                text: diagnostics.chapterSynopsisCount
+                    ? `当前已有 ${diagnostics.chapterSynopsisCount} 卷细纲，后续章纲会自动吃进这些前情。`
+                    : "细纲区域还是空的，建议先把每卷细纲逐卷补齐。"
+            },
+            {
+                title: `${diagnostics.chapterOutlineCount} 章纲 / ${diagnostics.chapterContentCount} 正文`,
+                text: diagnostics.chapterOutlineCount
+                    ? `目前已有 ${diagnostics.chapterOutlineCount} 章章纲，其中 ${diagnostics.chapterContentCount} 章已经扩写成正文。`
+                    : "还没有章纲，可以进入大纲生成页开始批量生成。"
+            },
+            {
+                title: `${diagnostics.characterCount} 张人物卡`,
+                text: diagnostics.characterCount
+                    ? "人物卡已参与后续章纲和正文的一致性约束。"
+                    : "人物卡还是空的，建议在章纲生成后继续补齐。"
+            },
+            {
+                title: `流程体检 ${diagnostics.completedCount}/${diagnostics.totalCount}`,
+                text: diagnostics.nextAction
+            }
+        ];
+
+        this.elements.dashboardMilestones.innerHTML = milestones.map((item) => `
+            <article class="milestone-item">
+                <strong>${Utils.escapeHTML(item.title)}</strong>
+                <p>${Utils.escapeHTML(item.text)}</p>
+            </article>
+        `).join("");
     }
 
     renderDashboard() {
@@ -1974,6 +2056,124 @@ ${(detailedOutline || concept || "未填写").slice(0, 2200)}`;
         return payload;
     }
 
+    buildWorkflowDiagnostics() {
+        const outline = this.novelData.outline || {};
+        const volumes = outline.volumes || [];
+        const chapters = volumes.flatMap((volume) => volume.chapters || []);
+        const volumeSummaryCount = volumes.filter((volume) => String(volume.summary || "").trim()).length;
+        const chapterSynopsisCount = volumes.filter((volume) => String(volume.chapterSynopsis || volume.chapter_synopsis || "").trim()).length;
+        const chapterOutlineCount = chapters.filter((chapter) => String(chapter.summary || "").trim()).length;
+        const chapterContentCount = chapters.filter((chapter) => String(chapter.content || "").trim()).length;
+        const characterCount = (outline.characters || []).length;
+        const checks = {
+            base: Boolean(String(outline.title || "").trim() && String(outline.storyConcept || "").trim() && String(outline.genre || outline.subgenre || "").trim()),
+            worldbuilding: Boolean(String(outline.worldbuilding || "").trim()),
+            volumeSynopsis: volumeSummaryCount > 0,
+            chapterSynopsis: chapterSynopsisCount > 0,
+            chapterOutline: chapterOutlineCount > 0,
+            characterCards: characterCount > 0,
+            chapterContent: chapterContentCount > 0
+        };
+        const completedCount = Object.values(checks).filter(Boolean).length;
+        const totalCount = Object.keys(checks).length;
+
+        let nextAction = "可以继续补章纲、人物卡或正文，整体流程已经接上了。";
+        if (!checks.base) {
+            nextAction = "先补齐标题、题材和故事概念，后面的世界观和卷纲才会稳。";
+        } else if (!checks.worldbuilding) {
+            nextAction = "建议先生成世界观，后面的卷纲、细纲和正文都会更稳。";
+        } else if (!checks.volumeSynopsis) {
+            nextAction = "下一步最合适的是先生成卷纲，先把每卷大方向定住。";
+        } else if (chapterSynopsisCount < Math.max(1, volumes.length)) {
+            nextAction = "把各卷细纲尽量补齐，后面的章纲和正文连续性会更好。";
+        } else if (!checks.chapterOutline) {
+            nextAction = "可以开始批量生成章纲了，建议按卷分段推进。";
+        } else if (!checks.characterCards) {
+            nextAction = "章纲已经有了，建议补人物卡，后面正文一致性会更稳。";
+        } else if (!checks.chapterContent) {
+            nextAction = "可以开始扩写正文，优先从当前卷的前几章试跑。";
+        }
+
+        return {
+            checks,
+            volumes,
+            chapters,
+            volumeSummaryCount,
+            chapterSynopsisCount,
+            chapterOutlineCount,
+            chapterContentCount,
+            characterCount,
+            completedCount,
+            totalCount,
+            nextAction
+        };
+    }
+
+    ensureWorkflowReady(step, context = {}) {
+        const diagnostics = this.buildWorkflowDiagnostics();
+        const volume = context.volume || this.getCurrentChapterVolume();
+        const chapter = context.chapter || (typeof this.getChapterFromEditor === "function" ? this.getChapterFromEditor() : null);
+        const errors = [];
+        const warnings = [];
+
+        if (step === "volumeSynopsis") {
+            if (!diagnostics.checks.base) {
+                errors.push("请先补齐标题、题材和故事概念，再生成卷纲。");
+            }
+            if (!diagnostics.checks.worldbuilding) {
+                errors.push("请先生成或填写世界观，再生成卷纲。");
+            }
+        }
+
+        if (step === "chapterSynopsis") {
+            if (!diagnostics.checks.base) {
+                errors.push("请先补齐基础设定。");
+            }
+            if (!diagnostics.checks.worldbuilding) {
+                errors.push("请先生成或填写世界观，再生成细纲。");
+            }
+            if (!volume || !String(volume.summary || "").trim()) {
+                errors.push("请先准备当前卷的卷纲摘要，再生成本卷细纲。");
+            }
+        }
+
+        if (step === "chapterOutlineBatch") {
+            if (!volume) {
+                errors.push("请先选择一个卷。");
+            }
+            if (!diagnostics.checks.worldbuilding) {
+                errors.push("请先生成或填写世界观，再生成章纲。");
+            }
+            if (!volume || !String(volume.chapterSynopsis || volume.chapter_synopsis || "").trim()) {
+                errors.push("请先生成当前卷细纲，再批量生成章纲。");
+            }
+            if (!String(this.novelData.outline.detailed_outline || "").trim()) {
+                warnings.push("当前还没有详细大纲，章纲会缺一层长期约束，建议后续补上。");
+            }
+        }
+
+        if (step === "chapterContent") {
+            if (!volume) {
+                errors.push("请先选择一个卷。");
+            }
+            if (!chapter || !Number(chapter.number || 0) || !String(chapter.summary || "").trim()) {
+                errors.push("请先选中章节，并确保章节号和章纲都已填写。");
+            }
+            if (!diagnostics.checks.worldbuilding) {
+                warnings.push("当前没有世界观文本，正文约束会变弱。");
+            }
+            if (!diagnostics.checks.characterCards) {
+                warnings.push("当前角色卡还是空的，正文一致性会更依赖章纲和追踪器。");
+            }
+        }
+
+        warnings.forEach((message) => Utils.log(`流程提醒：${message}`, "info"));
+        if (errors.length) {
+            throw new Error(errors[0]);
+        }
+        return diagnostics;
+    }
+
     async generateWorldbuilding() {
         const payload = this.validateProjectBase();
         await this.runWithLoading("正在生成世界观...", async () => {
@@ -1994,6 +2194,7 @@ ${(detailedOutline || concept || "未填写").slice(0, 2200)}`;
 
     async generateVolumeSynopsis() {
         const payload = this.validateProjectBase();
+        this.ensureWorkflowReady("volumeSynopsis");
         await this.runWithLoading("正在生成卷纲...", async () => {
             const volumes = await this.generator.generateVolumeSynopsis({
                 project: this.novelData,
@@ -2038,6 +2239,7 @@ ${(detailedOutline || concept || "未填写").slice(0, 2200)}`;
         const payload = this.validateProjectBase();
         const volumeNumber = Number(this.elements.synopsisCurrentVolume.value || 1);
         const volume = this.novelData.outline.volumes[volumeNumber - 1];
+        this.ensureWorkflowReady("chapterSynopsis", { volume });
 
         if (!volume?.summary) {
             throw new Error("请先生成卷纲，或者先给当前卷填写摘要。");
@@ -2198,6 +2400,7 @@ ${(detailedOutline || concept || "未填写").slice(0, 2200)}`;
         const volumeNumber = Number(this.elements.chapterVolumeSelect.value || 1);
         const startChapter = Number(this.elements.chapterStart.value || 1);
         const endChapter = Number(this.elements.chapterEnd.value || 1);
+        this.ensureWorkflowReady("chapterOutlineBatch", { volume });
 
         if (!volume) {
             throw new Error("当前卷不存在。");
@@ -2558,6 +2761,7 @@ ${(detailedOutline || concept || "未填写").slice(0, 2200)}`;
         }
 
         const chapter = this.getChapterFromEditor() || volume.chapters.find((item) => item.id === this.state.selectedChapterId);
+        this.ensureWorkflowReady("chapterContent", { volume, chapter });
         if (!chapter || !chapter.number || !chapter.summary) {
             throw new Error("请先选中章节，并确保章节号与章纲已填写。");
         }
