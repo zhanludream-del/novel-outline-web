@@ -63,6 +63,7 @@ class NovelOutlineWebApp {
             outlineVolumeList: document.getElementById("outlineVolumeList"),
 
             chapterVolumeSelect: document.getElementById("chapterVolumeSelect"),
+            chapterEditorVolumeSelect: document.getElementById("chapterEditorVolumeSelect"),
             chapterStart: document.getElementById("chapterStart"),
             chapterEnd: document.getElementById("chapterEnd"),
             chapterBatchPreview: document.getElementById("chapterBatchPreview"),
@@ -74,6 +75,9 @@ class NovelOutlineWebApp {
             chapterSummaryInput: document.getElementById("chapterSummaryInput"),
             chapterSettingNoteInput: document.getElementById("chapterSettingNoteInput"),
             chapterContentInput: document.getElementById("chapterContentInput"),
+            chapterNextSetupPreview: document.getElementById("chapterNextSetupPreview"),
+            chapterSnapshotPreview: document.getElementById("chapterSnapshotPreview"),
+            chapterAnalysisPreview: document.getElementById("chapterAnalysisPreview"),
 
             characterName: document.getElementById("characterName"),
             characterIdentity: document.getElementById("characterIdentity"),
@@ -131,6 +135,8 @@ class NovelOutlineWebApp {
             btnContinueChapters: document.getElementById("btnContinueChapters"),
             btnDetectGaps: document.getElementById("btnDetectGaps"),
             btnExpandChapterContent: document.getElementById("btnExpandChapterContent"),
+            btnCopyChapterSummary: document.getElementById("btnCopyChapterSummary"),
+            btnExportCurrentChapter: document.getElementById("btnExportCurrentChapter"),
             btnCopyChapter: document.getElementById("btnCopyChapter"),
             btnSaveChapter: document.getElementById("btnSaveChapter"),
             btnDeleteChapter: document.getElementById("btnDeleteChapter"),
@@ -229,7 +235,40 @@ class NovelOutlineWebApp {
         if (!this.novelData.supporting_characters || typeof this.novelData.supporting_characters !== "object") {
             this.novelData.supporting_characters = {};
         }
+        if (!this.novelData.genre_progress_tracker || typeof this.novelData.genre_progress_tracker !== "object") {
+            this.novelData.genre_progress_tracker = {
+                current_genre: "",
+                current_subgenre: "",
+                pregnancy_progress: {},
+                rank_progress: {},
+                status_progress: {},
+                progress_events: []
+            };
+        }
+        this.novelData.genre_progress_tracker.pregnancy_progress = this.novelData.genre_progress_tracker.pregnancy_progress && typeof this.novelData.genre_progress_tracker.pregnancy_progress === "object"
+            ? this.novelData.genre_progress_tracker.pregnancy_progress
+            : {};
+        this.novelData.genre_progress_tracker.rank_progress = this.novelData.genre_progress_tracker.rank_progress && typeof this.novelData.genre_progress_tracker.rank_progress === "object"
+            ? this.novelData.genre_progress_tracker.rank_progress
+            : {};
+        this.novelData.genre_progress_tracker.status_progress = this.novelData.genre_progress_tracker.status_progress && typeof this.novelData.genre_progress_tracker.status_progress === "object"
+            ? this.novelData.genre_progress_tracker.status_progress
+            : {};
+        this.novelData.genre_progress_tracker.progress_events = Array.isArray(this.novelData.genre_progress_tracker.progress_events)
+            ? this.novelData.genre_progress_tracker.progress_events
+            : [];
+        if (!this.novelData.outline_plot_unit_manager || typeof this.novelData.outline_plot_unit_manager !== "object") {
+            this.novelData.outline_plot_unit_manager = { plot_units: {}, next_id: 1, unit_history: [] };
+        }
+        this.novelData.outline_plot_unit_manager.plot_units = this.novelData.outline_plot_unit_manager.plot_units && typeof this.novelData.outline_plot_unit_manager.plot_units === "object"
+            ? this.novelData.outline_plot_unit_manager.plot_units
+            : {};
+        this.novelData.outline_plot_unit_manager.unit_history = Array.isArray(this.novelData.outline_plot_unit_manager.unit_history)
+            ? this.novelData.outline_plot_unit_manager.unit_history
+            : [];
+        this.novelData.outline_plot_unit_manager.next_id = Number(this.novelData.outline_plot_unit_manager.next_id || 1);
         this.ensureVolumeCount(Number(this.novelData.synopsisData.volumeCount || 5), false);
+        this.rebuildPlotUnitManager(false);
     }
 
     bindEvents() {
@@ -306,6 +345,19 @@ class NovelOutlineWebApp {
 
         if (this.elements.chapterVolumeSelect) {
             this.elements.chapterVolumeSelect.addEventListener("change", () => {
+                if (this.elements.chapterEditorVolumeSelect) {
+                    this.elements.chapterEditorVolumeSelect.value = this.elements.chapterVolumeSelect.value;
+                }
+                this.state.selectedChapterId = null;
+                this.renderChapterList();
+                this.clearChapterEditor();
+            });
+        }
+        if (this.elements.chapterEditorVolumeSelect) {
+            this.elements.chapterEditorVolumeSelect.addEventListener("change", () => {
+                if (this.elements.chapterVolumeSelect) {
+                    this.elements.chapterVolumeSelect.value = this.elements.chapterEditorVolumeSelect.value;
+                }
                 this.state.selectedChapterId = null;
                 this.renderChapterList();
                 this.clearChapterEditor();
@@ -363,6 +415,8 @@ class NovelOutlineWebApp {
         this.elements.btnContinueChapters.addEventListener("click", () => this.safeAsync(() => this.continueChapters()));
         this.elements.btnDetectGaps.addEventListener("click", () => this.detectGaps());
         this.elements.btnExpandChapterContent.addEventListener("click", () => this.safeAsync(() => this.expandCurrentChapter()));
+        this.elements.btnCopyChapterSummary.addEventListener("click", () => this.copyCurrentChapterSummary());
+        this.elements.btnExportCurrentChapter.addEventListener("click", () => this.exportCurrentChapterTxt());
         this.elements.btnCopyChapter.addEventListener("click", () => Utils.copyText(this.elements.chapterContentInput.value));
         this.elements.btnSaveChapter.addEventListener("click", () => this.saveChapterEditor());
         this.elements.btnDeleteChapter.addEventListener("click", () => this.deleteCurrentChapter());
@@ -772,6 +826,7 @@ ${(detailedOutline || concept || "未填写").slice(0, 2200)}`;
         const volumes = this.novelData.outline.volumes || [];
         const currentSynopsisValue = String(this.novelData.synopsisData.currentVolume || 1);
         const currentChapterValue = String(this.elements.chapterVolumeSelect.value || 1);
+        const currentEditorChapterValue = String(this.elements.chapterEditorVolumeSelect?.value || currentChapterValue);
 
         const optionsHTML = volumes.map((volume, index) => `
             <option value="${index + 1}">第${index + 1}卷${volume.title ? ` · ${Utils.escapeHTML(volume.title)}` : ""}</option>
@@ -779,9 +834,17 @@ ${(detailedOutline || concept || "未填写").slice(0, 2200)}`;
 
         this.elements.synopsisCurrentVolume.innerHTML = optionsHTML;
         this.elements.chapterVolumeSelect.innerHTML = optionsHTML;
+        if (this.elements.chapterEditorVolumeSelect) {
+            this.elements.chapterEditorVolumeSelect.innerHTML = optionsHTML;
+        }
 
         this.elements.synopsisCurrentVolume.value = volumes[currentSynopsisValue - 1] ? currentSynopsisValue : "1";
         this.elements.chapterVolumeSelect.value = volumes[currentChapterValue - 1] ? currentChapterValue : "1";
+        if (this.elements.chapterEditorVolumeSelect) {
+            this.elements.chapterEditorVolumeSelect.value = volumes[currentEditorChapterValue - 1]
+                ? currentEditorChapterValue
+                : this.elements.chapterVolumeSelect.value;
+        }
         this.renderChapterBatchPreview();
     }
 
@@ -842,7 +905,8 @@ ${(detailedOutline || concept || "未填写").slice(0, 2200)}`;
             return;
         }
 
-        const cardsHTML = volume.chapters.map((chapter) => `
+        const orderedChapters = [...volume.chapters].sort(Utils.chapterSort);
+        const cardsHTML = orderedChapters.map((chapter) => `
             <article class="chapter-card ${chapter.id === this.state.selectedChapterId ? "active" : ""}" data-chapter-id="${chapter.id}">
                 <div class="chapter-card-head">
                     <div class="chapter-meta">
@@ -951,6 +1015,14 @@ ${(detailedOutline || concept || "未填写").slice(0, 2200)}`;
         const personalityChanges = this.collectRecentPersonalityChanges().slice(0, 6);
         const worldEvents = (this.novelData.world_tracker?.world_events || []).slice(-6).reverse();
         const extras = (this.novelData.used_extras_characters || []).slice(-4).reverse();
+        const plotUnits = Object.values(this.novelData.outline_plot_unit_manager?.plot_units || {})
+            .sort((left, right) => {
+                if (Number(left.volume || 0) !== Number(right.volume || 0)) {
+                    return Number(right.volume || 0) - Number(left.volume || 0);
+                }
+                return Number(right.unit_number || 0) - Number(left.unit_number || 0);
+            });
+        const activePlotUnits = plotUnits.slice(0, 4);
 
         const cards = [
             { label: "章末快照", value: snapshotEntries.length, note: "正文回写后自动更新" },
@@ -960,6 +1032,8 @@ ${(detailedOutline || concept || "未填写").slice(0, 2200)}`;
             { label: "龙套去重", value: (this.novelData.used_extras_characters || []).length, note: "避免重复造人" },
             { label: "临时支线", value: (this.novelData.used_temp_subplots || []).length, note: "防止支线失控" }
         ];
+
+        cards.splice(3, 0, { label: "剧情单元", value: plotUnits.length, note: "8章一单元持续联动" });
 
         this.elements.trackerSummaryCards.innerHTML = cards.map((item) => `
             <article class="insight-stat-card">
@@ -996,7 +1070,18 @@ ${(detailedOutline || concept || "未填写").slice(0, 2200)}`;
             `).join("")
             : '<div class="empty-state compact">还没有记录到明显的人物演变。</div>';
 
+        const plotUnitItems = activePlotUnits.map((unit) => `
+                <article class="insight-item">
+                    <strong>剧情单元 · 第${unit.volume || "?"}卷 第${unit.unit_number || "?"}单元</strong>
+                    <p>${Utils.escapeHTML(Utils.summarizeText(
+                        `${unit.current_phase || "未知阶段"} / ${unit.core_conflict || "待补核心冲突"} / ${unit.suspense_hook || unit.connection_to_next || "暂无钩子"}`,
+                        84
+                    ))}</p>
+                </article>
+            `);
+
         this.elements.trackerWorldEventList.innerHTML = [
+            ...plotUnitItems,
             ...worldEvents.map((item) => `
                 <article class="insight-item">
                     <strong>世界事件 · 第 ${item.chapter || "?"} 章</strong>
@@ -1151,9 +1236,11 @@ ${(detailedOutline || concept || "未填写").slice(0, 2200)}`;
         const action = actionButton.dataset.volumeAction;
 
         if (action === "focus") {
-            this.switchTab("chapters");
-            this.switchChapterSubview("batch");
+            this.switchTab("outline");
             this.elements.chapterVolumeSelect.value = String(volumeIndex + 1);
+            if (this.elements.chapterEditorVolumeSelect) {
+                this.elements.chapterEditorVolumeSelect.value = String(volumeIndex + 1);
+            }
             this.state.selectedChapterId = null;
             this.renderChapterList();
             this.clearChapterEditor();
@@ -1188,8 +1275,8 @@ ${(detailedOutline || concept || "未填写").slice(0, 2200)}`;
         if (!card) {
             return;
         }
+        this.switchTab("chapters");
         this.selectChapter(card.dataset.chapterId);
-        this.switchChapterSubview("draft");
     }
 
     handleCharacterListClick(event) {
@@ -1324,6 +1411,30 @@ ${(detailedOutline || concept || "未填写").slice(0, 2200)}`;
         this.novelData.supporting_characters = this.novelData.supporting_characters && typeof this.novelData.supporting_characters === "object"
             ? this.novelData.supporting_characters
             : {};
+        this.novelData.genre_progress_tracker = this.novelData.genre_progress_tracker && typeof this.novelData.genre_progress_tracker === "object"
+            ? this.novelData.genre_progress_tracker
+            : {
+                current_genre: "",
+                current_subgenre: "",
+                pregnancy_progress: {},
+                rank_progress: {},
+                status_progress: {},
+                progress_events: []
+            };
+        this.novelData.genre_progress_tracker.current_genre = this.novelData.genre || outline.genre || "";
+        this.novelData.genre_progress_tracker.current_subgenre = this.novelData.subgenre || outline.subgenre || "";
+        this.novelData.genre_progress_tracker.pregnancy_progress = this.novelData.genre_progress_tracker.pregnancy_progress && typeof this.novelData.genre_progress_tracker.pregnancy_progress === "object"
+            ? this.novelData.genre_progress_tracker.pregnancy_progress
+            : {};
+        this.novelData.genre_progress_tracker.rank_progress = this.novelData.genre_progress_tracker.rank_progress && typeof this.novelData.genre_progress_tracker.rank_progress === "object"
+            ? this.novelData.genre_progress_tracker.rank_progress
+            : {};
+        this.novelData.genre_progress_tracker.status_progress = this.novelData.genre_progress_tracker.status_progress && typeof this.novelData.genre_progress_tracker.status_progress === "object"
+            ? this.novelData.genre_progress_tracker.status_progress
+            : {};
+        this.novelData.genre_progress_tracker.progress_events = Array.isArray(this.novelData.genre_progress_tracker.progress_events)
+            ? this.novelData.genre_progress_tracker.progress_events
+            : [];
 
         (outline.volumes || []).forEach((volume) => {
             volume.chapter_synopsis = volume.chapterSynopsis || volume.chapter_synopsis || "";
@@ -1465,6 +1576,56 @@ ${(detailedOutline || concept || "未填写").slice(0, 2200)}`;
         Utils.downloadText(text, `${baseName}_chapters_${Date.now()}.txt`);
         Utils.showMessage("已导出章节 TXT 文件。", "success");
         Utils.log("已导出章节 TXT。", "success");
+    }
+
+    copyCurrentChapterSummary() {
+        const summary = this.elements.chapterSummaryInput.value.trim();
+        if (!summary) {
+            Utils.showMessage("当前章节还没有章纲。", "info");
+            return;
+        }
+        Utils.copyText(summary);
+        Utils.showMessage("当前章纲已复制。", "success");
+    }
+
+    exportCurrentChapterTxt() {
+        const chapter = this.getChapterFromEditor();
+        if (!chapter || !chapter.number) {
+            Utils.showMessage("请先选择章节。", "info");
+            return;
+        }
+
+        const volumeNumber = Number(this.elements.chapterEditorVolumeSelect?.value || this.elements.chapterVolumeSelect?.value || 1);
+        const text = this.buildSingleChapterTxtExport(chapter, volumeNumber);
+        const baseName = this.novelData.outline.title || "novel-outline";
+        const chapterLabel = `第${chapter.number}章_${chapter.title || `chapter_${chapter.number}`}`.replace(/[\\/:*?"<>|]/g, "_");
+        Utils.downloadText(text, `${baseName}_${chapterLabel}.txt`);
+        Utils.showMessage("本章 TXT 已导出。", "success");
+    }
+
+    buildSingleChapterTxtExport(chapter, volumeNumber) {
+        const lines = [
+            this.novelData.outline.title || "未命名小说",
+            `第${Number(volumeNumber || 1)}卷`,
+            `第${chapter.number}章 ${chapter.title || ""}`.trim(),
+            ""
+        ];
+
+        if (chapter.summary) {
+            lines.push("【章节大纲】");
+            lines.push(chapter.summary);
+            lines.push("");
+        }
+
+        if (chapter.chapter_setting_note) {
+            lines.push("【章节设定提醒】");
+            lines.push(chapter.chapter_setting_note);
+            lines.push("");
+        }
+
+        lines.push("【章节正文】");
+        lines.push((chapter.content || "").trim() || "暂无正文，当前导出的是章节大纲。");
+        return lines.join("\n");
     }
 
     async importData(event) {
@@ -1737,7 +1898,11 @@ ${(detailedOutline || concept || "未填写").slice(0, 2200)}`;
     }
 
     getCurrentChapterVolume() {
-        const volumeNumber = Number(this.elements.chapterVolumeSelect.value || 1);
+        const chapterVolumeNumber = Number(this.elements.chapterEditorVolumeSelect?.value || 0);
+        const outlineVolumeNumber = Number(this.elements.chapterVolumeSelect?.value || 1);
+        const volumeNumber = this.state.activeTab === "chapters" && chapterVolumeNumber
+            ? chapterVolumeNumber
+            : (outlineVolumeNumber || chapterVolumeNumber || 1);
         return this.novelData.outline.volumes[volumeNumber - 1];
     }
 
@@ -1994,6 +2159,7 @@ ${(detailedOutline || concept || "未填写").slice(0, 2200)}`;
         this.elements.chapterSummaryInput.value = chapter.summary || "";
         this.elements.chapterSettingNoteInput.value = chapter.chapter_setting_note || "";
         this.elements.chapterContentInput.value = chapter.content || "";
+        this.renderChapterContextPreview(chapter);
         this.renderChapterList();
     }
 
@@ -2004,6 +2170,73 @@ ${(detailedOutline || concept || "未填写").slice(0, 2200)}`;
         this.elements.chapterSummaryInput.value = "";
         this.elements.chapterSettingNoteInput.value = "";
         this.elements.chapterContentInput.value = "";
+        this.renderChapterContextPreview(null);
+    }
+
+    renderChapterContextPreview(chapter) {
+        if (!this.elements.chapterNextSetupPreview || !this.elements.chapterSnapshotPreview || !this.elements.chapterAnalysisPreview) {
+            return;
+        }
+
+        if (!chapter) {
+            this.elements.chapterNextSetupPreview.textContent = "还没有下章铺垫。";
+            this.elements.chapterSnapshotPreview.textContent = "还没有章末快照。";
+            this.elements.chapterAnalysisPreview.textContent = "还没有分析标签。";
+            return;
+        }
+
+        this.elements.chapterNextSetupPreview.textContent = this.formatNextChapterSetupPreview(chapter.next_chapter_setup);
+
+        const chapterNumber = Number(chapter.number || 0);
+        const snapshot = this.novelData.chapter_snapshot?.snapshots?.[`chapter_${chapterNumber}`];
+        this.elements.chapterSnapshotPreview.textContent = this.formatChapterSnapshotPreview(snapshot);
+        this.elements.chapterAnalysisPreview.textContent = this.formatChapterAnalysisPreview(chapterNumber, chapter);
+    }
+
+    formatNextChapterSetupPreview(nextChapterSetup) {
+        if (!nextChapterSetup || typeof nextChapterSetup !== "object") {
+            return "还没有下章铺垫。";
+        }
+
+        const lines = [
+            nextChapterSetup.state_setup ? `状态：${nextChapterSetup.state_setup}` : "",
+            nextChapterSetup.atmosphere_setup ? `氛围：${nextChapterSetup.atmosphere_setup}` : "",
+            nextChapterSetup.suspense_hook ? `悬念：${nextChapterSetup.suspense_hook}` : "",
+            nextChapterSetup.clue_hint ? `线索：${nextChapterSetup.clue_hint}` : "",
+            nextChapterSetup.countdown ? `倒计时：${nextChapterSetup.countdown}` : ""
+        ].filter(Boolean);
+
+        return lines.length ? lines.join("\n") : "还没有下章铺垫。";
+    }
+
+    formatChapterSnapshotPreview(snapshot) {
+        if (!snapshot || typeof snapshot !== "object") {
+            return "还没有章末快照。";
+        }
+
+        const lines = [
+            snapshot["时间"] ? `时间：${snapshot["时间"]}` : "",
+            snapshot["位置"] ? `位置：${snapshot["位置"]}` : "",
+            snapshot.pending_plots ? `待推进：${snapshot.pending_plots}` : "",
+            snapshot["下一章预期"] ? `预期：${snapshot["下一章预期"]}` : ""
+        ].filter(Boolean);
+
+        return lines.length ? lines.join("\n") : "还没有章末快照。";
+    }
+
+    formatChapterAnalysisPreview(chapterNumber, chapter) {
+        const chapterKey = `chapter_${chapterNumber}`;
+        const rhythm = this.novelData.chapter_rhythms?.[chapterKey] || "";
+        const emotion = this.novelData.chapter_emotions?.[chapterKey] || "";
+        const plotUnit = chapter?.plot_unit || "";
+
+        const lines = [
+            plotUnit ? `剧情单元：${plotUnit}` : "",
+            rhythm ? `节奏：${rhythm}` : "",
+            emotion ? `情绪：${emotion}` : ""
+        ].filter(Boolean);
+
+        return lines.length ? lines.join("\n") : "还没有分析标签。";
     }
 
     saveChapterEditor() {
@@ -2132,8 +2365,11 @@ ${(detailedOutline || concept || "未填写").slice(0, 2200)}`;
             logs.push(`已更新人物出场 ${appearanceStats.appearances} 条、关系 ${appearanceStats.relationships} 条。`);
         }
 
+        const cleanedContent = this.stripGeneratedMarkers(rawContent).trim();
+        this.recordChapterAnalysisTags(chapterNumber, chapter, cleanedContent, stateData || {});
+
         return {
-            cleanedContent: this.stripGeneratedMarkers(rawContent).trim(),
+            cleanedContent,
             logs
         };
     }
@@ -2222,6 +2458,8 @@ ${(detailedOutline || concept || "未填写").slice(0, 2200)}`;
         this.recordDynamicStateUpdate(stateData);
         this.recordWorldTrackerUpdate(chapterNumber, stateData);
         this.recordCharacterCheckerState(chapterNumber, stateData);
+        this.recordGenreProgressUpdate(chapterNumber, stateData);
+        this.recordPendingSubplots(chapterNumber, stateData);
     }
 
     recordChapterSnapshot(chapterNumber, chapterTitle, stateData, chapter = null) {
@@ -2256,6 +2494,7 @@ ${(detailedOutline || concept || "未填写").slice(0, 2200)}`;
         const tracker = this.novelData.timeline_tracker;
         tracker.current_time = stateData.timeline || tracker.current_time || "";
         tracker.timeline_events = Array.isArray(tracker.timeline_events) ? tracker.timeline_events : [];
+        tracker.time_constraints = Array.isArray(tracker.time_constraints) ? tracker.time_constraints : [];
         if (stateData.key_event || stateData.timeline) {
             tracker.timeline_events.push({
                 chapter: chapterNumber,
@@ -2267,6 +2506,20 @@ ${(detailedOutline || concept || "未填写").slice(0, 2200)}`;
             });
             tracker.timeline_events = tracker.timeline_events.slice(-50);
         }
+        Utils.ensureArrayFromText(stateData.time_constraints).forEach((item) => {
+            const text = typeof item === "object" && item
+                ? `${item["设定"] || item.constraint_desc || ""}${item["持续"] || item.duration_desc ? `（持续：${item["持续"] || item.duration_desc}）` : ""}`.trim()
+                : String(item || "").trim();
+            if (!text) {
+                return;
+            }
+            tracker.time_constraints.push({
+                chapter: chapterNumber,
+                constraint_desc: text,
+                "设定": text
+            });
+        });
+        tracker.time_constraints = tracker.time_constraints.slice(-60);
     }
 
     recordDynamicStateUpdate(stateData) {
@@ -2358,6 +2611,153 @@ ${(detailedOutline || concept || "未填写").slice(0, 2200)}`;
                 ...state
             };
         });
+    }
+
+    recordGenreProgressUpdate(chapterNumber, stateData) {
+        const tracker = this.novelData.genre_progress_tracker || (this.novelData.genre_progress_tracker = {
+            current_genre: "",
+            current_subgenre: "",
+            pregnancy_progress: {},
+            rank_progress: {},
+            status_progress: {},
+            progress_events: []
+        });
+        tracker.current_genre = this.novelData.genre || this.novelData.outline?.genre || tracker.current_genre || "";
+        tracker.current_subgenre = this.novelData.subgenre || this.novelData.outline?.subgenre || tracker.current_subgenre || "";
+        tracker.pregnancy_progress = tracker.pregnancy_progress || {};
+        tracker.rank_progress = tracker.rank_progress || {};
+        tracker.status_progress = tracker.status_progress || {};
+        tracker.progress_events = Array.isArray(tracker.progress_events) ? tracker.progress_events : [];
+
+        Utils.ensureArrayFromText(stateData.genre_progress).forEach((progress) => {
+            const text = String(progress || "").trim();
+            if (!text) {
+                return;
+            }
+
+            let roleName = "未指明角色";
+            let detail = text;
+            if (text.includes("：")) {
+                [roleName, detail] = text.split("：", 2).map((item) => item.trim());
+            } else if (text.includes(":")) {
+                [roleName, detail] = text.split(":", 2).map((item) => item.trim());
+            }
+
+            if (/怀孕|孕|胎/.test(detail)) {
+                const monthsMatch = detail.match(/(\d+)\s*个?月/);
+                tracker.pregnancy_progress[roleName] = {
+                    chapter: chapterNumber,
+                    months: monthsMatch ? Number(monthsMatch[1]) : "",
+                    status: /待产|临盆/.test(detail) ? "待产" : "进行中",
+                    detail
+                };
+            } else if (/→|突破|晋升|境|阶|品/.test(detail)) {
+                const rank = detail.includes("→")
+                    ? detail.split("→").pop().trim()
+                    : detail.replace(/突破|晋升/g, "").trim();
+                tracker.rank_progress[roleName] = {
+                    chapter: chapterNumber,
+                    rank,
+                    detail
+                };
+            } else {
+                tracker.status_progress[roleName] = {
+                    chapter: chapterNumber,
+                    detail
+                };
+            }
+
+            tracker.progress_events.push({
+                chapter: chapterNumber,
+                role: roleName,
+                detail
+            });
+        });
+
+        tracker.progress_events = tracker.progress_events.slice(-80);
+    }
+
+    recordPendingSubplots(chapterNumber, stateData) {
+        const pendingList = Utils.ensureArrayFromText(stateData.pending_plots)
+            .map((item) => String(item || "").trim())
+            .filter(Boolean);
+        if (!pendingList.length) {
+            return;
+        }
+
+        const target = Array.isArray(this.novelData.used_temp_subplots) ? this.novelData.used_temp_subplots : [];
+        pendingList.forEach((item) => {
+            const normalized = `${item}`;
+            if (!target.includes(normalized)) {
+                target.push(normalized);
+            }
+        });
+        this.novelData.used_temp_subplots = target.slice(-40);
+    }
+
+    recordChapterAnalysisTags(chapterNumber, chapter, content, stateData = {}) {
+        if (!chapterNumber) {
+            return;
+        }
+
+        const chapterKey = `第${chapterNumber}章`;
+        const rhythm = this.detectChapterRhythm(chapter, content);
+        const emotion = this.detectChapterEmotion(chapter, content, stateData);
+
+        if (rhythm) {
+            this.novelData.chapter_rhythms[chapterKey] = rhythm;
+        }
+        if (emotion) {
+            this.novelData.chapter_emotions[chapterKey] = emotion;
+        }
+    }
+
+    detectChapterRhythm(chapter, content) {
+        const phase = String(chapter?.plot_unit?.unit_phase || "").trim();
+        if (phase.includes("高潮")) {
+            return "大高潮";
+        }
+        if (phase.includes("结尾")) {
+            return "转折";
+        }
+        if (phase.includes("发展")) {
+            return "推进";
+        }
+        if (phase.includes("开端")) {
+            return "铺垫";
+        }
+
+        const text = `${chapter?.summary || ""}\n${content || ""}`;
+        if (/大战|决战|爆发|生死|崩溃/.test(text)) {
+            return "大高潮";
+        }
+        if (/反转|真相|揭开|暴露|转机/.test(text)) {
+            return "转折";
+        }
+        if (/布局|调查|试探|潜伏|铺垫/.test(text)) {
+            return "铺垫";
+        }
+        return "推进";
+    }
+
+    detectChapterEmotion(chapter, content, stateData = {}) {
+        const curve = String(chapter?.emotionCurve || chapter?.emotion_curve || "").trim();
+        if (curve) {
+            return curve.split(/[、,，/]/)[0].trim();
+        }
+
+        const text = `${chapter?.summary || ""}\n${content || ""}\n${stateData?.key_event || ""}`;
+        const emotionRules = [
+            ["紧张", /危机|追杀|倒计时|失控|惊险|险些/],
+            ["热血", /出手|反击|爆发|决战|拼命|迎战/],
+            ["悲伤", /离开|死亡|失去|崩溃|诀别|痛哭/],
+            ["温馨", /陪伴|拥抱|照顾|安稳|温暖|轻松/],
+            ["浪漫", /心动|亲吻|暧昧|告白|脸红|牵手/],
+            ["搞笑", /尴尬|失误|胡闹|吐槽|好笑|乌龙/]
+        ];
+
+        const matched = emotionRules.find(([, pattern]) => pattern.test(text));
+        return matched ? matched[0] : "紧张";
     }
 
     extractExtraCharacters(block) {
@@ -2595,6 +2995,164 @@ ${(detailedOutline || concept || "未填写").slice(0, 2200)}`;
             volume.chapters.push(normalized);
         }
         volume.chapters.sort(Utils.chapterSort);
+        const volumeNumber = this.novelData.outline.volumes.findIndex((item) => item === volume) + 1;
+        if (volumeNumber > 0) {
+            this.syncPlotUnitForChapter(volumeNumber, normalized);
+        }
+    }
+
+    createEmptyPlotUnitProgress() {
+        return {
+            开端: { status: "待开始", chapters: [] },
+            发展: { status: "待开始", chapters: [] },
+            高潮: { status: "待开始", chapters: [] },
+            结尾: { status: "待开始", chapters: [] }
+        };
+    }
+
+    getPlotUnitPhaseForChapter(chapterNumber) {
+        const position = ((Math.max(1, Number(chapterNumber || 1)) - 1) % 8) + 1;
+        if (position <= 2) {
+            return { phase: "开端", position };
+        }
+        if (position <= 5) {
+            return { phase: "发展", position };
+        }
+        if (position <= 7) {
+            return { phase: "高潮", position };
+        }
+        return { phase: "结尾", position };
+    }
+
+    getPlotUnitId(volumeNumber, unitNumber) {
+        return `pu_v${volumeNumber}_u${unitNumber}`;
+    }
+
+    syncPlotUnitForChapter(volumeNumber, chapter) {
+        const manager = this.novelData.outline_plot_unit_manager || (this.novelData.outline_plot_unit_manager = {
+            plot_units: {},
+            next_id: 1,
+            unit_history: []
+        });
+        manager.plot_units = manager.plot_units || {};
+        manager.unit_history = Array.isArray(manager.unit_history) ? manager.unit_history : [];
+        manager.next_id = Number(manager.next_id || 1);
+
+        const chapterNumber = Number(chapter.number || chapter.chapter_number || 0);
+        if (!chapterNumber) {
+            return;
+        }
+
+        const unitNumber = Math.floor((chapterNumber - 1) / 8) + 1;
+        const startChapter = (unitNumber - 1) * 8 + 1;
+        const endChapter = unitNumber * 8;
+        const { phase, position } = this.getPlotUnitPhaseForChapter(chapterNumber);
+        const unitId = this.getPlotUnitId(volumeNumber, unitNumber);
+        const existing = manager.plot_units[unitId];
+
+        const unit = existing || {
+            id: unitId,
+            uid: unitId,
+            unit_number: unitNumber,
+            volume: volumeNumber,
+            start_chapter: startChapter,
+            end_chapter: endChapter,
+            chapters: [],
+            current_phase: phase,
+            completed: false,
+            core_conflict: chapter.key_event || chapter.keyEvent || "",
+            related_chars: Utils.ensureArrayFromText(chapter.characters),
+            suspense_hook: "",
+            connection_to_previous: "",
+            connection_to_next: "",
+            phase_progress: this.createEmptyPlotUnitProgress(),
+            created_at: new Date().toISOString()
+        };
+
+        unit.volume = volumeNumber;
+        unit.start_chapter = startChapter;
+        unit.end_chapter = endChapter;
+        unit.current_phase = phase;
+        unit.current_position = position;
+        unit.chapters = Array.from(new Set([...(unit.chapters || []), chapterNumber])).sort((left, right) => left - right);
+        unit.related_chars = Array.from(new Set([
+            ...(unit.related_chars || []),
+            ...Utils.ensureArrayFromText(chapter.characters)
+        ])).slice(0, 12);
+        unit.core_conflict = unit.core_conflict || chapter.key_event || chapter.keyEvent || "";
+
+        unit.phase_progress = unit.phase_progress || this.createEmptyPlotUnitProgress();
+        Object.keys(this.createEmptyPlotUnitProgress()).forEach((phaseName) => {
+            unit.phase_progress[phaseName] = unit.phase_progress[phaseName] || { status: "待开始", chapters: [] };
+        });
+        unit.phase_progress[phase].chapters = Array.from(new Set([
+            ...(unit.phase_progress[phase].chapters || []),
+            chapterNumber
+        ])).sort((left, right) => left - right);
+
+        const phaseOrder = ["开端", "发展", "高潮", "结尾"];
+        const currentPhaseIndex = phaseOrder.indexOf(phase);
+        phaseOrder.forEach((phaseName, index) => {
+            if (index < currentPhaseIndex) {
+                unit.phase_progress[phaseName].status = "已完成";
+            } else if (index === currentPhaseIndex) {
+                unit.phase_progress[phaseName].status = "进行中";
+            } else if (!unit.phase_progress[phaseName].status || unit.phase_progress[phaseName].status === "进行中") {
+                unit.phase_progress[phaseName].status = "待开始";
+            }
+        });
+
+        if (chapter.plot_unit?.connects_to_previous) {
+            unit.connection_to_previous = chapter.plot_unit.connects_to_previous;
+        }
+        if (chapter.plot_unit?.sets_up_next) {
+            unit.connection_to_next = chapter.plot_unit.sets_up_next;
+        }
+        if (chapter.next_chapter_setup?.suspense_hook) {
+            unit.suspense_hook = chapter.next_chapter_setup.suspense_hook;
+        }
+        if (position === 8) {
+            unit.completed = true;
+            unit.phase_progress.结尾.status = "已完成";
+            unit.completed_at = new Date().toISOString();
+            const historyKey = `v${volumeNumber}-u${unitNumber}`;
+            if (!manager.unit_history.some((item) => item.key === historyKey)) {
+                manager.unit_history.push({
+                    key: historyKey,
+                    unit_number: unitNumber,
+                    volume: volumeNumber,
+                    completed_chapter: chapterNumber,
+                    suspense_hook: unit.suspense_hook || "",
+                    completed_at: unit.completed_at
+                });
+                manager.unit_history = manager.unit_history.slice(-40);
+            }
+        }
+
+        manager.plot_units[unitId] = unit;
+        if (!existing) {
+            manager.next_id += 1;
+        }
+    }
+
+    rebuildPlotUnitManager(persistAfter = false) {
+        const manager = {
+            plot_units: {},
+            next_id: 1,
+            unit_history: []
+        };
+        this.novelData.outline_plot_unit_manager = manager;
+
+        (this.novelData.outline.volumes || []).forEach((volume, index) => {
+            (volume.chapters || [])
+                .slice()
+                .sort(Utils.chapterSort)
+                .forEach((chapter) => this.syncPlotUnitForChapter(index + 1, chapter));
+        });
+
+        if (persistAfter) {
+            this.persist(true);
+        }
     }
 
     async generateCharactersFromOutlines(
@@ -2874,6 +3432,7 @@ ${(detailedOutline || concept || "未填写").slice(0, 2200)}`;
             appearanceTracker: { path: ["character_appearance_tracker"], fallback: {} },
             dialogueTracker: { path: ["dialogue_tracker"], fallback: {} },
             worldTracker: { path: ["world_tracker"], fallback: {} },
+            genreProgressTracker: { path: ["genre_progress_tracker"], fallback: {} },
             supportingCharacters: { path: ["supporting_characters"], fallback: {} },
             legacyForeshadows: { path: ["foreshadows"], fallback: [] },
             chapterRhythms: { path: ["chapter_rhythms"], fallback: {} },

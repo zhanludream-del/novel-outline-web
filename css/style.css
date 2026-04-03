@@ -700,6 +700,13 @@ button {
     gap: 20px;
 }
 
+.panel-note {
+    margin: 14px 0 0;
+    color: var(--muted);
+    font-size: 14px;
+    line-height: 1.7;
+}
+
 .chapter-subtabs {
     display: inline-flex;
     flex-wrap: wrap;
@@ -741,6 +748,20 @@ button {
 .chapter-list-panel,
 .chapter-editor-panel {
     min-width: 0;
+}
+
+.chapter-meta-grid {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 14px;
+    margin-bottom: 18px;
+}
+
+.mini-text {
+    white-space: pre-wrap;
+    color: var(--ink-soft);
+    font-size: 14px;
+    line-height: 1.8;
 }
 
 .chapter-batch-preview {

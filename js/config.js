@@ -317,6 +317,19 @@ const DEFAULT_NOVEL_DATA = {
         offscreen_status: {},
         world_events: []
     },
+    genre_progress_tracker: {
+        current_genre: "",
+        current_subgenre: "",
+        pregnancy_progress: {},
+        rank_progress: {},
+        status_progress: {},
+        progress_events: []
+    },
+    outline_plot_unit_manager: {
+        plot_units: {},
+        next_id: 1,
+        unit_history: []
+    },
     foreshadows: [],
     chapter_rhythms: {},
     chapter_emotions: {},

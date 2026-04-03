@@ -247,6 +247,8 @@ class NovelGenerator {
         const volumeSynopsisContext = this.buildVolumeSynopsisContext(project, volumeNumber);
         const allChapterSynopsisContext = this.buildAllChapterSynopsisContext(project, volumeNumber);
         const plotUnitContext = this.buildPlotUnitContext(startChapter, endChapter);
+        const plotUnitReport = this.buildPlotUnitTrackerReport(project, volumeNumber, startChapter);
+        const plotUnitSuggestions = this.buildPlotUnitSuggestionText(project, volumeNumber, startChapter);
 
         const systemPrompt = [
             "你是一个执行力极强的网文主编助手。",
@@ -269,6 +271,8 @@ class NovelGenerator {
             allChapterSynopsisContext ? `【细纲前置】\n${allChapterSynopsisContext}` : "",
             outlineSlice.adjacentSummary ? `【相邻卷衔接提示】\n${outlineSlice.adjacentSummary}` : "",
             plotUnitContext ? `【8章剧情单元规则】\n${plotUnitContext}` : "",
+            plotUnitReport,
+            plotUnitSuggestions,
             `当前卷：第${volumeNumber}卷 ${volume.title || ""}`,
             `当前卷摘要：${volume.summary || "暂无"}`,
             `当前卷章节细纲：${volume.chapterSynopsis || volume.chapter_synopsis || "暂无"}`,
@@ -555,7 +559,9 @@ class NovelGenerator {
             this.buildNameLockGuard(project),
             this.buildTimelineGuard(project, chapterNumber),
             this.buildForeshadowGuard(project, chapterNumber),
+            this.buildSubplotGuard(project),
             this.buildWorldTrackerGuard(project),
+            this.buildGenreProgressGuard(project),
             this.buildPersonalityGuard(project, "", chapterNumber),
             this.buildCharacterCheckerGuard(project),
             this.buildAppearanceGuard(project, "", chapterNumber),
@@ -850,6 +856,56 @@ class NovelGenerator {
         }
 
         return lines.length ? `【世界观追踪约束】\n${lines.join("\n")}` : "";
+    }
+
+    buildGenreProgressGuard(project) {
+        const tracker = project.genre_progress_tracker || {};
+        const lines = [];
+
+        const rankProgress = Object.entries(tracker.rank_progress || {})
+            .slice(-5)
+            .map(([name, data]) => `${name}=${data.rank || data.detail || "暂无"}`);
+        if (rankProgress.length) {
+            lines.push(`题材进度-位阶/修为：${rankProgress.join("、")}`);
+        }
+
+        const pregnancyProgress = Object.entries(tracker.pregnancy_progress || {})
+            .slice(-4)
+            .map(([name, data]) => `${name}=${data.months ? `${data.months}个月` : ""}${data.status ? `(${data.status})` : ""}${data.detail ? ` ${data.detail}` : ""}`.trim());
+        if (pregnancyProgress.length) {
+            lines.push(`题材进度-怀孕/阶段状态：${pregnancyProgress.join("、")}`);
+        }
+
+        const statusProgress = Object.entries(tracker.status_progress || {})
+            .slice(-5)
+            .map(([name, data]) => `${name}=${data.detail || "暂无"}`);
+        if (statusProgress.length) {
+            lines.push(`题材进度-其他状态：${statusProgress.join("、")}`);
+        }
+
+        const progressEvents = (tracker.progress_events || [])
+            .slice(-6)
+            .map((item) => `${item.role || "角色"}：${item.detail || ""}`)
+            .filter(Boolean);
+        if (progressEvents.length) {
+            lines.push(`最近题材进度变化：${progressEvents.join("、")}`);
+        }
+
+        return lines.length ? `【题材进度追踪】\n${lines.join("\n")}` : "";
+    }
+
+    buildSubplotGuard(project) {
+        const subplots = Array.isArray(project.used_temp_subplots) ? project.used_temp_subplots.slice(-6) : [];
+        if (!subplots.length) {
+            return "";
+        }
+
+        return [
+            "【支线剧情管理】",
+            `当前活跃支线：${subplots.join("、")}`,
+            "要求：本章如涉及支线，必须和主线行动或人物关系推进产生联系。",
+            "要求：不要把同一条支线重复开一遍，也不要突然无因收束全部支线。"
+        ].join("\n");
     }
 
     buildCharacterCheckerGuard(project) {
@@ -1581,12 +1637,14 @@ class NovelGenerator {
             '  "important_items": "本章新增或变化的重要物品",',
             '  "pending_plots": "本章留下的待推进事项",',
             '  "key_event": "本章最关键的一件事",',
+            '  "genre_progress": ["多题材进度（格式：角色名：变化）"],',
             '  "world_changes": {',
             '    "new_locations": [],',
             '    "character_movements": [],',
             '    "org_changes": [],',
             '    "offscreen_status": []',
             "  },",
+            '  "time_constraints": ["仍在持续的时间约束或倒计时"],',
             '  "characters": {',
             '    "角色名": {',
             '      "cultivation": "修为/实力变化",',
@@ -2204,7 +2262,7 @@ class NovelGenerator {
             if (pos <= 2) return "开端";
             if (pos <= 5) return "发展";
             if (pos <= 7) return "高潮";
-            return "收束";
+            return "结尾";
         };
 
         const lines = [
@@ -2218,11 +2276,211 @@ class NovelGenerator {
         if (phaseFor(startChapter) === "开端" && firstUnit > 1) {
             lines.push(`当前批次开头要承接第 ${firstUnit - 1} 单元结尾留下的伏笔。`);
         }
-        if (phaseFor(endChapter) === "收束") {
+        if (phaseFor(endChapter) === "结尾") {
             lines.push(`当前批次结尾要为第 ${lastUnit + 1} 单元埋下悬念钩子。`);
         }
 
         lines.push("next_chapter_setup 字段必须严格遵守：只写铺垫，不写结果。");
+        return lines.join("\n");
+    }
+
+    getPlotUnitPhaseBlueprint() {
+        return {
+            开端: {
+                coreTasks: ["引入当前单元冲突", "承接上一单元余波", "建立本单元目标"],
+                elements: {
+                    引爆点: ["新的任务", "新的敌意", "新的误会", "新的线索"],
+                    承接点: ["上章留下的异样", "未解释的动作", "未兑现的承诺", "仍在发酵的后果"]
+                },
+                guidance: "开端阶段要先把当前8章单元的核心矛盾立住，同时明确承接上一段剧情，不要一上来就把高潮写完。"
+            },
+            发展: {
+                coreTasks: ["推进主冲突", "抬高代价", "让人物关系或信息发生变化"],
+                elements: {
+                    升级点: ["误判升级", "线索反转", "局势压迫", "资源受限"],
+                    人物关系: ["合作生裂痕", "敌意加深", "信任试探", "利益交换"]
+                },
+                guidance: "发展阶段要持续推进，不要原地踏步。每章都要有新信息、新变化或新的代价。"
+            },
+            高潮: {
+                coreTasks: ["集中爆发主要矛盾", "逼角色做关键选择", "让前文铺垫产生回响"],
+                elements: {
+                    爆发点: ["正面交锋", "真相撕开", "计划失控", "情绪失守"],
+                    代价: ["失去筹码", "关系破裂", "暴露秘密", "局面反噬"]
+                },
+                guidance: "高潮阶段要有强烈冲突和明确代价，不能只是喊口号，必须真的改变局势。"
+            },
+            结尾: {
+                coreTasks: ["完成本单元收束", "回收至少一项铺垫", "为下一单元留下钩子"],
+                elements: {
+                    收束方式: ["阶段性胜负", "局面暂稳", "误会加深", "新的任务落下"],
+                    悬念钩子: ["更大的敌人", "新暴露的真相", "突如其来的消息", "尚未解释的异常"]
+                },
+                guidance: "结尾阶段要有阶段性结果，但不能平平落地。必须留出推动下一单元的悬念钩子。"
+            }
+        };
+    }
+
+    getPlotUnitManager(project) {
+        const manager = project?.outline_plot_unit_manager;
+        if (!manager || typeof manager !== "object") {
+            return { plot_units: {}, next_id: 1, unit_history: [] };
+        }
+        return {
+            plot_units: manager.plot_units && typeof manager.plot_units === "object" ? manager.plot_units : {},
+            next_id: Number(manager.next_id || 1),
+            unit_history: Array.isArray(manager.unit_history) ? manager.unit_history : []
+        };
+    }
+
+    getPlotUnitPhase(chapterNumber) {
+        const position = ((Math.max(1, Number(chapterNumber || 1)) - 1) % 8) + 1;
+        if (position <= 2) {
+            return { phase: "开端", position };
+        }
+        if (position <= 5) {
+            return { phase: "发展", position };
+        }
+        if (position <= 7) {
+            return { phase: "高潮", position };
+        }
+        return { phase: "结尾", position };
+    }
+
+    getPlotUnitForChapter(project, volumeNumber, chapterNumber) {
+        const unitNumber = Math.floor((Math.max(1, Number(chapterNumber || 1)) - 1) / 8) + 1;
+        const unitId = `pu_v${volumeNumber}_u${unitNumber}`;
+        const manager = this.getPlotUnitManager(project);
+        return {
+            unitId,
+            unitNumber,
+            unit: manager.plot_units[unitId] || null,
+            manager
+        };
+    }
+
+    buildPlotUnitSuggestionEntries(project, volumeNumber, currentChapter) {
+        const { unitNumber, unit, manager } = this.getPlotUnitForChapter(project, volumeNumber, currentChapter);
+        const phaseInfo = this.getPlotUnitPhaseBlueprint();
+        const phase = this.getPlotUnitPhase(currentChapter);
+        const suggestions = [];
+
+        if (!unit) {
+            suggestions.push({
+                priority: "高",
+                message: `建议创建第 ${unitNumber} 个剧情单元，明确当前8章的核心冲突和阶段目标。`,
+                coreTasks: ["确定本单元主冲突", "安排与上一单元的承接", "提早埋下结尾钩子"],
+                elements: ["新任务", "新敌意", "新秘密"],
+                guidance: "如果这是新单元开端，先立目标和矛盾，不要一上来把结果说穿。"
+            });
+            return suggestions;
+        }
+
+        const currentPhaseInfo = phaseInfo[phase.phase] || {};
+        const elementHints = Object.values(currentPhaseInfo.elements || {})
+            .slice(0, 2)
+            .map((list) => Array.isArray(list) ? list.slice(0, 2).join(" / ") : "")
+            .filter(Boolean);
+
+        suggestions.push({
+            priority: "高",
+            message: `第 ${unit.unit_number} 个单元当前处于${phase.phase}阶段（第 ${phase.position} 章）。`,
+            coreTasks: currentPhaseInfo.coreTasks || [],
+            elements: elementHints,
+            guidance: currentPhaseInfo.guidance || ""
+        });
+
+        if (phase.phase === "开端" && unit.unit_number > 1) {
+            const prevUnit = manager.plot_units[`pu_v${volumeNumber}_u${unit.unit_number - 1}`];
+            if (prevUnit) {
+                suggestions.push({
+                    priority: "极高",
+                    message: `必须承接第 ${unit.unit_number - 1} 个单元结尾留下的悬念。`,
+                    coreTasks: prevUnit.connection_to_next ? [prevUnit.connection_to_next] : [],
+                    elements: prevUnit.suspense_hook ? [prevUnit.suspense_hook] : [],
+                    guidance: "开端阶段先接上前面留下的问题，再展开当前单元的主冲突。"
+                });
+            }
+        }
+
+        if (phase.phase === "结尾") {
+            suggestions.push({
+                priority: "极高",
+                message: "本章段如果收在单元结尾，必须形成阶段性结果，并埋下下一单元钩子。",
+                coreTasks: ["回收至少一项伏笔", "留下新悬念", "next_chapter_setup 只写因不写果"],
+                elements: (phaseInfo.结尾?.elements?.悬念钩子 || []).slice(0, 3),
+                guidance: phaseInfo.结尾?.guidance || ""
+            });
+        }
+
+        return suggestions;
+    }
+
+    buildPlotUnitSuggestionText(project, volumeNumber, currentChapter) {
+        const suggestions = this.buildPlotUnitSuggestionEntries(project, volumeNumber, currentChapter);
+        if (!suggestions.length) {
+            return "";
+        }
+
+        const lines = ["【剧情单元发展建议】"];
+        suggestions.slice(0, 3).forEach((item) => {
+            lines.push(`• [${item.priority}] ${item.message}`);
+            if (item.coreTasks?.length) {
+                lines.push(`  核心任务：${item.coreTasks.slice(0, 2).join("、")}`);
+            }
+            if (item.elements?.length) {
+                lines.push(`  元素启发：${item.elements.join("、")}`);
+            }
+            if (item.guidance) {
+                lines.push(`  提示：${item.guidance}`);
+            }
+        });
+        return lines.join("\n");
+    }
+
+    buildPlotUnitTrackerReport(project, volumeNumber, currentChapter) {
+        const manager = this.getPlotUnitManager(project);
+        const plotUnits = Object.values(manager.plot_units || {});
+        if (!plotUnits.length) {
+            return "";
+        }
+
+        const activeUnits = plotUnits
+            .filter((unit) => Number(unit.volume || 0) === Number(volumeNumber))
+            .sort((left, right) => {
+                if (Number(left.unit_number || 0) !== Number(right.unit_number || 0)) {
+                    return Number(right.unit_number || 0) - Number(left.unit_number || 0);
+                }
+                return Number(right.current_position || 0) - Number(left.current_position || 0);
+            })
+            .slice(0, 3);
+
+        const lines = ["", "════════════════════════════════════════════", "【剧情单元追踪报告】", "════════════════════════════════════════════"];
+        if (activeUnits.length) {
+            lines.push("【当前活跃单元】");
+            activeUnits.forEach((unit) => {
+                lines.push(`• 第${unit.unit_number}单元（第${unit.start_chapter}-${unit.end_chapter}章）`);
+                lines.push(`  阶段：${unit.current_phase || "未知"} | 核心冲突：${unit.core_conflict || "待补充"}`);
+                if (unit.suspense_hook) {
+                    lines.push(`  悬念钩子：${unit.suspense_hook}`);
+                }
+                if (unit.connection_to_previous) {
+                    lines.push(`  对上一单元承接：${unit.connection_to_previous}`);
+                }
+                if (unit.connection_to_next) {
+                    lines.push(`  对下一单元铺垫：${unit.connection_to_next}`);
+                }
+            });
+        }
+
+        if (currentChapter && plotUnits.length > 1) {
+            lines.push("", "【单元衔接提醒】");
+            lines.push("• 前一单元的结尾，要自然变成后一单元的开端。");
+            lines.push("• 单元结尾必须留下钩子，单元开端必须承接旧问题。");
+            lines.push("• 不要把后续单元的大高潮提前压缩到当前批次。");
+        }
+
+        lines.push("════════════════════════════════════════════");
         return lines.join("\n");
     }
 

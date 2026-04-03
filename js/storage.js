@@ -86,6 +86,42 @@ class StorageManager {
         merged.supporting_characters = merged.supporting_characters && typeof merged.supporting_characters === "object"
             ? merged.supporting_characters
             : {};
+        merged.genre_progress_tracker = merged.genre_progress_tracker && typeof merged.genre_progress_tracker === "object"
+            ? {
+                current_genre: merged.genre_progress_tracker.current_genre || "",
+                current_subgenre: merged.genre_progress_tracker.current_subgenre || "",
+                pregnancy_progress: merged.genre_progress_tracker.pregnancy_progress && typeof merged.genre_progress_tracker.pregnancy_progress === "object"
+                    ? merged.genre_progress_tracker.pregnancy_progress
+                    : {},
+                rank_progress: merged.genre_progress_tracker.rank_progress && typeof merged.genre_progress_tracker.rank_progress === "object"
+                    ? merged.genre_progress_tracker.rank_progress
+                    : {},
+                status_progress: merged.genre_progress_tracker.status_progress && typeof merged.genre_progress_tracker.status_progress === "object"
+                    ? merged.genre_progress_tracker.status_progress
+                    : {},
+                progress_events: Array.isArray(merged.genre_progress_tracker.progress_events)
+                    ? merged.genre_progress_tracker.progress_events
+                    : []
+            }
+            : {
+                current_genre: "",
+                current_subgenre: "",
+                pregnancy_progress: {},
+                rank_progress: {},
+                status_progress: {},
+                progress_events: []
+            };
+        merged.outline_plot_unit_manager = merged.outline_plot_unit_manager && typeof merged.outline_plot_unit_manager === "object"
+            ? {
+                plot_units: merged.outline_plot_unit_manager.plot_units && typeof merged.outline_plot_unit_manager.plot_units === "object"
+                    ? merged.outline_plot_unit_manager.plot_units
+                    : {},
+                next_id: Number(merged.outline_plot_unit_manager.next_id || 1),
+                unit_history: Array.isArray(merged.outline_plot_unit_manager.unit_history)
+                    ? merged.outline_plot_unit_manager.unit_history
+                    : []
+            }
+            : { plot_units: {}, next_id: 1, unit_history: [] };
         this.syncTopLevelChapterContent(merged);
         return merged;
     }
