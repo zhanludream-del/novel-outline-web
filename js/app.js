@@ -2658,7 +2658,7 @@ ${(detailedOutline || concept || "未填写").slice(0, 2200)}`;
             }
 
             if (generatedAll.length) {
-                await this.generateCharactersFromOutlines(generatedAll, volumeNumber, false);
+                await this.generateCharactersFromOutlines(volume.chapters || generatedAll, volumeNumber, false);
             }
 
             this.persist(true);
@@ -4275,7 +4275,7 @@ ${(detailedOutline || concept || "未填写").slice(0, 2200)}`;
     ) {
         const outlineChapters = chapters || this.novelData.outline.volumes.flatMap((volume) => volume.chapters || []);
         if (!outlineChapters.length) {
-            throw new Error("请先生成章纲，再批量生成人物设定。");
+            throw new Error("请先生成大纲，再根据大纲内容补全人物设定。");
         }
 
         const task = async () => {
@@ -4300,12 +4300,12 @@ ${(detailedOutline || concept || "未填写").slice(0, 2200)}`;
             this.persist(true);
             this.renderCharacterList();
             this.renderDashboard();
-            Utils.showMessage(`人物设定已补充 ${added} 个角色。`, "success");
-            Utils.log(`按章纲分批生成人设完成，新增/更新 ${added} 个角色。`, "success");
+            Utils.showMessage(`已根据大纲补充 ${added} 个角色设定。`, "success");
+            Utils.log(`已根据大纲分批补全人设，新增/更新 ${added} 个角色。`, "success");
         };
 
         if (useLoading) {
-            await this.runWithLoading("正在按章纲分批生成人设...", task);
+            await this.runWithLoading("正在根据大纲分批补全人设...", task);
         } else {
             await task();
         }
