@@ -458,7 +458,9 @@ class NovelGenerator {
             ? existingCharacters.map((character) => [
                 `- ${character.name || "未命名"}`,
                 character.identity ? `身份：${character.identity}` : "",
+                (character.aliases || character["别名"]) ? `别名：${Utils.ensureArrayFromText(character.aliases || character["别名"]).join("、")}` : "",
                 character.personality ? `性格：${Utils.summarizeText(character.personality, 80)}` : "",
+                character.background ? `背景：${Utils.summarizeText(character.background, 80)}` : "",
                 character.relationships ? `关系：${Utils.summarizeText(character.relationships, 80)}` : ""
             ].filter(Boolean).join(" | ")).join("\n")
             : "暂无已有角色";
@@ -521,7 +523,10 @@ class NovelGenerator {
                 "7. 若已有角色设定了某个地位，新角色不能无故取代，必须在 relationships 字段中明确说明与已有角色的关系。",
                 "8. 角色设定必须符合当前小说的世界观和剧情发展。",
                 "9. 各角色之间要有差异化，避免雷同。",
-                "10. 不要包含任何 markdown 标记，直接返回纯 JSON 数组。",
+                "10. 必须保留角色原名字，不得擅自改名；如果已有别名或常见称呼，请写入 aliases / 别名 字段。",
+                "11. 如果新角色和已有角色存在亲属、师门、敌对、上下级、旧识关系，必须在 relationships 字段中写清楚。",
+                "12. 不要让新角色无故顶替已有角色的重要身份，也不要把已有角色的别名重复发给其他人。",
+                "13. 不要包含任何 markdown 标记，直接返回纯 JSON 数组。",
                 "",
                 "【输出格式示例】",
                 `[${JSON.stringify(exampleChar, null, 2)}]`

@@ -4318,6 +4318,27 @@ ${(detailedOutline || concept || "未填写").slice(0, 2200)}`;
         ]);
     }
 
+    getCharacterAliasSet(character = {}) {
+        const names = new Set();
+        const primaryName = String(character.name || "").trim();
+        if (primaryName) {
+            names.add(primaryName);
+        }
+        Utils.ensureArrayFromText(character.aliases || character["别名"] || "")
+            .map((alias) => String(alias || "").trim())
+            .filter(Boolean)
+            .forEach((alias) => names.add(alias));
+        return names;
+    }
+
+    findExistingCharacterIndexByAnyName(name) {
+        const target = String(name || "").trim();
+        if (!target) {
+            return -1;
+        }
+        return this.novelData.outline.characters.findIndex((item) => this.getCharacterAliasSet(item).has(target));
+    }
+
     resolveKnownCharacterName(name) {
         const cleanName = String(name || "").trim();
         const mapping = this.novelData.synopsisData?.vague_to_name_mapping || this.novelData.synopsis_data?.vague_to_name_mapping || {};
@@ -4344,7 +4365,11 @@ ${(detailedOutline || concept || "未填写").slice(0, 2200)}`;
 
         if (section) {
             section.split(/\r?\n/).forEach((line) => {
-                const cleaned = line.trim().replace(/^[•\-]\s*/, "");
+                const rawLine = line.trim();
+                if (!rawLine || (!rawLine.startsWith("-") && !rawLine.startsWith("•"))) {
+                    return;
+                }
+                const cleaned = rawLine.replace(/^[•\-]\s*/, "");
                 if (!cleaned) {
                     return;
                 }
@@ -4383,7 +4408,7 @@ ${(detailedOutline || concept || "未填写").slice(0, 2200)}`;
             const seeds = [...directNames, ...sectionSeeds];
 
             seeds.forEach((seed) => {
-                const existingIndex = this.novelData.outline.characters.findIndex((item) => item.name === seed.name);
+                const existingIndex = this.findExistingCharacterIndexByAnyName(seed.name);
                 if (existingIndex >= 0) {
                     const existing = this.novelData.outline.characters[existingIndex];
                     const nextCharacter = {
@@ -4436,13 +4461,20 @@ ${(detailedOutline || concept || "未填写").slice(0, 2200)}`;
                 ...character,
                 id: character.id || Utils.uid("character")
             });
-            const existingIndex = this.novelData.outline.characters.findIndex((item) => item.name === normalized.name);
+            const existingIndex = this.findExistingCharacterIndexByAnyName(normalized.name);
 
             if (existingIndex >= 0) {
-                this.novelData.outline.characters[existingIndex] = {
-                    ...this.novelData.outline.characters[existingIndex],
-                    ...normalized
-                };
+                const existing = this.novelData.outline.characters[existingIndex];
+                const mergedAliases = Array.from(new Set([
+                    ...Utils.ensureArrayFromText(existing.aliases || existing["别名"] || ""),
+                    ...Utils.ensureArrayFromText(normalized.aliases || normalized["别名"] || "")
+                ])).filter(Boolean);
+                this.novelData.outline.characters[existingIndex] = storage.normalizeCharacter({
+                    ...existing,
+                    ...normalized,
+                    aliases: mergedAliases,
+                    别名: mergedAliases.join("、")
+                });
             } else {
                 this.novelData.outline.characters.push(normalized);
             }
