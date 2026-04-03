@@ -80,6 +80,7 @@ class NovelOutlineWebApp {
             chapterAnalysisPreview: document.getElementById("chapterAnalysisPreview"),
             chapterAnalysisReportPreview: document.getElementById("chapterAnalysisReportPreview"),
             chapterQcPreview: document.getElementById("chapterQcPreview"),
+            chapterAiFilterEnabled: document.getElementById("chapterAiFilterEnabled"),
 
             characterName: document.getElementById("characterName"),
             characterIdentity: document.getElementById("characterIdentity"),
@@ -139,6 +140,7 @@ class NovelOutlineWebApp {
             btnExpandChapterContent: document.getElementById("btnExpandChapterContent"),
             btnCopyChapterSummary: document.getElementById("btnCopyChapterSummary"),
             btnExportCurrentChapter: document.getElementById("btnExportCurrentChapter"),
+            btnManualAiFilter: document.getElementById("btnManualAiFilter"),
             btnAnalyzeChapter: document.getElementById("btnAnalyzeChapter"),
             btnRunChapterQc: document.getElementById("btnRunChapterQc"),
             btnRefreshChapterList: document.getElementById("btnRefreshChapterList"),
@@ -226,6 +228,13 @@ class NovelOutlineWebApp {
         if (!this.novelData.prompt_state) {
             this.novelData.prompt_state = JSON.parse(JSON.stringify(DEFAULT_NOVEL_DATA.prompt_state));
         }
+        this.novelData.prompt_state.ai_filter_enabled = this.novelData.prompt_state.ai_filter_enabled !== false;
+        this.novelData.prompt_state.ai_filter_whitelist = Array.isArray(this.novelData.prompt_state.ai_filter_whitelist)
+            ? this.novelData.prompt_state.ai_filter_whitelist
+            : [];
+        this.novelData.prompt_state.ai_filter_blacklist = Array.isArray(this.novelData.prompt_state.ai_filter_blacklist)
+            ? this.novelData.prompt_state.ai_filter_blacklist
+            : [];
         if (!this.novelData.genre_extensions || typeof this.novelData.genre_extensions !== "object") {
             this.novelData.genre_extensions = {};
         }
@@ -387,6 +396,13 @@ class NovelOutlineWebApp {
             this.novelData.prompt_state.chapter_frequency = this.elements.promptFrequencySelect.value;
             this.persist(true);
         });
+        if (this.elements.chapterAiFilterEnabled) {
+            this.elements.chapterAiFilterEnabled.addEventListener("change", () => {
+                this.novelData.prompt_state.ai_filter_enabled = this.elements.chapterAiFilterEnabled.checked;
+                this.persist(true);
+                Utils.showMessage(this.elements.chapterAiFilterEnabled.checked ? "已开启 AI 去味。" : "已关闭 AI 去味。", "success");
+            });
+        }
 
         this.elements.outlineVolumeList.addEventListener("input", (event) => this.handleVolumeInput(event));
         this.elements.outlineVolumeList.addEventListener("click", (event) => this.handleVolumeActions(event));
@@ -429,6 +445,7 @@ class NovelOutlineWebApp {
         this.elements.btnExpandChapterContent.addEventListener("click", () => this.safeAsync(() => this.expandCurrentChapter()));
         this.elements.btnCopyChapterSummary.addEventListener("click", () => this.copyCurrentChapterSummary());
         this.elements.btnExportCurrentChapter.addEventListener("click", () => this.exportCurrentChapterTxt());
+        this.elements.btnManualAiFilter.addEventListener("click", () => this.safeAsync(() => this.manualFilterCurrentChapter()));
         this.elements.btnAnalyzeChapter.addEventListener("click", () => this.analyzeCurrentChapter());
         this.elements.btnRunChapterQc.addEventListener("click", () => this.runCurrentChapterQc());
         this.elements.btnRefreshChapterList.addEventListener("click", () => this.refreshChapterWorkspace());
@@ -766,6 +783,9 @@ ${(detailedOutline || concept || "未填写").slice(0, 2200)}`;
         }
         this.elements.currentPromptTemplateInput.value = this.novelData.prompt_state.current_prompt || "";
         this.elements.promptFrequencySelect.value = this.novelData.prompt_state.chapter_frequency || "male";
+        if (this.elements.chapterAiFilterEnabled) {
+            this.elements.chapterAiFilterEnabled.checked = this.novelData.prompt_state.ai_filter_enabled !== false;
+        }
         this.renderPromptLibrary();
     }
 
@@ -1686,6 +1706,29 @@ ${(detailedOutline || concept || "未填写").slice(0, 2200)}`;
         Utils.log(`第 ${chapter.number} 章质检完成。`, "success");
     }
 
+    async manualFilterCurrentChapter() {
+        const chapter = this.getChapterFromEditor();
+        const content = String(chapter?.content || "").trim();
+        if (!chapter || !chapter.number) {
+            throw new Error("请先选择章节。");
+        }
+        if (!content) {
+            throw new Error("当前章节还没有正文可供去味。");
+        }
+
+        await this.runWithLoading("正在进行 AI 去味...", async () => {
+            const filtered = await this.generator.filterAiFlavorText(content, this.novelData);
+            if (!filtered || filtered === content) {
+                Utils.showMessage("当前正文未检测到明显 AI 味，已保持原文。", "info");
+                return;
+            }
+            this.elements.chapterContentInput.value = filtered;
+            this.saveChapterEditor();
+            Utils.showMessage("当前章节已完成 AI 去味。", "success");
+            Utils.log(`第 ${chapter.number} 章已执行手动去味。`, "success");
+        });
+    }
+
     refreshChapterWorkspace() {
         this.renderChapterList();
         const chapter = this.getChapterFromEditor();
@@ -2467,7 +2510,12 @@ ${(detailedOutline || concept || "未填写").slice(0, 2200)}`;
                 chapter
             });
             const processed = this.processGeneratedChapterResponse(rawContent, volume, chapter);
-            this.elements.chapterContentInput.value = processed.cleanedContent;
+            let finalContent = processed.cleanedContent;
+            if (this.novelData.prompt_state?.ai_filter_enabled !== false) {
+                Utils.log("🔍 正在进行AI深度去味（LLM润色）...", "info");
+                finalContent = await this.generator.filterAiFlavorText(finalContent, this.novelData);
+            }
+            this.elements.chapterContentInput.value = finalContent;
             this.saveChapterEditor();
             Utils.showMessage("章节正文草稿已生成。", "success");
             if (processed.logs.length) {

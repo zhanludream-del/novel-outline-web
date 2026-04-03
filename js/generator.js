@@ -505,6 +505,8 @@ class NovelGenerator {
             "你必须严格遵守本章大纲、全局设定、本章设定、角色锁定、世界观、人物一致性、动态状态和章末快照衔接。",
             "你可以在不改变主线的前提下进行血肉填充、动作延展、心理补强和场景渲染，但绝不能偏离大纲主线。",
             "必须完成本章结尾铺垫任务，但绝对不能把下一章核心事件提前写出来。",
+            "拒绝AI味：不要堆砌嘴角、眼神、瞳孔、喉结、指节等模板化微表情；不要写空泛比喻、总结腔和文绉绉的抽象抒情。",
+            "短句优先，动词优先，口语化，少副词，少形容词，少套路比喻。",
             "正文写完后，必须按要求追加状态输出和追踪输出。",
             guardContext,
             characterConsistencyContext
@@ -535,6 +537,133 @@ class NovelGenerator {
             maxTokens: 6500,
             timeout: 240000
         })).trim();
+    }
+
+    async filterAiFlavorText(text, project = {}) {
+        const sourceText = String(text || "").trim();
+        if (!sourceText) {
+            return sourceText;
+        }
+
+        const targetWords = this.getAiHighFrequencyWords();
+        const suspiciousPatterns = this.getAiSuspiciousPatterns();
+        const whitelist = this.getAiWhitelist(project);
+        const blacklist = this.getAiBlacklist(project);
+        const segments = this.splitSentencesForAiFilter(sourceText);
+        const taintedIndices = [];
+        const hitWords = new Set();
+
+        segments.forEach((segment, index) => {
+            const sentence = String(segment || "");
+            if (!sentence.trim()) {
+                return;
+            }
+            if (whitelist.some((item) => item && sentence.includes(item))) {
+                return;
+            }
+
+            const forced = blacklist.some((item) => item && sentence.includes(item));
+            let flagged = forced;
+
+            targetWords.forEach((word) => {
+                if (word && sentence.includes(word)) {
+                    hitWords.add(word);
+                    flagged = true;
+                }
+            });
+
+            if (!flagged) {
+                flagged = suspiciousPatterns.some((pattern) => new RegExp(pattern).test(sentence));
+            }
+
+            if (flagged) {
+                taintedIndices.push(index);
+            }
+        });
+
+        if (!taintedIndices.length) {
+            return sourceText;
+        }
+
+        const contextIndices = new Set();
+        taintedIndices.forEach((index) => {
+            contextIndices.add(index);
+            if (index > 0) {
+                contextIndices.add(index - 1);
+            }
+            if (index < segments.length - 1) {
+                contextIndices.add(index + 1);
+            }
+        });
+
+        const excerptLines = Array.from(contextIndices)
+            .sort((a, b) => a - b)
+            .map((index) => `${taintedIndices.includes(index) ? "【需改】" : "【勿动】"}${segments[index].trim()}`);
+        const excerptText = excerptLines.join("\n");
+        const hitWordsStr = Array.from(hitWords).slice(0, 50).join("、");
+
+        const polishPrompt = [
+            "你是一位资深网文编辑，请对以下文本进行【精准去AI味】处理。",
+            "",
+            "【最高原则】",
+            "- 只改标记为【需改】的句子，标记为【勿动】的句子一个字都不要动。",
+            "- 改完之后的句子必须比原句更简洁或同等简洁，绝对不能变复杂。",
+            "- 宁可少改，也不要乱改。如果一句话不确定有没有AI味，就不要改。",
+            "- 你是编辑不是审核员，不要改题材，不要改事件，只改措辞。",
+            "",
+            "【什么是AI味】",
+            "1. 模板化微表情：嘴角、眼神、瞳孔、喉结、指节等套路描写。",
+            "2. 烂大街比喻：像一记重锤、空气凝滞、时间仿佛暂停等。",
+            "3. 抽象情绪标签：心中一凛、心下了然、无法用言语形容等。",
+            "4. 万能形容词堆砌：深邃、锐利、复杂的光芒、不容置疑等。",
+            "5. 副词修饰依赖：缓缓地、死死地、精准地、平静地等。",
+            "",
+            `【文中检测到的AI味词汇】${hitWordsStr || "已命中可疑句式"}`,
+            "",
+            "【改写规则】",
+            "1. 短句优先，动词优先，口语化，少比喻。",
+            "2. 微表情类句子必须整句重写，换成动作、对话或直接删掉，不要只换个说法。",
+            "3. 不要总结，不要拔高，不要文绉绉。",
+            "4. 不要改没问题的句子。",
+            "",
+            "【输出格式】",
+            "- 只输出【需改】句子的改写结果，每行一句。",
+            "- 输出行数尽量与【需改】句子数量一致。",
+            "- 不要解释，不要加标题。",
+            "",
+            "【待润色文本】",
+            excerptText
+        ].join("\n");
+
+        const systemPrompt = "你是一位网文老编辑。只改真正有AI味的句子，没AI味的一个字不动。微表情必须整句换成动作或对话。改完后要更简洁，短句为主，动词优先，口语化，少比喻。";
+
+        try {
+            const response = await this.api.callLLM(polishPrompt, systemPrompt, {
+                temperature: 0.35,
+                maxTokens: Math.min(8000, excerptText.length * 2 + 1200),
+                timeout: 300000
+            });
+            const rewrittenLines = String(response || "")
+                .split(/\r?\n/)
+                .map((line) => line.replace(/^【需改】|^【勿动】/g, "").trim())
+                .filter(Boolean);
+
+            if (!rewrittenLines.length) {
+                return sourceText;
+            }
+
+            const updated = [...segments];
+            taintedIndices.forEach((index, position) => {
+                const rewritten = rewrittenLines[position];
+                if (rewritten) {
+                    updated[index] = this.preserveSentenceEnding(segments[index], rewritten);
+                }
+            });
+
+            return updated.join("").replace(/\n{3,}/g, "\n\n").trim();
+        } catch (error) {
+            return sourceText;
+        }
     }
 
     async requestJSONArray(systemPrompt, userPrompt, options) {
@@ -575,6 +704,90 @@ class NovelGenerator {
         }
 
         return blocks.join("\n\n");
+    }
+
+    getAiHighFrequencyWords() {
+        return [
+            "嘴角勾起一抹弧度", "嘴角勾起一抹", "嘴角微微上扬", "勾起一抹", "勾起一丝",
+            "微不可察地", "微不可察", "微不可查地", "微不可查",
+            "眼中闪过一丝精光", "眼中闪过一丝惊讶", "眼中闪过一丝", "眼中闪着复杂的光芒",
+            "眼中流露出名为", "笑意未达眼底", "眼神深邃", "眼神锐利", "眼神坚定", "眼神热切",
+            "瞳孔剧烈收缩", "瞳孔收缩", "瞳孔猛地一缩",
+            "深邃的眸子", "淬毒的眸子", "锐利的眼睛",
+            "脸上浮现出一抹", "脸上堆满了笑", "脸上带着笑意",
+            "轮廓分明的下颌", "修长的手指", "骨节分明的手", "指节泛白",
+            "微微挑眉", "目光里毫不遮掩",
+            "喉结滚动", "喉结上下滚动", "喉结",
+            "舔了舔嘴唇", "舔了舔干裂的嘴唇", "舔了舔唇", "抿了抿唇",
+            "像一记重锤", "像一盆冰水", "像一把精准的刻刀", "像千年寒冰",
+            "像一根滚烫的钢针", "像淬了毒的匕首", "像个破布娃娃般被抽飞",
+            "像在看一个已经死透的人", "却比西伯利亚的寒风还要冰冷",
+            "嘴巴张得能塞下一个鸡蛋", "直接刺入心脏", "重重砸在心头",
+            "时间仿佛被按下了暂停", "空气凝滞如铁", "让空气的温度都下降了几度",
+            "心里某个地方软得一塌糊涂", "浑身上下都散发着一股",
+            "破风箱般的荷荷声", "化作齑粉", "稳如磐石",
+            "带着不容置疑的", "力道大得惊人",
+            "死一般的寂静", "全场死寂", "死寂", "落针可闻", "鸦雀无声",
+            "心中一凛", "心中一动", "心下了然", "心里隐隐有了猜测",
+            "四肢百骸", "彻骨的冰寒", "不易察觉",
+            "声音不大", "声音不高", "声音平直", "平静无波", "声音听不出情绪",
+            "声音坚定", "冰冷的声音",
+            "显得有些兴奋", "显得异常清晰", "无法用言语形容",
+            "死死地", "缓缓地说", "精准地", "平静地", "激动地", "淡淡地应了一句",
+            "淬了", "淬着", "淬毒", "涟漪", "深邃", "锐利",
+            "凝住了", "凝固了", "凝滞了", "凝固",
+            "毫无征兆", "戛然而止", "话锋一转",
+            "取而代之", "取而代之的是", "不容置疑",
+            "波涛汹涌", "行云流水", "不可估量",
+            "不卑不亢", "近乎偏执",
+            "以一种", "这不是...而是", "目光扫过", "深吸一口气",
+            "他的嘴角微微上扬", "他的表情变暗"
+        ].sort((a, b) => b.length - a.length);
+    }
+
+    getAiSuspiciousPatterns() {
+        return [
+            "嘴角[^。！？\\n]{0,12}?(勾|上扬|微不可|微微|露出|勾起|弯)",
+            "眼中[^。！？\\n]{0,12}?(闪过|闪着|流露|有一丝|一丝)",
+            "喉结[^。！？\\n]{0,8}?(动|滚|凸|一动)",
+            "(指(关节|节)|手指)[^。！？\\n]{0,8}?(泛白|颤|发白)",
+            "舔了?舔?嘴唇",
+            "(死寂|全场死寂|落针可闻|鸦雀无声|死一般的寂静)",
+            "(缓缓地|微不可察|微不可查|不易察觉)[^。！？\\n]{0,8}",
+            "(眼神|目光)[^。！？\\n]{0,12}?(深邃|锐利|热切|复杂)",
+            "(时间仿佛被按下了暂停|空气凝滞|仿佛被按下了暂停)"
+        ];
+    }
+
+    getAiWhitelist(project) {
+        const projectList = project?.prompt_state?.ai_filter_whitelist;
+        return Array.isArray(projectList) && projectList.length
+            ? projectList
+            : ["他笑了", "她笑了", "看着窗外", "看着远方"];
+    }
+
+    getAiBlacklist(project) {
+        const projectList = project?.prompt_state?.ai_filter_blacklist;
+        return Array.isArray(projectList) && projectList.length
+            ? projectList
+            : ["指关节泛白", "喉结滚动", "舔了舔嘴唇", "全场死寂"];
+    }
+
+    splitSentencesForAiFilter(text) {
+        const matches = String(text || "").match(/[^。！？\n]+[。！？]?|\n/g);
+        return matches && matches.length ? matches : [String(text || "")];
+    }
+
+    preserveSentenceEnding(original, rewritten) {
+        const trimmed = String(rewritten || "").trim();
+        if (!trimmed) {
+            return original;
+        }
+        const match = String(original || "").match(/[。！？…]$/);
+        if (match && !/[。！？…]$/.test(trimmed)) {
+            return `${trimmed}${match[0]}`;
+        }
+        return trimmed;
     }
 
     buildHiddenSecretGuard(project, chapterNumber) {

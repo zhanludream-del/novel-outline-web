@@ -216,6 +216,13 @@ class StorageManager {
         normalized.volumeSynopsis = normalized.volumeSynopsis || normalized.volume_synopsis || "";
         normalized.synopsis_output = normalized.synopsis_output || normalized.synopsisOutput || "";
         normalized.synopsisOutput = normalized.synopsisOutput || normalized.synopsis_output || "";
+        normalized.ai_filter_enabled = normalized.ai_filter_enabled !== false;
+        normalized.ai_filter_whitelist = Array.isArray(normalized.ai_filter_whitelist)
+            ? normalized.ai_filter_whitelist
+            : [];
+        normalized.ai_filter_blacklist = Array.isArray(normalized.ai_filter_blacklist)
+            ? normalized.ai_filter_blacklist
+            : [];
         normalized.worldbuilding = normalized.worldbuilding || "";
         normalized.vol_count = String(normalized.vol_count || normalized.volumeCount || 5);
         normalized.chap_count = String(normalized.chap_count || normalized.chaptersPerVolume || 20);

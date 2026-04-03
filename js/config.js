@@ -340,7 +340,10 @@ const DEFAULT_NOVEL_DATA = {
         current_prompt: "",
         saved_prompts: {},
         selected_prompt: "",
-        chapter_frequency: "male"
+        chapter_frequency: "male",
+        ai_filter_enabled: true,
+        ai_filter_whitelist: [],
+        ai_filter_blacklist: []
     },
     generated_context: {
         worldbuilding: "",
