@@ -4349,17 +4349,13 @@ ${(detailedOutline || concept || "未填写").slice(0, 2200)}`;
         volumeNumber = Number(this.elements.chapterVolumeSelect.value || 1),
         useLoading = true
     ) {
-        const outlineChapters = chapters || this.novelData.outline.volumes.flatMap((volume) => volume.chapters || []);
+        const currentVolume = this.novelData.outline.volumes[volumeNumber - 1];
+        const outlineChapters = chapters || (currentVolume?.chapters || []);
         if (!outlineChapters.length) {
             throw new Error("请先生成大纲，再根据大纲内容补全人物设定。");
         }
 
         const task = async () => {
-            const roleCandidates = Object.entries(
-                this.generator.extractRoleCandidatesFromChapters(this.novelData, outlineChapters, volumeNumber) || {}
-            );
-            const estimatedBatches = Math.max(1, Math.ceil(roleCandidates.length / 8));
-
             Utils.updateLoading("正在从大纲里提取角色线索...", {
                 progress: 10,
                 detail: "先同步章纲中的出场人物"
@@ -4368,6 +4364,11 @@ ${(detailedOutline || concept || "未填写").slice(0, 2200)}`;
             if (preseeded.added || preseeded.updated) {
                 Utils.log(`已先从章纲【出场人物】同步 ${preseeded.added} 个新角色，补全 ${preseeded.updated} 个角色基础信息。`, "info");
             }
+
+            const roleCandidates = Object.entries(
+                this.generator.extractRoleCandidatesFromChapters(this.novelData, outlineChapters, volumeNumber) || {}
+            );
+            const estimatedBatches = Math.max(1, Math.ceil(roleCandidates.length / 8));
 
             Utils.updateLoading("角色线索提取完成，开始分批生成人设...", {
                 progress: 18,

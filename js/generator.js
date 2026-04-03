@@ -3778,13 +3778,13 @@ class NovelGenerator {
             if (!cleanName || cleanName.length < 2 || vagueLabels.has(cleanName)) {
                 return;
             }
+            if (existingNames.has(cleanName)) {
+                return;
+            }
             if (!roleMap[cleanName]) {
                 roleMap[cleanName] = description || "";
             } else if (description && !roleMap[cleanName].includes(description)) {
                 roleMap[cleanName] = `${roleMap[cleanName]}；${description}`.slice(0, 240);
-            }
-            if (existingNames.has(cleanName) && !roleMap[cleanName]) {
-                roleMap[cleanName] = "已有角色";
             }
         };
 
@@ -3813,18 +3813,10 @@ class NovelGenerator {
             });
         });
 
-        const synopsisText = volumeNumber
-            ? (project.outline.volumes?.[volumeNumber - 1]?.chapterSynopsis || project.outline.volumes?.[volumeNumber - 1]?.chapter_synopsis || "")
-            : "";
         const mainMappings = project.synopsisData?.main_characters || project.synopsis_data?.main_characters || {};
         Object.values(mainMappings).forEach((name) => addRole(name, "主角映射角色"));
-
-        const summaryNames = synopsisText.match(/[\u4e00-\u9fa5]{2,4}/g) || [];
-        summaryNames.slice(0, 80).forEach((name) => {
-            if (!existingNames.has(name)) {
-                addRole(name, "细纲中提及角色");
-            }
-        });
+        const lockedNames = project.synopsisData?.locked_character_names || project.synopsis_data?.locked_character_names || [];
+        Utils.ensureArrayFromText(lockedNames).forEach((name) => addRole(name, "已锁定角色"));
 
         return roleMap;
     }
