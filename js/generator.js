@@ -157,10 +157,14 @@ class NovelGenerator {
         const usedPlotsContext = this.buildUsedPlotsSummary(project, volumeNumber);
         const innovationPrompt = this.buildSynopsisInnovationPrompt(project, volumeNumber, concept, volumeSummary);
         const previousVolumeEnding = this.buildPreviousVolumeEnding(project, volumeNumber);
+        const clicheWarning = this.buildSynopsisClicheWarning(project, volumeNumber);
+        const volumeBoundaryGuard = this.buildSynopsisVolumeBoundaryGuard(project, volumeNumber);
         const systemPrompt = [
             genreConstraint,
             "你是一名中文长篇小说章节细纲策划编辑。",
+            "你的输出必须简单易懂、直白、口语化，要像会讲故事的网文编辑，而不是论文写手。",
             "请严格根据当前卷卷纲、世界观、前置卷细纲、已用剧情去重要求和人物一致性约束，拆解出当前卷的章节细纲。",
+            "你现在只允许处理当前卷，不能提前写后续卷的重要剧情。",
             "输出必须是 JSON 数组，不要输出任何额外解释。"
         ].filter(Boolean).join("\n");
 
@@ -180,7 +184,9 @@ class NovelGenerator {
             volumeSynopsisContext ? `【卷纲前置】\n${volumeSynopsisContext}` : "",
             previousChapterSynopsisContext ? `【前置细纲衔接】\n${previousChapterSynopsisContext}` : "",
             previousVolumeEnding ? `【上一卷结尾（用于衔接）】\n${previousVolumeEnding}` : "",
+            volumeBoundaryGuard,
             usedPlotsContext,
+            clicheWarning,
             innovationPrompt ? `【反套路与创新建议】\n${innovationPrompt}` : "",
             synopsisConsistencyContext,
             `当前卷：第 ${volumeNumber} 卷`,
@@ -204,7 +210,8 @@ class NovelGenerator {
             "6. 要注意当前卷与上一卷结尾的衔接，不能断层。",
             "7. 人物说话方式、行为逻辑、关系进展必须符合已有人设。",
             "8. 如果出现男主、女主、师尊、反派等模糊代称，必须替换成真实姓名。",
-            "9. 尚未正式见面的人物，不能在细纲里提前写成熟人互动。"
+            "9. 尚未正式见面的人物，不能在细纲里提前写成熟人互动。",
+            "10. 如果当前卷后面还有其他卷，当前卷结尾应该留下钩子，但不要直接写成下一卷开篇。"
         ].filter(Boolean).join("\n");
 
         const parsed = await this.requestJSONArray(systemPrompt, userPrompt, {
@@ -223,6 +230,7 @@ class NovelGenerator {
 
     async generateChapterOutlinesBatch({ project, volume, volumeNumber, startChapter, endChapter, existingChapters }) {
         const existingSummary = this.buildOutlineFrontContext(project, volumeNumber, startChapter, existingChapters);
+        const existingEventsContext = this.buildExistingOutlineEventsContext(project, volumeNumber, startChapter, existingChapters);
 
         const characterDigest = this.buildRelevantCharactersInfo(project.outline.characters || []);
         const guardContext = this.buildGenerationGuards(project, volumeNumber, startChapter);
@@ -231,7 +239,11 @@ class NovelGenerator {
             `${volume.summary || ""}\n${volume.chapterSynopsis || volume.chapter_synopsis || ""}`,
             startChapter
         );
-        const detailedOutlineContext = this.limitContext(project.outline.detailed_outline || "", 5000);
+        const outlineSlice = this.extractCurrentVolumeOutlineContext(project, volumeNumber);
+        const detailedOutlineContext = this.limitContext(
+            outlineSlice.currentOutline || project.outline.detailed_outline || "",
+            5000
+        );
         const volumeSynopsisContext = this.buildVolumeSynopsisContext(project, volumeNumber);
         const allChapterSynopsisContext = this.buildAllChapterSynopsisContext(project, volumeNumber);
         const plotUnitContext = this.buildPlotUnitContext(startChapter, endChapter);
@@ -240,6 +252,8 @@ class NovelGenerator {
             "你是一个执行力极强的网文主编助手。",
             "你的唯一任务是将用户提供的【详细细纲】转化为标准格式的章节大纲。",
             "不要自己编！不要自己编！严格照着细纲写！",
+            "必须 100% 严格按照细纲内容进行扩充，严禁偏离原定剧情走向。",
+            "如果细纲已经给出某章发生什么，就必须写什么；如果某章节信息较少，也必须补满所有字段，但不能改主线结果。",
             "必须严格遵守当前卷边界，不得提前串卷，不得擅自改写主线。",
             guardContext,
             consistencyContext
@@ -253,12 +267,14 @@ class NovelGenerator {
             `世界观：${project.outline.worldbuilding || "暂无"}`,
             volumeSynopsisContext ? `【卷纲前置】\n${volumeSynopsisContext}` : "",
             allChapterSynopsisContext ? `【细纲前置】\n${allChapterSynopsisContext}` : "",
+            outlineSlice.adjacentSummary ? `【相邻卷衔接提示】\n${outlineSlice.adjacentSummary}` : "",
             plotUnitContext ? `【8章剧情单元规则】\n${plotUnitContext}` : "",
             `当前卷：第${volumeNumber}卷 ${volume.title || ""}`,
             `当前卷摘要：${volume.summary || "暂无"}`,
             `当前卷章节细纲：${volume.chapterSynopsis || volume.chapter_synopsis || "暂无"}`,
             characterDigest ? `【已有角色与人设】\n${characterDigest}` : "",
             existingSummary ? `【前情提要】\n${existingSummary}` : "",
+            existingEventsContext,
             "",
             "【绝对原则】",
             "1. 剧情不可重复：已有章节已经写过的事件，后面不得再次出现相同或高度相似的桥段。",
@@ -266,6 +282,7 @@ class NovelGenerator {
             "3. 角色状态必须延续前文：位置、伤势、情绪、装备、时间线都不能断裂。",
             "4. 新引入角色必须符合当前场景和剧情逻辑。",
             "5. 如果细纲里包含后续卷内容，严禁压缩写进当前卷。",
+            "6. 如果某个细纲事件已经在已有章节中写过了，必须跳过，改写下一个新事件。",
             "",
             "【输出格式标准（System 9）】",
             "summary 字段必须严格包含以下标签，并保留空行结构：",
@@ -463,9 +480,14 @@ class NovelGenerator {
         );
         const promptTemplate = project.prompt_state?.current_prompt || "";
         const prevContent = this.getPreviousChapterContents(project, volume, chapter, 5);
+        const previousOutlineContext = this.buildPreviousOutlineSummary(project, volume, chapter);
         const nextOutline = this.getNextChapterOutline(project, volume, chapter);
         const frequency = project.prompt_state?.chapter_frequency || "male";
         const worldAndPlanContext = this.buildWorldAndPlanContext(project);
+        const currentVolumeOutlineContext = this.extractCurrentVolumeOutlineContext(
+            project,
+            this.getVolumeNumber(project, volume)
+        ).currentOutline;
         const expansionHint = this.buildExpansionHint(chapter.summary || "", chapter.number || 0);
         const nextChapterSetupInstruction = this.buildNextChapterSetupInstruction(chapter);
         const nextChapterForbiddenPreview = this.buildNextChapterForbiddenPreview(nextOutline);
@@ -473,9 +495,10 @@ class NovelGenerator {
         const stateOutputProtocol = this.buildStateOutputProtocol(project, chapter, relevantCharacters);
 
         const systemPrompt = [
-            "你是一名擅长长篇中文网文的章节写手。",
+            "你是一名擅长将章节大纲扩写成中文网文正文的章节写手。",
             "请根据已经确认的章节大纲扩写正文草稿。",
-            "必须严格遵守：全局设定、本章设定、角色锁定、世界观、人物一致性、动态状态、章末快照衔接。",
+            "你必须严格遵守本章大纲、全局设定、本章设定、角色锁定、世界观、人物一致性、动态状态和章末快照衔接。",
+            "你可以在不改变主线的前提下进行血肉填充、动作延展、心理补强和场景渲染，但绝不能偏离大纲主线。",
             "必须完成本章结尾铺垫任务，但绝对不能把下一章核心事件提前写出来。",
             "正文写完后，必须按要求追加状态输出和追踪输出。",
             guardContext,
@@ -492,6 +515,8 @@ class NovelGenerator {
             characterDigest,
             frequency,
             worldAndPlanContext,
+            currentVolumeOutlineContext,
+            previousOutlineContext,
             expansionHint,
             nextChapterSetupInstruction,
             nextChapterForbiddenPreview,
@@ -528,7 +553,9 @@ class NovelGenerator {
             this.buildNameLockGuard(project),
             this.buildTimelineGuard(project, chapterNumber),
             this.buildForeshadowGuard(project, chapterNumber),
+            this.buildWorldTrackerGuard(project),
             this.buildPersonalityGuard(project, "", chapterNumber),
+            this.buildCharacterCheckerGuard(project),
             this.buildAppearanceGuard(project, "", chapterNumber),
             this.buildDialogueGuard(project, chapterNumber),
             this.buildSnapshotGuard(project, chapterNumber),
@@ -792,6 +819,59 @@ class NovelGenerator {
         return lines.length ? `【动态状态追踪】\n${lines.join("\n")}` : "";
     }
 
+    buildWorldTrackerGuard(project) {
+        const tracker = project.world_tracker || {};
+        const lines = [];
+
+        const locations = Object.entries(tracker.locations || {}).slice(0, 6).map(([name, data]) =>
+            `${name}(${Utils.summarizeText(JSON.stringify(data), 60)})`
+        );
+        if (locations.length) {
+            lines.push(`地点状态：${locations.join("、")}`);
+        }
+
+        const organizations = Object.entries(tracker.organizations || {}).slice(0, 6).map(([name, data]) =>
+            `${name}(${Utils.summarizeText(JSON.stringify(data), 60)})`
+        );
+        if (organizations.length) {
+            lines.push(`势力状态：${organizations.join("、")}`);
+        }
+
+        const movements = (tracker.character_positions || tracker.character_movements || []);
+        if (Array.isArray(movements) && movements.length) {
+            lines.push(`人物位置/移动：${movements.slice(-6).map((item) => Utils.summarizeText(JSON.stringify(item), 40)).join("、")}`);
+        }
+
+        const worldEvents = (tracker.world_events || tracker.major_events || []);
+        if (Array.isArray(worldEvents) && worldEvents.length) {
+            lines.push(`世界事件：${worldEvents.slice(-5).map((item) => Utils.summarizeText(JSON.stringify(item), 50)).join("、")}`);
+        }
+
+        return lines.length ? `【世界观追踪约束】\n${lines.join("\n")}` : "";
+    }
+
+    buildCharacterCheckerGuard(project) {
+        const checker = project.character_checker || {};
+        const states = checker.character_states || checker.states || {};
+        const lines = [];
+
+        Object.entries(states).slice(0, 8).forEach(([name, data]) => {
+            const location = data.current_location || data.location || data["当前位置"] || "";
+            const status = data.current_status || data.status || data["当前状态"] || "";
+            const emotion = data.current_emotion || data.emotion || data["当前情绪"] || "";
+            const summary = [location ? `位置=${location}` : "", status ? `状态=${status}` : "", emotion ? `情绪=${emotion}` : ""]
+                .filter(Boolean)
+                .join("，");
+            if (summary) {
+                lines.push(`- ${name}：${summary}`);
+            }
+        });
+
+        return lines.length
+            ? `【人物一致性检查】\n以下角色当前状态必须延续，不可瞬移、失忆、无故改口风：\n${lines.join("\n")}`
+            : "";
+    }
+
     buildSnapshotGuard(project, chapterNumber) {
         const snapshots = project.chapter_snapshot?.snapshots || project.outline?.state_snapshots || {};
         const keys = Object.keys(snapshots);
@@ -859,10 +939,12 @@ class NovelGenerator {
     buildVagueNameGuard(project) {
         const synopsisData = project.synopsisData || project.synopsis_data || {};
         const lines = [];
+        const lockedRoleLines = [];
+        const lockedNameLines = [];
 
         Object.entries(synopsisData.main_characters || {}).slice(0, 8).forEach(([role, name]) => {
             if (name) {
-                lines.push(`${role} => ${name}`);
+                lockedRoleLines.push(`${role} => ${name}`);
             }
         });
 
@@ -872,8 +954,20 @@ class NovelGenerator {
             }
         });
 
-        return lines.length
-            ? `【模糊称呼转实名规则】\n以下代称必须替换成真实姓名：\n${lines.join("\n")}\n禁止长期使用“男主/女主/师尊/反派”代替真实姓名。`
+        Object.entries(synopsisData.locked_character_names || {}).slice(0, 12).forEach(([name, info]) => {
+            const identity = info?.identity || info?.type || "已锁定";
+            lockedNameLines.push(`${name}（${identity}）`);
+        });
+
+        return lockedRoleLines.length || lines.length || lockedNameLines.length
+            ? [
+                "【模糊称呼转实名规则】",
+                lockedRoleLines.length ? `已锁定主角：\n${lockedRoleLines.join("\n")}` : "",
+                lines.length ? `以下代称必须替换成真实姓名：\n${lines.join("\n")}` : "",
+                lockedNameLines.length ? `以下名字已锁定，后续卷必须沿用，不得改名或错绑：\n${lockedNameLines.join("、")}` : "",
+                "禁止长期使用“男主/女主/主角/师尊/反派”代替真实姓名。",
+                "如果用户输入里出现模糊称呼，也要优先按已锁定映射替换。"
+            ].filter(Boolean).join("\n")
             : "";
     }
 
@@ -887,6 +981,8 @@ class NovelGenerator {
         characterDigest,
         frequency,
         worldAndPlanContext,
+        currentVolumeOutlineContext,
+        previousOutlineContext,
         expansionHint,
         nextChapterSetupInstruction,
         nextChapterForbiddenPreview,
@@ -912,8 +1008,14 @@ class NovelGenerator {
                 "卷名：{{current_volume}}",
                 "卷摘要：{{current_volume_summary}}",
                 "",
+                "【当前卷细纲参考】",
+                "{{current_volume_outline_context}}",
+                "",
                 "【本章大纲】",
                 "{{outline}}",
+                "",
+                "【前文大纲摘要】",
+                "{{previous_outline_context}}",
                 "",
                 "【相关人物设定】",
                 "{{relevant_characters}}",
@@ -933,12 +1035,21 @@ class NovelGenerator {
                 "",
                 "{{next_chapter_forbidden_preview}}",
                 "",
+                "写作铁律：",
+                "1. 【名词与状态继承】请仔细阅读上方【前文五章】和系统约束。人物、物品、功法、修为、系统奖励、地点称呼等名词，必须无条件沿用前文已经确定好的固定名称和状态，绝不允许换名字或吃书。",
+                "2. 【大纲执行优先】剧情主线必须遵守本章【大纲】的发展轨迹，绝不能脱离主线跑偏。",
+                "3. 【血肉填充与适度扩充】大纲只是骨架，你要在严格遵守主线和前文设定的基础上，丰富动作、心理、对话、环境和博弈过程。",
+                "4. 【拒绝流水账】如果大纲只有一句话，也要扩成有波折、有细节、有情绪起伏的完整章节，不能一笔带过。",
+                "5. 【逻辑自洽】如果大纲表述略粗，你要自动补足合理因果，让剧情更顺，但不能改主线结果。",
+                "6. 【卷边界】只能写当前卷范围内的剧情，不要提前写后续卷的核心地图、核心人物、核心冲突。",
+                "",
                 "写作要求：",
                 "1. 必须严格遵守本章大纲、全局设定、本章设定、世界观、详细大纲参考和角色锁定。",
                 "2. 开头必须承接前文五章和章末快照，中间推进剧情，结尾完成本章铺垫任务。",
                 "3. 人物行为、对话、物品、技能、身份、时间地点必须与既有状态一致。",
                 "4. 不要把下一章核心事件提前展开，只能做铺垫。",
-                "5. 正文写完后，必须按下面协议追加追踪输出。",
+                "5. 尚未正式见面的角色，不能突然写成熟人互动；模糊称呼尽量改成真实姓名。",
+                "6. 正文写完后，必须按下面协议追加追踪输出。",
                 "",
                 "{{state_output_protocol}}",
                 "",
@@ -951,8 +1062,10 @@ class NovelGenerator {
             genre: project.outline.subgenre || project.outline.genre || "",
             theme: project.outline.theme || "",
             world_and_plan_context: worldAndPlanContext || "【世界观核心设定】暂无\n\n【详细大纲参考】暂无",
+            current_volume_outline_context: currentVolumeOutlineContext ? this.limitContext(currentVolumeOutlineContext, 1800) : "暂无明确当前卷细纲切片",
             relevant_characters: characterDigest || "暂无明确角色设定",
             outline: chapter.summary || "",
+            previous_outline_context: previousOutlineContext || "暂无前文大纲",
             prev_content: prevContent || "暂无前文",
             global_setting_note: project.global_setting_note || "暂无",
             chapter_setting_note: chapter.chapter_setting_note || "暂无",
@@ -1063,7 +1176,7 @@ class NovelGenerator {
         const matched = keywordRules.filter((rule) => rule.pattern.test(text));
         const tips = matched.flatMap((rule) => rule.tips);
 
-        const lines = ["【智能扩写建议】"];
+        const lines = ["【智能扩写建议】", "在不改变本章主线结果的前提下，自由补足细节、波折、心理、动作、环境和伏笔呼应，拒绝流水账。"];
         if (chapterNumber) {
             lines.push(`当前章节：第 ${chapterNumber} 章`);
         }
@@ -1080,6 +1193,7 @@ class NovelGenerator {
             lines.push("1. 每个情节点都要有具体触发、推进和反馈。");
             lines.push("2. 关键对话不要只传递信息，要体现立场与情绪。");
             lines.push("3. 结尾要留下余波、悬念或状态变化，服务下章铺垫。");
+            lines.push("4. 如果大纲写得很短，请主动补足波折，不要写成提纲复述。");
         }
 
         return lines.join("\n");
@@ -1093,7 +1207,8 @@ class NovelGenerator {
             "规则：",
             "1. 铺垫 = 埋下“因”，绝不直接写“果”。",
             "2. 只能写状态、氛围、悬念、暗示，不要直接写下一章会发生什么。",
-            "3. 不允许出现“下章将会”“马上就会”“下一章会”之类的预告句式。"
+            "3. 不允许出现“下章将会”“马上就会”“下一章会”之类的预告句式。",
+            "4. 字数控制在 1-2 句话，不要写成长段预告。"
         ];
 
         if (setup.state_setup) lines.push(`- 状态铺垫：${setup.state_setup}`);
@@ -1103,6 +1218,7 @@ class NovelGenerator {
         if (setup.countdown) lines.push(`- 倒计时：${setup.countdown}`);
 
         lines.push("示例：可以写“他气息渐弱，医者摇头不语”，不能写“下章他将死去”。");
+        lines.push("示例：可以写“远处忽然传来异响，空气一下子沉了下来”，不能写“下章敌人就会杀到”。");
         return lines.join("\n");
     }
 
@@ -1117,7 +1233,8 @@ class NovelGenerator {
             nextOutline.summary || "",
             "红线规则：",
             "1. 下一章才发生的核心事件，本章绝对不能提前写出来。",
-            "2. 可以做悬念和暗示，但不能提前完成下一章的冲突、揭露、突破、死亡、身份曝光、获宝等结果。"
+            "2. 可以做悬念和暗示，但不能提前完成下一章的冲突、揭露、突破、死亡、身份曝光、获宝等结果。",
+            "3. 本章结尾只能对应下一章的【因】，不能把下一章的【果】先写完。"
         ].join("\n");
     }
 
@@ -1146,6 +1263,46 @@ class NovelGenerator {
         return all.slice(Math.max(0, index - maxChapters), index)
             .map((item) => `【第${item.number}章 ${item.title}】\n${Utils.summarizeText(item.content, 1200)}`)
             .join("\n\n");
+    }
+
+    getVolumeNumber(project, currentVolume) {
+        const volumes = project?.outline?.volumes || [];
+        const index = volumes.findIndex((volume) =>
+            (volume.id || volume.uuid || "") === (currentVolume.id || currentVolume.uuid || "")
+        );
+        return index >= 0 ? index + 1 : 1;
+    }
+
+    buildPreviousOutlineSummary(project, currentVolume, currentChapter) {
+        const all = [];
+        (project.outline.volumes || []).forEach((volume, volumeIndex) => {
+            (volume.chapters || []).forEach((chapter) => {
+                all.push({
+                    volumeIndex,
+                    volumeId: volume.id || volume.uuid || "",
+                    chapterId: chapter.id || chapter.uuid || "",
+                    number: Number(chapter.number || chapter.chapter_number || 0),
+                    title: chapter.title || "",
+                    summary: chapter.summary || "",
+                    keyEvent: chapter.key_event || chapter.keyEvent || ""
+                });
+            });
+        });
+
+        all.sort((a, b) => a.volumeIndex - b.volumeIndex || a.number - b.number);
+        const index = all.findIndex((item) =>
+            item.volumeId === (currentVolume.id || currentVolume.uuid || "") &&
+            item.chapterId === (currentChapter.id || currentChapter.uuid || "")
+        );
+        if (index <= 0) {
+            return "";
+        }
+
+        const previousItems = all.slice(Math.max(0, index - 10), index);
+        return previousItems.map((item) => {
+            const brief = item.keyEvent || Utils.summarizeText(item.summary, 180) || item.title;
+            return `- 第${item.number}章 ${item.title || ""}：${brief}`;
+        }).join("\n");
     }
 
     getNextChapterOutline(project, currentVolume, currentChapter) {
@@ -1302,6 +1459,64 @@ class NovelGenerator {
         ].filter(Boolean).join("\n");
     }
 
+    buildSynopsisClicheWarning(project, volumeNumber) {
+        const previousText = (project?.outline?.volumes || [])
+            .slice(0, Math.max(0, volumeNumber - 1))
+            .map((volume) => volume.chapterSynopsis || volume.chapter_synopsis || "")
+            .join("\n");
+
+        if (!previousText.trim()) {
+            return "";
+        }
+
+        const checks = [
+            { label: "比赛/考核", pattern: /比武|擂台|竞赛|比赛|考核|测试/g, threshold: 4 },
+            { label: "修炼/突破", pattern: /修炼|闭关|突破|参悟/g, threshold: 4 },
+            { label: "探索/秘境", pattern: /探索|秘境|寻宝|探险/g, threshold: 3 },
+            { label: "身份揭露", pattern: /身份|真相|揭露|曝光/g, threshold: 3 },
+            { label: "冲突对峙", pattern: /争执|对峙|冲突|交锋/g, threshold: 4 }
+        ];
+
+        const warnings = checks
+            .map((item) => ({
+                ...item,
+                count: (previousText.match(item.pattern) || []).length
+            }))
+            .filter((item) => item.count >= item.threshold)
+            .slice(0, 3);
+
+        if (!warnings.length) {
+            return "";
+        }
+
+        return [
+            "【套路警告】",
+            "以下类型在前面卷细纲里已经出现较多，这一卷请尽量换角度、换结果、换阻力，不要同构重复：",
+            ...warnings.map((item) => `- ${item.label}（近期出现约 ${item.count} 次）`)
+        ].join("\n");
+    }
+
+    buildSynopsisVolumeBoundaryGuard(project, volumeNumber) {
+        const volumes = project?.outline?.volumes || [];
+        if (!volumes.length) {
+            return "";
+        }
+
+        const currentVolume = volumes[volumeNumber - 1];
+        const nextVolume = volumes[volumeNumber];
+        const lines = [
+            "【当前卷边界规则】",
+            `当前只允许编写第 ${volumeNumber} 卷的细纲：${currentVolume?.title || ""}`,
+            "本卷要完成本卷自己的推进、高潮和收束，不能把后续卷核心剧情提前写进来。"
+        ];
+
+        if (nextVolume?.title || nextVolume?.summary) {
+            lines.push(`下一卷存在：${nextVolume.title || `第${volumeNumber + 1}卷`}。当前卷结尾可以留钩子，但不能直接写成下一卷开篇。`);
+        }
+
+        return lines.join("\n");
+    }
+
     buildPreviousVolumeEnding(project, currentVolumeNumber) {
         if (!project?.outline?.volumes?.length || currentVolumeNumber <= 1) {
             return "";
@@ -1333,35 +1548,158 @@ class NovelGenerator {
             .join("\n\n");
     }
 
-    buildOutlineFrontContext(project, volumeNumber, startChapter, existingChapters = []) {
-        const parts = [];
+    extractCurrentVolumeOutlineContext(project, volumeNumber) {
+        const fullOutline = String(project?.outline?.detailed_outline || "").trim();
+        const volumes = project?.outline?.volumes || [];
+        if (!fullOutline || !volumes.length) {
+            return { currentOutline: fullOutline, adjacentSummary: "" };
+        }
 
-        const explicitExisting = (existingChapters || [])
-            .slice(-3)
-            .map((chapter) => `章节：第${chapter.number}章 ${chapter.title || ""}\n梗概：${Utils.summarizeText(chapter.summary, 500)}`);
-        if (explicitExisting.length) {
-            parts.push(...explicitExisting);
+        const volumeTitles = volumes.map((volume, index) => String(volume?.title || `第${index + 1}卷`).trim()).filter(Boolean);
+        const patterns = [];
+        for (let i = 0; i < volumes.length + 3; i += 1) {
+            patterns.push(`第${i + 1}卷`);
+        }
+        volumeTitles.forEach((title) => {
+            if (title.length >= 2) {
+                patterns.push(title.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"));
+            }
+        });
+
+        const splitPattern = new RegExp(`(?:^|\\n)(?:#{1,3}\\s*|【|={3,}\\s*)?(${patterns.join("|")})(?:】|：|:|\\s|={3,})`, "g");
+        const sections = {};
+        let currentKey = "__intro__";
+        sections[currentKey] = "";
+
+        let lastIndex = 0;
+        let match;
+        while ((match = splitPattern.exec(fullOutline)) !== null) {
+            const before = fullOutline.slice(lastIndex, match.index);
+            sections[currentKey] = (sections[currentKey] || "") + before;
+
+            const marker = match[1];
+            let matchedIndex = volumeTitles.findIndex((title) => title && marker.includes(title));
+            if (matchedIndex < 0) {
+                const generic = marker.match(/第(\d+)卷/);
+                if (generic) {
+                    matchedIndex = Number(generic[1]) - 1;
+                }
+            }
+
+            currentKey = matchedIndex >= 0 ? `vol_${matchedIndex}` : currentKey;
+            sections[currentKey] = (sections[currentKey] || "") + match[0];
+            lastIndex = splitPattern.lastIndex;
+        }
+        sections[currentKey] = (sections[currentKey] || "") + fullOutline.slice(lastIndex);
+
+        const targetKey = `vol_${Math.max(0, volumeNumber - 1)}`;
+        let currentOutline = String(sections[targetKey] || "").trim();
+
+        if (!currentOutline) {
+            const fallbackTitle = volumeTitles[volumeNumber - 1] || `第${volumeNumber}卷`;
+            const startPos = fullOutline.indexOf(fallbackTitle);
+            if (startPos >= 0) {
+                let endPos = fullOutline.length;
+                const nextTitle = volumeTitles[volumeNumber] || `第${volumeNumber + 1}卷`;
+                const nextPos = fullOutline.indexOf(nextTitle, startPos + fallbackTitle.length);
+                if (nextPos > startPos) {
+                    endPos = nextPos;
+                }
+                currentOutline = fullOutline.slice(startPos, endPos).trim();
+            } else {
+                currentOutline = fullOutline;
+            }
+        }
+
+        const adjacent = [];
+        const previousSection = String(sections[`vol_${volumeNumber - 2}`] || "").trim();
+        if (previousSection) {
+            adjacent.push(`上一卷末尾摘要：${Utils.summarizeText(previousSection.slice(-240), 240)}`);
+        }
+        const nextSection = String(sections[`vol_${volumeNumber}`] || "").trim();
+        if (nextSection) {
+            adjacent.push(`下一卷方向提示（仅供边界参考，严禁提前写入）：${Utils.summarizeText(nextSection.slice(0, 120), 120)}`);
+        }
+
+        return {
+            currentOutline,
+            adjacentSummary: adjacent.join("\n")
+        };
+    }
+
+    buildExistingOutlineEventsContext(project, volumeNumber, startChapter, existingChapters = []) {
+        const events = [];
+        const pushEvent = (chapter) => {
+            const number = Number(chapter.number || chapter.chapter_number || 0);
+            const keyEvent = String(chapter.key_event || chapter.keyEvent || "").trim();
+            const summary = String(chapter.summary || "").trim();
+            const title = String(chapter.title || "").trim();
+            const text = keyEvent || Utils.summarizeText(summary, 120) || title;
+            if (text) {
+                events.push(`第${number || "?"}章：${text}`);
+            }
+        };
+
+        if (Array.isArray(existingChapters) && existingChapters.length) {
+            existingChapters.forEach(pushEvent);
         } else {
-            const previousSummaries = [];
-            (project.outline?.volumes || []).forEach((volume, index) => {
-                const currentVolumeNumber = index + 1;
-                const chapters = (volume.chapters || []).filter((chapter) => {
-                    const chapterNumber = Number(chapter.number || chapter.chapter_number || 0);
-                    if (currentVolumeNumber < volumeNumber) {
-                        return true;
+            (project?.outline?.volumes || []).forEach((volume, index) => {
+                const currentVolume = index + 1;
+                (volume.chapters || []).forEach((chapter) => {
+                    const number = Number(chapter.number || chapter.chapter_number || 0);
+                    if (currentVolume < volumeNumber || (currentVolume === volumeNumber && number < startChapter)) {
+                        pushEvent(chapter);
                     }
-                    return currentVolumeNumber === volumeNumber && chapterNumber < startChapter;
-                });
-
-                chapters.slice(-3).forEach((chapter) => {
-                    previousSummaries.push(
-                        `章节：第${chapter.number}章 ${chapter.title || ""}\n梗概：${Utils.summarizeText(chapter.summary, 500)}`
-                    );
                 });
             });
+        }
 
-            if (previousSummaries.length) {
-                parts.push(...previousSummaries.slice(-3));
+        const uniqueEvents = Array.from(new Set(events.map((item) => item.trim()).filter(Boolean))).slice(-30);
+        if (!uniqueEvents.length) {
+            return "";
+        }
+
+        return [
+            "【已有剧情事件（严禁重复）】",
+            "以下事件已在已有章节中发生过，新生成章节中不得出现相同或高度相似的情节：",
+            ...uniqueEvents.map((item, index) => `${index + 1}. ${item}`)
+        ].join("\n");
+    }
+
+    buildOutlineFrontContext(project, volumeNumber, startChapter, existingChapters = []) {
+        const parts = [];
+        const previousChapters = [];
+
+        if (Array.isArray(existingChapters) && existingChapters.length) {
+            previousChapters.push(...existingChapters);
+        } else {
+            (project.outline?.volumes || []).forEach((volume, index) => {
+                const currentVolumeNumber = index + 1;
+                (volume.chapters || []).forEach((chapter) => {
+                    const chapterNumber = Number(chapter.number || chapter.chapter_number || 0);
+                    if (currentVolumeNumber < volumeNumber || (currentVolumeNumber === volumeNumber && chapterNumber < startChapter)) {
+                        previousChapters.push(chapter);
+                    }
+                });
+            });
+        }
+
+        if (previousChapters.length) {
+            const briefLines = previousChapters.map((chapter) => {
+                const title = chapter.title || `第${chapter.number || chapter.chapter_number || "?"}章`;
+                const keyEvent = chapter.key_event || chapter.keyEvent || "";
+                const summary = chapter.summary || "";
+                const brief = keyEvent || Utils.summarizeText(summary, 160);
+                return `[${title}] ${brief}`;
+            });
+            parts.push(`【前文全部大纲摘要（共${previousChapters.length}章，压缩版，用于理解完整剧情脉络）】\n${briefLines.join("\n")}`);
+
+            const recentFull = previousChapters.slice(-10).map((chapter) => {
+                const title = chapter.title || `第${chapter.number || chapter.chapter_number || "?"}章`;
+                return `【${title}】\n${Utils.summarizeText(chapter.summary || chapter.key_event || "", 600)}`;
+            });
+            if (recentFull.length) {
+                parts.push(`【前文最近10章完整大纲（续写必须紧接最后一章的结尾）】\n${recentFull.join("\n\n")}`);
             }
         }
 
