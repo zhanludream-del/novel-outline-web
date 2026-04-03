@@ -971,6 +971,402 @@ class NovelGenerator {
             : "";
     }
 
+    getSynopsisData(project) {
+        if (!project.synopsisData || typeof project.synopsisData !== "object") {
+            project.synopsisData = project.synopsis_data && typeof project.synopsis_data === "object"
+                ? project.synopsis_data
+                : {};
+        }
+        if (!project.synopsis_data || typeof project.synopsis_data !== "object") {
+            project.synopsis_data = project.synopsisData;
+        }
+        return project.synopsisData;
+    }
+
+    getSynopsisRoleAliases() {
+        return {
+            男主: ["男主", "男主角", "男主人公", "男一", "男一号", "男角"],
+            女主: ["女主", "女主角", "女主人公", "女一", "女一号", "女角"],
+            主角: ["主角", "主人公"],
+            师尊: ["师尊"],
+            反派: ["反派", "大反派", "反派boss"],
+            男二: ["男二", "男二号"],
+            女二: ["女二", "女二号"]
+        };
+    }
+
+    buildSynopsisAliasToRoleMap() {
+        const aliasToRole = {};
+        Object.entries(this.getSynopsisRoleAliases()).forEach(([role, aliases]) => {
+            aliases.forEach((alias) => {
+                aliasToRole[alias] = role;
+            });
+        });
+        return aliasToRole;
+    }
+
+    buildSynopsisNameAliases(name) {
+        const cleanName = String(name || "").trim();
+        if (!/^[\u4e00-\u9fa5]{2,4}$/.test(cleanName)) {
+            return [];
+        }
+        const aliases = new Set([cleanName]);
+        if (cleanName.length === 2) {
+            aliases.add(cleanName.slice(1));
+        } else if (cleanName.length === 3) {
+            aliases.add(cleanName.slice(1));
+            aliases.add(cleanName.charAt(1));
+            aliases.add(cleanName.charAt(2));
+        } else if (cleanName.length === 4) {
+            aliases.add(cleanName.slice(2));
+            aliases.add(cleanName.slice(1));
+        }
+        return Array.from(aliases).filter(Boolean).sort((left, right) => right.length - left.length);
+    }
+
+    restoreSynopsisMainCharacters(project) {
+        const synopsisData = this.getSynopsisData(project);
+        synopsisData.main_characters = synopsisData.main_characters && typeof synopsisData.main_characters === "object"
+            ? synopsisData.main_characters
+            : {};
+        synopsisData.locked_character_names = synopsisData.locked_character_names && typeof synopsisData.locked_character_names === "object"
+            ? synopsisData.locked_character_names
+            : {};
+
+        Object.entries(synopsisData.locked_character_names).forEach(([name, info]) => {
+            if (info?.type === "主角" && info?.identity && !synopsisData.main_characters[info.identity]) {
+                synopsisData.main_characters[info.identity] = name;
+            }
+        });
+
+        return synopsisData;
+    }
+
+    applyKnownSynopsisMappings(text, mapping) {
+        let output = String(text || "");
+        Object.entries(mapping || {})
+            .sort((left, right) => right[0].length - left[0].length)
+            .forEach(([vagueTerm, specificName]) => {
+                if (vagueTerm && specificName) {
+                    output = output.replaceAll(vagueTerm, specificName);
+                }
+            });
+        return output;
+    }
+
+    collectPendingSynopsisTerms(text, project) {
+        const synopsisData = this.restoreSynopsisMainCharacters(project);
+        const roleAliases = this.getSynopsisRoleAliases();
+        const knownMappings = synopsisData.vague_to_name_mapping || {};
+        const pending = new Set();
+
+        Object.values(roleAliases).forEach((aliases) => {
+            aliases.forEach((alias) => {
+                if (String(text || "").includes(alias) && !knownMappings[alias]) {
+                    pending.add(alias);
+                }
+            });
+        });
+
+        Object.keys(synopsisData.vague_supporting_roles || {}).forEach((term) => {
+            if (String(text || "").includes(term) && !knownMappings[term]) {
+                pending.add(term);
+            }
+        });
+
+        return Array.from(pending).sort((left, right) => right.length - left.length);
+    }
+
+    prepareSynopsisGenerationInput(project, { concept, volumeSummary, existingSynopsis, volumeNumber }) {
+        const synopsisData = this.restoreSynopsisMainCharacters(project);
+        synopsisData.vague_to_name_mapping = synopsisData.vague_to_name_mapping && typeof synopsisData.vague_to_name_mapping === "object"
+            ? synopsisData.vague_to_name_mapping
+            : {};
+        const mapping = synopsisData.vague_to_name_mapping;
+        const processedConcept = this.applyKnownSynopsisMappings(concept, mapping);
+        const processedVolumeSummary = this.applyKnownSynopsisMappings(volumeSummary, mapping);
+        const processedExistingSynopsis = this.applyKnownSynopsisMappings(existingSynopsis, mapping);
+        const mappingLines = Object.entries(mapping)
+            .slice(0, 20)
+            .map(([vagueTerm, specificName]) => `- ${vagueTerm} -> ${specificName}`);
+        const pendingTerms = this.collectPendingSynopsisTerms(
+            `${concept || ""}\n${volumeSummary || ""}\n${existingSynopsis || ""}`,
+            project
+        );
+
+        return {
+            processedConcept,
+            processedVolumeSummary,
+            processedExistingSynopsis,
+            mappingHint: mappingLines.length
+                ? [
+                    "【🔒 模糊称呼→具体名字映射表（必须遵守）】",
+                    "以下称呼已经有固定对应名字，本卷细纲必须沿用具体名字：",
+                    mappingLines.join("\n")
+                ].join("\n")
+                : "",
+            pendingHint: pendingTerms.length && Number(volumeNumber || 0) > 0
+                ? `【待继续明确的模糊称呼】\n${pendingTerms.slice(0, 12).map((term) => `- ${term}`).join("\n")}\n如果本卷明确写出了真实名字，可以直接用真实名字，不要长期停留在模糊称呼。`
+                : ""
+        };
+    }
+
+    lockSynopsisCharacterName(project, name, charType = "配角", identity = "未知", lockedVolume = 1) {
+        const cleanName = String(name || "").trim();
+        if (!/^[\u4e00-\u9fa5]{2,4}$/.test(cleanName)) {
+            return false;
+        }
+
+        const synopsisData = this.restoreSynopsisMainCharacters(project);
+        const aliases = this.buildSynopsisNameAliases(cleanName);
+        const existing = synopsisData.locked_character_names[cleanName];
+        if (existing) {
+            if (charType === "主角") {
+                existing.type = "主角";
+                existing.identity = identity;
+            }
+            existing.aliases = Array.from(new Set([...(existing.aliases || []), ...aliases]))
+                .sort((left, right) => right.length - left.length);
+            existing.locked_volume = existing.locked_volume || lockedVolume;
+            return true;
+        }
+
+        synopsisData.locked_character_names[cleanName] = {
+            type: charType,
+            identity,
+            locked_volume: lockedVolume,
+            aliases
+        };
+        return true;
+    }
+
+    isSafeSynopsisMapping(project, vagueTerm, specificName, role = "") {
+        const cleanVagueTerm = String(vagueTerm || "").trim();
+        const cleanName = String(specificName || "").trim();
+        if (!cleanVagueTerm || !/^[\u4e00-\u9fa5]{2,4}$/.test(cleanName)) {
+            return false;
+        }
+
+        const excludedWords = new Set([
+            "这时", "那时", "此时", "彼时", "什么", "怎么", "这个", "那个", "他的", "她的", "他们",
+            "众人", "路人", "少年", "少女", "青年", "女子", "男人", "女人", "弟子", "长老", "掌门"
+        ]);
+        if (excludedWords.has(cleanName) || cleanName === cleanVagueTerm) {
+            return false;
+        }
+
+        const synopsisData = this.restoreSynopsisMainCharacters(project);
+        synopsisData.vague_to_name_mapping = synopsisData.vague_to_name_mapping && typeof synopsisData.vague_to_name_mapping === "object"
+            ? synopsisData.vague_to_name_mapping
+            : {};
+
+        const existingMapping = synopsisData.vague_to_name_mapping[cleanVagueTerm];
+        if (existingMapping && existingMapping !== cleanName) {
+            return false;
+        }
+
+        const aliasToRole = this.buildSynopsisAliasToRoleMap();
+        const sameNameOwner = Object.entries(synopsisData.vague_to_name_mapping)
+            .find(([term, mappedName]) => term !== cleanVagueTerm && mappedName === cleanName);
+        if (sameNameOwner) {
+            const [existingTerm] = sameNameOwner;
+            if (!(role && aliasToRole[existingTerm] === role)) {
+                return false;
+            }
+        }
+
+        const existingLock = synopsisData.locked_character_names?.[cleanName];
+        if (existingLock) {
+            if (role && existingLock.type === "主角" && existingLock.identity && existingLock.identity !== role) {
+                return false;
+            }
+            if (!role && existingLock.type === "主角" && existingLock.identity && aliasToRole[cleanVagueTerm] && aliasToRole[cleanVagueTerm] !== existingLock.identity) {
+                return false;
+            }
+        }
+
+        if (role) {
+            const existingName = synopsisData.main_characters?.[role];
+            if (existingName && existingName !== cleanName) {
+                return false;
+            }
+            const conflictingRole = Object.entries(synopsisData.main_characters || {})
+                .find(([otherRole, otherName]) => otherRole !== role && otherName === cleanName);
+            if (conflictingRole) {
+                return false;
+            }
+        }
+
+        return true;
+    }
+
+    applySynopsisMainCharacter(project, role, name, lockedVolume) {
+        const cleanRole = String(role || "").trim();
+        const cleanName = String(name || "").trim();
+        if (!this.getSynopsisRoleAliases()[cleanRole] || !cleanName) {
+            return false;
+        }
+        if (!this.isSafeSynopsisMapping(project, cleanRole, cleanName, cleanRole)) {
+            return false;
+        }
+
+        const synopsisData = this.restoreSynopsisMainCharacters(project);
+        synopsisData.main_characters[cleanRole] = cleanName;
+        this.lockSynopsisCharacterName(project, cleanName, "主角", cleanRole, lockedVolume);
+        this.getSynopsisRoleAliases()[cleanRole].forEach((alias) => {
+            const existing = synopsisData.vague_to_name_mapping[alias];
+            if (!existing || existing === cleanName) {
+                synopsisData.vague_to_name_mapping[alias] = cleanName;
+            }
+        });
+        return true;
+    }
+
+    extractExplicitVagueNameMappings(text, vagueTerms) {
+        if (!text || !Array.isArray(vagueTerms) || !vagueTerms.length) {
+            return [];
+        }
+
+        const content = String(text);
+        const excludedWords = new Set([
+            "这时", "那时", "此时", "彼时", "什么", "怎么", "这个", "那个", "他的", "她的",
+            "少年", "少女", "男人", "女人", "角色", "名字", "某人", "某某"
+        ]);
+        const results = [];
+        const seen = new Set();
+
+        vagueTerms
+            .filter(Boolean)
+            .sort((left, right) => right.length - left.length)
+            .forEach((vagueTerm) => {
+                const escaped = vagueTerm.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+                const patterns = [
+                    new RegExp(`${escaped}[：:]\\s*([\\u4e00-\\u9fa5]{2,4})`, "g"),
+                    new RegExp(`${escaped}[（(]([\\u4e00-\\u9fa5]{2,4})[)）]`, "g"),
+                    new RegExp(`([\\u4e00-\\u9fa5]{2,4})[（(]${escaped}[)）]`, "g"),
+                    new RegExp(`${escaped}叫([\\u4e00-\\u9fa5]{2,4})`, "g"),
+                    new RegExp(`${escaped}名叫([\\u4e00-\\u9fa5]{2,4})`, "g"),
+                    new RegExp(`名叫([\\u4e00-\\u9fa5]{2,4})的${escaped}`, "g")
+                ];
+
+                patterns.forEach((pattern) => {
+                    for (const match of content.matchAll(pattern)) {
+                        const name = String(match[1] || "").trim();
+                        if (!name || excludedWords.has(name)) {
+                            continue;
+                        }
+                        const key = `${vagueTerm}=>${name}`;
+                        if (!seen.has(key)) {
+                            seen.add(key);
+                            results.push({ vagueTerm, specificName: name });
+                        }
+                    }
+                });
+            });
+
+        return results;
+    }
+
+    collectFrequentNamesFromText(text) {
+        const matches = String(text || "").match(/[\u4e00-\u9fa5]{2,4}/g) || [];
+        const excludedWords = new Set([
+            "核心事件", "情绪曲线", "章节目标", "出场人物", "情节推进", "伏笔处理", "下章铺垫",
+            "当前卷", "上一卷", "世界观", "主线剧情", "支线剧情", "故事概念", "章节细纲"
+        ]);
+        const counts = new Map();
+
+        matches.forEach((name) => {
+            if (excludedWords.has(name)) {
+                return;
+            }
+            counts.set(name, (counts.get(name) || 0) + 1);
+        });
+
+        return Array.from(counts.entries())
+            .filter(([, count]) => count >= 2)
+            .sort((left, right) => right[1] - left[1])
+            .map(([name]) => name);
+    }
+
+    mergeSynopsisStateFromGeneratedChapters(project, chapters, volumeNumber, inputs = {}) {
+        const synopsisData = this.restoreSynopsisMainCharacters(project);
+        synopsisData.vague_to_name_mapping = synopsisData.vague_to_name_mapping && typeof synopsisData.vague_to_name_mapping === "object"
+            ? synopsisData.vague_to_name_mapping
+            : {};
+        synopsisData.vague_supporting_roles = synopsisData.vague_supporting_roles && typeof synopsisData.vague_supporting_roles === "object"
+            ? synopsisData.vague_supporting_roles
+            : {};
+
+        const aliasToRole = this.buildSynopsisAliasToRoleMap();
+        const text = [
+            inputs.concept || "",
+            inputs.volumeSummary || "",
+            ...(chapters || []).map((chapter) => [
+                chapter.title || "",
+                chapter.key_event || chapter.keyEvent || "",
+                chapter.synopsis || chapter.summary || ""
+            ].join("\n"))
+        ].join("\n");
+
+        const allVagueTerms = new Set([
+            ...Object.keys(aliasToRole),
+            ...Object.keys(synopsisData.vague_supporting_roles || {}),
+            "师兄", "师姐", "师弟", "师妹", "长老", "掌门", "师父", "师母", "同门", "死对头"
+        ]);
+        const explicitMappings = this.extractExplicitVagueNameMappings(text, Array.from(allVagueTerms));
+        const appliedMainMappings = [];
+        const appliedSupportingMappings = [];
+        const pendingTerms = [];
+
+        explicitMappings.forEach(({ vagueTerm, specificName }) => {
+            const role = aliasToRole[vagueTerm];
+            if (role) {
+                if (this.applySynopsisMainCharacter(project, role, specificName, volumeNumber)) {
+                    appliedMainMappings.push(`${vagueTerm}→${specificName}`);
+                }
+                return;
+            }
+
+            if (!this.isSafeSynopsisMapping(project, vagueTerm, specificName)) {
+                return;
+            }
+            synopsisData.vague_to_name_mapping[vagueTerm] = specificName;
+            this.lockSynopsisCharacterName(project, specificName, "配角", vagueTerm, volumeNumber);
+            if (synopsisData.vague_supporting_roles[vagueTerm]) {
+                synopsisData.vague_supporting_roles[vagueTerm].needs_name = false;
+                synopsisData.vague_supporting_roles[vagueTerm].suggested_name = specificName;
+            }
+            appliedSupportingMappings.push(`${vagueTerm}→${specificName}`);
+        });
+
+        this.collectFrequentNamesFromText(text).forEach((name) => {
+            const isMainCharacter = Object.values(synopsisData.main_characters || {}).includes(name);
+            this.lockSynopsisCharacterName(project, name, isMainCharacter ? "主角" : "配角", isMainCharacter ? "主角" : "未知", volumeNumber);
+        });
+
+        Array.from(allVagueTerms)
+            .sort((left, right) => right.length - left.length)
+            .forEach((term) => {
+                if (!text.includes(term) || synopsisData.vague_to_name_mapping[term]) {
+                    return;
+                }
+                const current = synopsisData.vague_supporting_roles[term] || {};
+                synopsisData.vague_supporting_roles[term] = {
+                    count: Number(current.count || 0) + 1,
+                    needs_name: true,
+                    suggested_name: current.suggested_name || ""
+                };
+                pendingTerms.push(term);
+            });
+
+        project.synopsis_data = JSON.parse(JSON.stringify(synopsisData));
+        return {
+            mainMappings: appliedMainMappings,
+            supportingMappings: appliedSupportingMappings,
+            pendingTerms: Array.from(new Set(pendingTerms)).slice(0, 12)
+        };
+    }
+
     composeChapterPrompt({
         project,
         volume,

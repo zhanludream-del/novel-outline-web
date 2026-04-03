@@ -1627,26 +1627,62 @@ ${(detailedOutline || concept || "未填写").slice(0, 2200)}`;
         }
 
         await this.runWithLoading(`正在生成第 ${volumeNumber} 卷章节细纲...`, async () => {
+            const preparedSynopsisInput = this.generator.prepareSynopsisGenerationInput(this.novelData, {
+                concept: payload.concept,
+                volumeSummary: volume.summary,
+                existingSynopsis: volume.chapterSynopsis || "",
+                volumeNumber
+            });
             const chapters = await this.generator.generateChapterSynopsis({
                 project: this.novelData,
                 ...payload,
+                concept: [
+                    preparedSynopsisInput.processedConcept || payload.concept,
+                    preparedSynopsisInput.mappingHint,
+                    preparedSynopsisInput.pendingHint
+                ].filter(Boolean).join("\n\n"),
                 volumeNumber,
                 chapterCount: Number(this.elements.projectChaptersPerVolume.value || 20),
-                volumeSummary: volume.summary,
-                existingSynopsis: volume.chapterSynopsis || ""
+                volumeSummary: preparedSynopsisInput.processedVolumeSummary || volume.summary,
+                existingSynopsis: preparedSynopsisInput.processedExistingSynopsis || volume.chapterSynopsis || ""
             });
 
             const formatted = chapters.map((chapter) =>
                 `【第${chapter.chapter_number}章】${chapter.title}\n核心事件：${chapter.key_event}\n情绪曲线：${chapter.emotion_curve}\n细纲：${chapter.synopsis}`
             ).join("\n\n");
 
+            const synopsisSyncResult = this.generator.mergeSynopsisStateFromGeneratedChapters(
+                this.novelData,
+                chapters,
+                volumeNumber,
+                {
+                    concept: preparedSynopsisInput.processedConcept || payload.concept,
+                    volumeSummary: preparedSynopsisInput.processedVolumeSummary || volume.summary
+                }
+            );
+
             volume.chapterSynopsis = formatted;
             volume.chapter_synopsis = formatted;
             this.novelData.synopsisData.currentVolume = volumeNumber;
             this.novelData.synopsisData.synopsisOutput = formatted;
+            this.novelData.synopsisData.synopsis_output = formatted;
+            this.novelData.synopsisData.synopsis_volumes = this.novelData.synopsisData.synopsis_volumes || {};
+            this.novelData.synopsisData.synopsis_volumes[String(volumeNumber)] = formatted;
             this.elements.synopsisOutput.value = formatted;
             this.persist(true);
             this.renderVolumeCards();
+            this.renderAdvancedState();
+
+            if (synopsisSyncResult.mainMappings.length) {
+                Utils.log(`第 ${volumeNumber} 卷主角映射已更新：${synopsisSyncResult.mainMappings.join("，")}`, "success");
+            }
+            if (synopsisSyncResult.supportingMappings.length) {
+                Utils.log(`第 ${volumeNumber} 卷配角映射已更新：${synopsisSyncResult.supportingMappings.join("，")}`, "success");
+            }
+            if (synopsisSyncResult.pendingTerms.length) {
+                Utils.log(`第 ${volumeNumber} 卷仍有待确认的模糊称呼：${synopsisSyncResult.pendingTerms.join("、")}`, "info");
+            }
+
             Utils.showMessage(`第 ${volumeNumber} 卷章节细纲已生成。`, "success");
             Utils.log(`第 ${volumeNumber} 卷细纲生成完成。`, "success");
         });
