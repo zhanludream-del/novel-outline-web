@@ -3761,6 +3761,21 @@
     extractRoleCandidatesFromChapters(project, chapters, volumeNumber) {
         const existingAllNames = new Set();
         (project.outline.characters || []).forEach((character) => {
+            const substantiveFieldCount = [
+                character.personality,
+                character.appearance,
+                character.abilities,
+                character.goals,
+                character.relationships
+            ].filter((value) => String(value || "").trim()).length;
+            const background = String(character.background || "").trim();
+            const hasGeneratedBackground = background
+                && !background.includes("提及角色")
+                && !background.includes("后续可补充背景");
+            const shouldExclude = substantiveFieldCount >= 2 || hasGeneratedBackground;
+            if (!shouldExclude) {
+                return;
+            }
             const primaryName = String(character.name || "").trim();
             if (primaryName) {
                 existingAllNames.add(primaryName);
