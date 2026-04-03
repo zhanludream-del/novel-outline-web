@@ -4355,15 +4355,47 @@ ${(detailedOutline || concept || "未填写").slice(0, 2200)}`;
         }
 
         const task = async () => {
+            Utils.updateLoading("正在从大纲里提取角色线索...", {
+                progress: 10,
+                detail: "先同步章纲中的出场人物"
+            });
             const preseeded = this.syncCharactersFromOutlineSections(outlineChapters);
             if (preseeded.added || preseeded.updated) {
                 Utils.log(`已先从章纲【出场人物】同步 ${preseeded.added} 个新角色，补全 ${preseeded.updated} 个角色基础信息。`, "info");
             }
 
+            Utils.updateLoading("角色线索提取完成，开始分批生成人设...", {
+                progress: 18,
+                detail: `已预同步 ${preseeded.added + preseeded.updated} 条角色信息`
+            });
+
             const generatedCharacters = await this.generator.generateCharactersFromOutlines({
                 project: this.novelData,
                 chapters: outlineChapters,
-                volumeNumber
+                volumeNumber,
+                onProgress: ({ type, batchIndex, totalBatches, batchSize, generatedCount, names = [] }) => {
+                    const safeTotal = Math.max(1, Number(totalBatches || 1));
+                    const safeIndex = Math.max(1, Number(batchIndex || 1));
+                    const namePreview = names.slice(0, 3).join("、");
+
+                    if (type === "batch_start") {
+                        const progress = Math.min(88, 18 + Math.round(((safeIndex - 1) / safeTotal) * 60));
+                        Utils.updateLoading(`正在补全第 ${safeIndex}/${safeTotal} 批角色`, {
+                            progress,
+                            detail: `本批 ${batchSize || 0} 人${namePreview ? `：${namePreview}` : ""}`
+                        });
+                        Utils.log(`正在补全第 ${safeIndex}/${safeTotal} 批角色：${batchSize || 0} 人${namePreview ? `（${namePreview}）` : ""}`, "info");
+                    }
+
+                    if (type === "batch_success") {
+                        const progress = Math.min(94, 18 + Math.round((safeIndex / safeTotal) * 70));
+                        Utils.updateLoading(`第 ${safeIndex}/${safeTotal} 批角色已完成`, {
+                            progress,
+                            detail: `本批返回 ${generatedCount || 0} 条人设`
+                        });
+                        Utils.log(`第 ${safeIndex}/${safeTotal} 批角色补全完成，返回 ${generatedCount || 0} 条人设。`, "success");
+                    }
+                }
             });
 
             if (!generatedCharacters.length) {
@@ -4372,10 +4404,18 @@ ${(detailedOutline || concept || "未填写").slice(0, 2200)}`;
                 return;
             }
 
+            Utils.updateLoading("人物设定已生成，正在写入人物库...", {
+                progress: 96,
+                detail: `本次共生成 ${generatedCharacters.length} 条人设`
+            });
             const added = this.mergeGeneratedCharacters(generatedCharacters);
             this.persist(true);
             this.renderCharacterList();
             this.renderDashboard();
+            Utils.updateLoading("人物补全完成", {
+                progress: 100,
+                detail: `新增或更新 ${added} 个角色`
+            });
             Utils.showMessage(`已根据大纲补充 ${added} 个角色设定。`, "success");
             Utils.log(`已根据大纲分批补全人设，新增/更新 ${added} 个角色。`, "success");
         };

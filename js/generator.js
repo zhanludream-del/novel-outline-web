@@ -602,7 +602,7 @@ class NovelGenerator {
         });
     }
 
-    async generateCharactersFromOutlines({ project, chapters, volumeNumber }) {
+    async generateCharactersFromOutlines({ project, chapters, volumeNumber, onProgress = null }) {
         const rawRoleMap = this.extractRoleCandidatesFromChapters(project, chapters, volumeNumber);
         const rawItems = Object.entries(rawRoleMap);
         if (!rawItems.length) {
@@ -649,10 +649,22 @@ class NovelGenerator {
 
         const CHAR_BATCH_SIZE = 8;
         const allCharacters = [];
+        const totalBatches = Math.max(1, Math.ceil(rawItems.length / CHAR_BATCH_SIZE));
 
         for (let batchStart = 0; batchStart < rawItems.length; batchStart += CHAR_BATCH_SIZE) {
             const batchItems = rawItems.slice(batchStart, batchStart + CHAR_BATCH_SIZE);
+            const batchIndex = Math.floor(batchStart / CHAR_BATCH_SIZE) + 1;
             const batchStr = batchItems.map(([label, desc]) => `- ${label}${desc ? `（${desc}）` : ""}`).join("\n");
+
+            if (typeof onProgress === "function") {
+                onProgress({
+                    type: "batch_start",
+                    batchIndex,
+                    totalBatches,
+                    batchSize: batchItems.length,
+                    names: batchItems.map(([name]) => name)
+                });
+            }
 
             const systemPrompt = [
                 "你是一位资深网文主编，擅长设定复杂、立体、有反差感的人物角色。",
@@ -732,6 +744,17 @@ class NovelGenerator {
                     allCharacters.push(normalized);
                 }
             });
+
+            if (typeof onProgress === "function") {
+                onProgress({
+                    type: "batch_success",
+                    batchIndex,
+                    totalBatches,
+                    batchSize: batchItems.length,
+                    generatedCount: parsed.length,
+                    names: batchItems.map(([name]) => name)
+                });
+            }
         }
 
         return allCharacters;
