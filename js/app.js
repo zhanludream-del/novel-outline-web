@@ -97,6 +97,8 @@ class NovelOutlineWebApp {
             detailedOutlineInput: document.getElementById("detailedOutlineInput"),
             globalSettingNoteInput: document.getElementById("globalSettingNoteInput"),
             currentPromptTemplateInput: document.getElementById("currentPromptTemplateInput"),
+            aiFilterWhitelistInput: document.getElementById("aiFilterWhitelistInput"),
+            aiFilterBlacklistInput: document.getElementById("aiFilterBlacklistInput"),
             promptFrequencySelect: document.getElementById("promptFrequencySelect"),
             savedPromptSelect: document.getElementById("savedPromptSelect"),
             promptNameInput: document.getElementById("promptNameInput"),
@@ -193,6 +195,7 @@ class NovelOutlineWebApp {
         this.applyStoredGenreExtensions();
         this.populateGenreOptions();
         this.loadSettingsToForm();
+        this.ensurePromptAiFilterInputs();
         this.syncFormFromData();
         this.bindEvents();
         this.renderAll();
@@ -216,6 +219,36 @@ class NovelOutlineWebApp {
         this.elements.appVersionChip.title = urlVersion
             ? `当前打开的是带版本参数的页面：${urlVersion}`
             : `当前内置版本：${buildVersion}`;
+    }
+
+    ensurePromptAiFilterInputs() {
+        if (this.elements.aiFilterWhitelistInput && this.elements.aiFilterBlacklistInput) {
+            return;
+        }
+        if (!this.elements.currentPromptTemplateInput) {
+            return;
+        }
+
+        const promptField = this.elements.currentPromptTemplateInput.closest(".field");
+        if (!promptField) {
+            return;
+        }
+
+        promptField.insertAdjacentHTML("afterend", `
+            <div class="form-grid two-column">
+                <label class="field">
+                    <span>AI去味白名单</span>
+                    <textarea class="input textarea" id="aiFilterWhitelistInput" rows="5" placeholder="每行一个。命中这些短语时，去味器尽量不改。"></textarea>
+                </label>
+                <label class="field">
+                    <span>AI去味黑名单</span>
+                    <textarea class="input textarea" id="aiFilterBlacklistInput" rows="5" placeholder="每行一个。命中这些短语时，去味器优先重写。"></textarea>
+                </label>
+            </div>
+        `);
+
+        this.elements.aiFilterWhitelistInput = document.getElementById("aiFilterWhitelistInput");
+        this.elements.aiFilterBlacklistInput = document.getElementById("aiFilterBlacklistInput");
     }
 
     ensureBaseData() {
@@ -401,6 +434,19 @@ class NovelOutlineWebApp {
                 this.novelData.prompt_state.ai_filter_enabled = this.elements.chapterAiFilterEnabled.checked;
                 this.persist(true);
                 Utils.showMessage(this.elements.chapterAiFilterEnabled.checked ? "已开启 AI 去味。" : "已关闭 AI 去味。", "success");
+            });
+        }
+
+        if (this.elements.aiFilterWhitelistInput) {
+            this.elements.aiFilterWhitelistInput.addEventListener("change", () => {
+                this.novelData.prompt_state.ai_filter_whitelist = this.parseAiFilterLines(this.elements.aiFilterWhitelistInput.value);
+                this.persist(true);
+            });
+        }
+        if (this.elements.aiFilterBlacklistInput) {
+            this.elements.aiFilterBlacklistInput.addEventListener("change", () => {
+                this.novelData.prompt_state.ai_filter_blacklist = this.parseAiFilterLines(this.elements.aiFilterBlacklistInput.value);
+                this.persist(true);
             });
         }
 
@@ -760,6 +806,13 @@ ${(detailedOutline || concept || "未填写").slice(0, 2200)}`;
         });
     }
 
+    parseAiFilterLines(text) {
+        return String(text || "")
+            .split(/\r?\n/)
+            .map((line) => line.trim())
+            .filter(Boolean);
+    }
+
     syncFormFromData() {
         const outline = this.novelData.outline;
         const synopsis = this.novelData.synopsisData || this.novelData.synopsis_data || {};
@@ -785,6 +838,12 @@ ${(detailedOutline || concept || "未填写").slice(0, 2200)}`;
         this.elements.promptFrequencySelect.value = this.novelData.prompt_state.chapter_frequency || "male";
         if (this.elements.chapterAiFilterEnabled) {
             this.elements.chapterAiFilterEnabled.checked = this.novelData.prompt_state.ai_filter_enabled !== false;
+        }
+        if (this.elements.aiFilterWhitelistInput) {
+            this.elements.aiFilterWhitelistInput.value = (this.novelData.prompt_state.ai_filter_whitelist || []).join("\n");
+        }
+        if (this.elements.aiFilterBlacklistInput) {
+            this.elements.aiFilterBlacklistInput.value = (this.novelData.prompt_state.ai_filter_blacklist || []).join("\n");
         }
         this.renderPromptLibrary();
     }
