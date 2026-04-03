@@ -3786,7 +3786,6 @@
                 .forEach((alias) => existingAllNames.add(alias));
         });
 
-        const vagueLabels = new Set(["男主", "女主", "师尊", "反派", "主角", "配角", "众人", "路人", "黑衣人"]);
         const roleMap = {};
         const mapping = project.synopsisData?.vague_to_name_mapping || project.synopsis_data?.vague_to_name_mapping || {};
         const normalizeLabel = (value) => String(value || "")
@@ -3797,7 +3796,7 @@
         const addRole = (name, description) => {
             const mappedName = mapping[name] || name;
             const cleanName = normalizeLabel(mappedName);
-            if (!cleanName || cleanName.length < 2 || cleanName.length > 10 || vagueLabels.has(cleanName)) {
+            if (!cleanName || cleanName.length < 2) {
                 return;
             }
             if (existingAllNames.has(cleanName) || roleMap[cleanName]) {
