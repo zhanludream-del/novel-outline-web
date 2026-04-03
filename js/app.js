@@ -4036,24 +4036,28 @@ ${(detailedOutline || concept || "未填写").slice(0, 2200)}`;
         if (!summary || !content) {
             return 0;
         }
-        const fragments = summary
-            .split(/[。！？；\n]/)
-            .map((item) => item.trim())
-            .filter((item) => item.length >= 4 && item.length <= 30)
-            .slice(0, 8);
-        if (!fragments.length) {
+        const signals = this.extractOutlineExecutionSignals(summary);
+        if (!signals.length) {
             return 0;
         }
-        const matched = fragments.filter((item) => {
-            const keywords = this.extractContentKeywords(item, 3).split("、").filter(Boolean);
-            return keywords.some((keyword) => content.includes(keyword));
-        });
-        return matched.length / fragments.length;
+
+        const totalWeight = signals.reduce((sum, item) => sum + item.weight, 0) || 1;
+        const matchedWeight = signals.reduce((sum, item) => {
+            const keywordHits = item.keywords.filter((keyword) => content.includes(keyword)).length;
+            const phraseMatched = item.phrase && item.phrase.length >= 6 && content.includes(item.phrase);
+            const matched = phraseMatched || keywordHits >= Math.min(2, item.keywords.length) || (item.keywords.length <= 2 && keywordHits >= 1);
+            return sum + (matched ? item.weight : 0);
+        }, 0);
+
+        return Math.max(0, Math.min(1, matchedWeight / totalWeight));
     }
 
     extractContentKeywords(text, limit = 5) {
         const matches = String(text || "").match(/[\u4e00-\u9fa5]{2,6}/g) || [];
-        const stopwords = new Set(["当前", "这一章", "本章", "主角", "然后", "因为", "所以", "他们", "自己", "没有", "一个", "出来", "开始", "继续"]);
+        const stopwords = new Set([
+            "当前", "这一章", "本章", "主角", "然后", "因为", "所以", "他们", "自己", "没有", "一个", "出来", "开始", "继续",
+            "空气", "荒野", "风声", "狂风", "黑暗", "光线", "地面", "碎石", "声音", "气味", "场景", "氛围", "周围", "前方", "后方"
+        ]);
         const unique = [];
         matches.forEach((item) => {
             if (stopwords.has(item) || unique.includes(item)) {
@@ -4062,6 +4066,65 @@ ${(detailedOutline || concept || "未填写").slice(0, 2200)}`;
             unique.push(item);
         });
         return unique.slice(0, limit).join("、");
+    }
+
+    extractOutlineExecutionSignals(summary) {
+        const text = String(summary || "").trim();
+        if (!text) {
+            return [];
+        }
+
+        const sectionConfigs = [
+            { label: "章节目标", weight: 3 },
+            { label: "核心事件", weight: 3 },
+            { label: "情节推进", weight: 2 },
+            { label: "伏笔处理", weight: 1 }
+        ];
+
+        const signals = [];
+        sectionConfigs.forEach(({ label, weight }) => {
+            const match = text.match(new RegExp(`【${label}】\\s*([\\s\\S]*?)(?=\\n【|$)`));
+            const body = String(match?.[1] || "").trim();
+            if (!body) {
+                return;
+            }
+
+            body.split(/\r?\n/).forEach((line) => {
+                const cleaned = line.replace(/^[\d一二三四五六七八九十\-.、\s]+/, "").trim();
+                if (cleaned.length < 4) {
+                    return;
+                }
+                const keywords = this.extractContentKeywords(cleaned, label === "情节推进" ? 4 : 3)
+                    .split("、")
+                    .filter(Boolean);
+                if (!keywords.length) {
+                    return;
+                }
+                signals.push({
+                    label,
+                    phrase: cleaned.slice(0, 24),
+                    keywords,
+                    weight
+                });
+            });
+        });
+
+        if (signals.length) {
+            return signals.slice(0, 10);
+        }
+
+        return text
+            .split(/[。！？；\n]/)
+            .map((item) => item.trim())
+            .filter((item) => item.length >= 4 && item.length <= 36)
+            .slice(0, 8)
+            .map((item) => ({
+                label: "概括句",
+                phrase: item.slice(0, 24),
+                keywords: this.extractContentKeywords(item, 3).split("、").filter(Boolean),
+                weight: 1
+            }))
+            .filter((item) => item.keywords.length);
     }
 
     detectRepeatedLines(content) {
