@@ -78,6 +78,8 @@ class NovelOutlineWebApp {
             chapterNextSetupPreview: document.getElementById("chapterNextSetupPreview"),
             chapterSnapshotPreview: document.getElementById("chapterSnapshotPreview"),
             chapterAnalysisPreview: document.getElementById("chapterAnalysisPreview"),
+            chapterAnalysisReportPreview: document.getElementById("chapterAnalysisReportPreview"),
+            chapterQcPreview: document.getElementById("chapterQcPreview"),
 
             characterName: document.getElementById("characterName"),
             characterIdentity: document.getElementById("characterIdentity"),
@@ -137,6 +139,10 @@ class NovelOutlineWebApp {
             btnExpandChapterContent: document.getElementById("btnExpandChapterContent"),
             btnCopyChapterSummary: document.getElementById("btnCopyChapterSummary"),
             btnExportCurrentChapter: document.getElementById("btnExportCurrentChapter"),
+            btnAnalyzeChapter: document.getElementById("btnAnalyzeChapter"),
+            btnRunChapterQc: document.getElementById("btnRunChapterQc"),
+            btnRefreshChapterList: document.getElementById("btnRefreshChapterList"),
+            btnBatchDeleteChapters: document.getElementById("btnBatchDeleteChapters"),
             btnCopyChapter: document.getElementById("btnCopyChapter"),
             btnSaveChapter: document.getElementById("btnSaveChapter"),
             btnDeleteChapter: document.getElementById("btnDeleteChapter"),
@@ -231,6 +237,12 @@ class NovelOutlineWebApp {
         }
         if (!this.novelData.chapter_emotions || typeof this.novelData.chapter_emotions !== "object") {
             this.novelData.chapter_emotions = {};
+        }
+        if (!this.novelData.chapter_analysis_reports || typeof this.novelData.chapter_analysis_reports !== "object") {
+            this.novelData.chapter_analysis_reports = {};
+        }
+        if (!this.novelData.chapter_qc_reports || typeof this.novelData.chapter_qc_reports !== "object") {
+            this.novelData.chapter_qc_reports = {};
         }
         if (!this.novelData.supporting_characters || typeof this.novelData.supporting_characters !== "object") {
             this.novelData.supporting_characters = {};
@@ -417,6 +429,10 @@ class NovelOutlineWebApp {
         this.elements.btnExpandChapterContent.addEventListener("click", () => this.safeAsync(() => this.expandCurrentChapter()));
         this.elements.btnCopyChapterSummary.addEventListener("click", () => this.copyCurrentChapterSummary());
         this.elements.btnExportCurrentChapter.addEventListener("click", () => this.exportCurrentChapterTxt());
+        this.elements.btnAnalyzeChapter.addEventListener("click", () => this.analyzeCurrentChapter());
+        this.elements.btnRunChapterQc.addEventListener("click", () => this.runCurrentChapterQc());
+        this.elements.btnRefreshChapterList.addEventListener("click", () => this.refreshChapterWorkspace());
+        this.elements.btnBatchDeleteChapters.addEventListener("click", () => this.batchDeleteChapterRange());
         this.elements.btnCopyChapter.addEventListener("click", () => Utils.copyText(this.elements.chapterContentInput.value));
         this.elements.btnSaveChapter.addEventListener("click", () => this.saveChapterEditor());
         this.elements.btnDeleteChapter.addEventListener("click", () => this.deleteCurrentChapter());
@@ -1408,6 +1424,12 @@ ${(detailedOutline || concept || "未填写").slice(0, 2200)}`;
         this.novelData.chapter_emotions = this.novelData.chapter_emotions && typeof this.novelData.chapter_emotions === "object"
             ? this.novelData.chapter_emotions
             : {};
+        this.novelData.chapter_analysis_reports = this.novelData.chapter_analysis_reports && typeof this.novelData.chapter_analysis_reports === "object"
+            ? this.novelData.chapter_analysis_reports
+            : {};
+        this.novelData.chapter_qc_reports = this.novelData.chapter_qc_reports && typeof this.novelData.chapter_qc_reports === "object"
+            ? this.novelData.chapter_qc_reports
+            : {};
         this.novelData.supporting_characters = this.novelData.supporting_characters && typeof this.novelData.supporting_characters === "object"
             ? this.novelData.supporting_characters
             : {};
@@ -1626,6 +1648,120 @@ ${(detailedOutline || concept || "未填写").slice(0, 2200)}`;
         lines.push("【章节正文】");
         lines.push((chapter.content || "").trim() || "暂无正文，当前导出的是章节大纲。");
         return lines.join("\n");
+    }
+
+    analyzeCurrentChapter() {
+        const chapter = this.getChapterFromEditor();
+        if (!chapter || !chapter.number) {
+            Utils.showMessage("请先选择章节。", "info");
+            return;
+        }
+        if (!(chapter.content || "").trim()) {
+            Utils.showMessage("请先生成或填写正文后再分析。", "info");
+            return;
+        }
+
+        this.refreshChapterReports(chapter);
+        this.persist(true);
+        this.renderChapterContextPreview(chapter);
+        Utils.showMessage("章节分析报告已更新。", "success");
+        Utils.log(`第 ${chapter.number} 章分析报告已更新。`, "success");
+    }
+
+    runCurrentChapterQc() {
+        const chapter = this.getChapterFromEditor();
+        if (!chapter || !chapter.number) {
+            Utils.showMessage("请先选择章节。", "info");
+            return;
+        }
+        if (!(chapter.content || "").trim()) {
+            Utils.showMessage("请先生成或填写正文后再质检。", "info");
+            return;
+        }
+
+        this.refreshChapterReports(chapter);
+        this.persist(true);
+        this.renderChapterContextPreview(chapter);
+        Utils.showMessage("章节质检结果已更新。", "success");
+        Utils.log(`第 ${chapter.number} 章质检完成。`, "success");
+    }
+
+    refreshChapterWorkspace() {
+        this.renderChapterList();
+        const chapter = this.getChapterFromEditor();
+        this.renderChapterContextPreview(chapter);
+        Utils.showMessage("章节列表已刷新。", "success");
+    }
+
+    batchDeleteChapterRange() {
+        const volume = this.getCurrentChapterVolume();
+        if (!volume || !(volume.chapters || []).length) {
+            Utils.showMessage("当前卷还没有章节。", "info");
+            return;
+        }
+
+        const startInput = window.prompt("请输入要删除的起始章号：", "1");
+        if (startInput === null) {
+            return;
+        }
+        const endInput = window.prompt("请输入要删除的结束章号：", startInput);
+        if (endInput === null) {
+            return;
+        }
+
+        const start = Number(startInput);
+        const end = Number(endInput);
+        if (!start || !end || start > end) {
+            Utils.showMessage("请输入有效的章节范围。", "error");
+            return;
+        }
+
+        const deleteSet = new Set();
+        volume.chapters.forEach((chapter) => {
+            const number = Number(chapter.number || 0);
+            if (number >= start && number <= end) {
+                deleteSet.add(chapter.id);
+                if (chapter.uuid && this.novelData.chapters?.[chapter.uuid]) {
+                    delete this.novelData.chapters[chapter.uuid];
+                }
+                delete this.novelData.chapter_analysis_reports?.[`chapter_${number}`];
+                delete this.novelData.chapter_qc_reports?.[`chapter_${number}`];
+                delete this.novelData.chapter_rhythms?.[`第${number}章`];
+                delete this.novelData.chapter_emotions?.[`第${number}章`];
+                delete this.novelData.chapter_snapshot?.snapshots?.[`chapter_${number}`];
+            }
+        });
+
+        if (!deleteSet.size) {
+            Utils.showMessage("指定范围内没有可删除的章节。", "info");
+            return;
+        }
+
+        const ok = window.confirm(`确定删除第 ${start}-${end} 章吗？本卷范围内匹配到的章节会一并删除。`);
+        if (!ok) {
+            return;
+        }
+
+        volume.chapters = volume.chapters.filter((chapter) => !deleteSet.has(chapter.id));
+        if (this.state.selectedChapterId && deleteSet.has(this.state.selectedChapterId)) {
+            this.state.selectedChapterId = null;
+            this.clearChapterEditor();
+        }
+
+        this.persist(true);
+        this.renderChapterList();
+        this.renderDashboard();
+        this.renderAdvancedState();
+        Utils.showMessage(`已删除 ${deleteSet.size} 个章节。`, "success");
+        Utils.log(`已批量删除第 ${start}-${end} 章范围内的 ${deleteSet.size} 个章节。`, "success");
+    }
+
+    refreshChapterReports(chapter) {
+        if (!chapter || !chapter.number || !(chapter.content || "").trim()) {
+            return;
+        }
+        this.novelData.chapter_analysis_reports[`chapter_${chapter.number}`] = this.buildChapterAnalysisReport(chapter);
+        this.novelData.chapter_qc_reports[`chapter_${chapter.number}`] = this.buildChapterQcReport(chapter);
     }
 
     async importData(event) {
@@ -2174,7 +2310,11 @@ ${(detailedOutline || concept || "未填写").slice(0, 2200)}`;
     }
 
     renderChapterContextPreview(chapter) {
-        if (!this.elements.chapterNextSetupPreview || !this.elements.chapterSnapshotPreview || !this.elements.chapterAnalysisPreview) {
+        if (!this.elements.chapterNextSetupPreview
+            || !this.elements.chapterSnapshotPreview
+            || !this.elements.chapterAnalysisPreview
+            || !this.elements.chapterAnalysisReportPreview
+            || !this.elements.chapterQcPreview) {
             return;
         }
 
@@ -2182,6 +2322,8 @@ ${(detailedOutline || concept || "未填写").slice(0, 2200)}`;
             this.elements.chapterNextSetupPreview.textContent = "还没有下章铺垫。";
             this.elements.chapterSnapshotPreview.textContent = "还没有章末快照。";
             this.elements.chapterAnalysisPreview.textContent = "还没有分析标签。";
+            this.elements.chapterAnalysisReportPreview.textContent = "还没有分析报告。";
+            this.elements.chapterQcPreview.textContent = "还没有质检结果。";
             return;
         }
 
@@ -2191,6 +2333,8 @@ ${(detailedOutline || concept || "未填写").slice(0, 2200)}`;
         const snapshot = this.novelData.chapter_snapshot?.snapshots?.[`chapter_${chapterNumber}`];
         this.elements.chapterSnapshotPreview.textContent = this.formatChapterSnapshotPreview(snapshot);
         this.elements.chapterAnalysisPreview.textContent = this.formatChapterAnalysisPreview(chapterNumber, chapter);
+        this.elements.chapterAnalysisReportPreview.textContent = this.getStoredChapterAnalysisReport(chapterNumber);
+        this.elements.chapterQcPreview.textContent = this.getStoredChapterQcReport(chapterNumber);
     }
 
     formatNextChapterSetupPreview(nextChapterSetup) {
@@ -2239,6 +2383,14 @@ ${(detailedOutline || concept || "未填写").slice(0, 2200)}`;
         return lines.length ? lines.join("\n") : "还没有分析标签。";
     }
 
+    getStoredChapterAnalysisReport(chapterNumber) {
+        return this.novelData.chapter_analysis_reports?.[`chapter_${chapterNumber}`] || "还没有分析报告。";
+    }
+
+    getStoredChapterQcReport(chapterNumber) {
+        return this.novelData.chapter_qc_reports?.[`chapter_${chapterNumber}`] || "还没有质检结果。";
+    }
+
     saveChapterEditor() {
         const volume = this.getCurrentChapterVolume();
         if (!volume) {
@@ -2266,6 +2418,7 @@ ${(detailedOutline || concept || "未填写").slice(0, 2200)}`;
             updatedAt: new Date().toISOString()
         };
 
+        this.refreshChapterReports(chapter);
         this.upsertChapter(volume, chapter);
         this.state.selectedChapterId = chapter.id;
         this.persist(true);
@@ -2758,6 +2911,229 @@ ${(detailedOutline || concept || "未填写").slice(0, 2200)}`;
 
         const matched = emotionRules.find(([, pattern]) => pattern.test(text));
         return matched ? matched[0] : "紧张";
+    }
+
+    buildChapterAnalysisReport(chapter) {
+        const chapterNumber = Number(chapter.number || 0);
+        const content = String(chapter.content || "").trim();
+        const summary = String(chapter.summary || "").trim();
+        const volumeNumber = this.getVolumeNumberForChapter(chapter);
+        const outlineCoverage = this.estimateOutlineCoverage(summary, content);
+        const keywordSummary = this.extractContentKeywords(content, 6);
+        const characters = this.collectChapterCharacters(chapterNumber, content);
+        const sceneCount = Math.max(1, content.split(/\n{2,}/).filter((block) => block.trim()).length);
+        const rhythm = this.novelData.chapter_rhythms?.[`第${chapterNumber}章`] || this.novelData.chapter_rhythms?.[`chapter_${chapterNumber}`] || "待判断";
+        const emotion = this.novelData.chapter_emotions?.[`第${chapterNumber}章`] || this.novelData.chapter_emotions?.[`chapter_${chapterNumber}`] || "待判断";
+        const snapshot = this.novelData.chapter_snapshot?.snapshots?.[`chapter_${chapterNumber}`] || {};
+        const nextSetup = chapter.next_chapter_setup || {};
+        const endingHook = nextSetup.suspense_hook || snapshot["下一章预期"] || "本章还没有明确钩子。";
+        const plotExecution = outlineCoverage >= 0.68 ? "高" : outlineCoverage >= 0.38 ? "中" : "偏弱";
+
+        const lines = [
+            `【第${chapterNumber}章分析报告】`,
+            "",
+            `卷号：第${volumeNumber}卷`,
+            `标题：${chapter.title || `第${chapterNumber}章`}`,
+            `字数：${content.length}字`,
+            `场景数：约 ${sceneCount} 段`,
+            `出场人物：${characters.length ? characters.join("、") : "暂未识别"}`,
+            "",
+            "一、情节核对",
+            `大纲执行度：${plotExecution}（覆盖率 ${(outlineCoverage * 100).toFixed(0)}%）`,
+            `关键内容：${keywordSummary || "暂未提取到明显关键词"}`,
+            `章末钩子：${endingHook}`,
+            "",
+            "二、节奏与情绪",
+            `节奏判断：${rhythm}`,
+            `主情绪：${emotion}`,
+            `剧情单元：${chapter.plot_unit?.unit_phase || chapter.plot_unit?.plot_goal || "未标注"}`,
+            "",
+            "三、连续性观察",
+            `当前位置：${snapshot["位置"] || snapshot.current_location || "未记录"}`,
+            `当前时间：${snapshot["时间"] || snapshot.timeline || "未记录"}`,
+            `待推进事项：${snapshot.pending_plots || "未记录"}`,
+            "",
+            "四、建议",
+            this.buildChapterAdviceLine(chapter, content, outlineCoverage, characters)
+        ];
+
+        return lines.join("\n");
+    }
+
+    buildChapterQcReport(chapter) {
+        const chapterNumber = Number(chapter.number || 0);
+        const content = String(chapter.content || "").trim();
+        const summary = String(chapter.summary || "").trim();
+        const issues = [];
+        const outlineCoverage = this.estimateOutlineCoverage(summary, content);
+        const duplicateLines = this.detectRepeatedLines(content);
+        const previousChapter = this.getAdjacentChapter(chapter.number, -1, this.getVolumeNumberForChapter(chapter));
+        const nextChapter = this.getAdjacentChapter(chapter.number, 1, this.getVolumeNumberForChapter(chapter));
+
+        if (content.length < 2000) {
+            issues.push("字数偏少：当前正文低于 2000 字，容易显得情节过薄。");
+        }
+        if (outlineCoverage < 0.3 && summary) {
+            issues.push("大纲执行偏弱：正文与章纲的重合度较低，建议检查是否跑偏。");
+        }
+        if (duplicateLines.length) {
+            issues.push(`疑似重复表达：${duplicateLines.slice(0, 3).join("；")}`);
+        }
+        if (/(总之|综上|归根结底|这一切才刚刚开始|新的篇章即将展开)/.test(content)) {
+            issues.push("结尾有总结腔：更像旁白总结，不像网文章节卡点。");
+        }
+        if (this.detectNextChapterLeakage(content, nextChapter)) {
+            issues.push("疑似提前写到下一章内容：请检查结尾是否越过下章边界。");
+        }
+        if (previousChapter && previousChapter.next_chapter_setup?.suspense_hook) {
+            const hookKeywords = this.extractContentKeywords(previousChapter.next_chapter_setup.suspense_hook, 3);
+            if (hookKeywords && !hookKeywords.split("、").some((item) => content.includes(item))) {
+                issues.push("承接感偏弱：上章留下的悬念在本章正文里体现得不明显。");
+            }
+        }
+        const aiClicheHits = this.detectAiCliche(content);
+        if (aiClicheHits.length >= 3) {
+            issues.push(`AI味偏重：高频套话较多（${aiClicheHits.slice(0, 4).join("、")}）。`);
+        }
+
+        const lines = [
+            `【第${chapterNumber}章质检结果】`,
+            ""
+        ];
+
+        if (!issues.length) {
+            lines.push("当前章节通过基础质检。");
+            lines.push("未发现明显的字数、重复、越界或总结腔问题。");
+        } else {
+            lines.push(`共发现 ${issues.length} 项需要注意的问题：`);
+            issues.forEach((issue, index) => {
+                lines.push(`${index + 1}. ${issue}`);
+            });
+        }
+
+        lines.push("");
+        lines.push(`参考章纲：${summary ? Utils.summarizeText(summary, 90) : "暂无章纲"}`);
+        lines.push(`上一章：${previousChapter ? `${previousChapter.number} · ${previousChapter.title || `第${previousChapter.number}章`}` : "无"}`);
+        lines.push(`下一章：${nextChapter ? `${nextChapter.number} · ${nextChapter.title || `第${nextChapter.number}章`}` : "无"}`);
+        return lines.join("\n");
+    }
+
+    buildChapterAdviceLine(chapter, content, outlineCoverage, characters) {
+        if (outlineCoverage < 0.3) {
+            return "建议回看章纲，把本章必须发生的核心事件再补齐，避免正文自己跑到支线上。";
+        }
+        if (content.length < 2000) {
+            return "建议补强场景细节、人物动作和情绪递进，让这一章更有血肉。";
+        }
+        if (characters.length <= 1) {
+            return "建议补一点人物互动或外部阻力，让剧情推进不只是主角独白。";
+        }
+        return "本章结构已经基本完整，下一步可以重点优化结尾卡点和下章衔接。";
+    }
+
+    collectChapterCharacters(chapterNumber, content) {
+        const appearanceEntries = Object.entries(this.novelData.character_appearance_tracker?.appearances || {});
+        const fromTracker = appearanceEntries
+            .filter(([, value]) => Number(value?.last_chapter || value?.chapter || 0) === Number(chapterNumber))
+            .map(([name]) => name);
+        const fromOutline = (this.novelData.outline.characters || [])
+            .map((item) => item.name)
+            .filter((name) => name && content.includes(name));
+        return [...new Set([...fromTracker, ...fromOutline])].slice(0, 8);
+    }
+
+    estimateOutlineCoverage(summary, content) {
+        if (!summary || !content) {
+            return 0;
+        }
+        const fragments = summary
+            .split(/[。！？；\n]/)
+            .map((item) => item.trim())
+            .filter((item) => item.length >= 4 && item.length <= 30)
+            .slice(0, 8);
+        if (!fragments.length) {
+            return 0;
+        }
+        const matched = fragments.filter((item) => {
+            const keywords = this.extractContentKeywords(item, 3).split("、").filter(Boolean);
+            return keywords.some((keyword) => content.includes(keyword));
+        });
+        return matched.length / fragments.length;
+    }
+
+    extractContentKeywords(text, limit = 5) {
+        const matches = String(text || "").match(/[\u4e00-\u9fa5]{2,6}/g) || [];
+        const stopwords = new Set(["当前", "这一章", "本章", "主角", "然后", "因为", "所以", "他们", "自己", "没有", "一个", "出来", "开始", "继续"]);
+        const unique = [];
+        matches.forEach((item) => {
+            if (stopwords.has(item) || unique.includes(item)) {
+                return;
+            }
+            unique.push(item);
+        });
+        return unique.slice(0, limit).join("、");
+    }
+
+    detectRepeatedLines(content) {
+        const seen = new Map();
+        const duplicates = [];
+        String(content || "").split(/\r?\n/).forEach((line) => {
+            const trimmed = line.trim();
+            if (trimmed.length < 12) {
+                return;
+            }
+            const count = (seen.get(trimmed) || 0) + 1;
+            seen.set(trimmed, count);
+            if (count === 2) {
+                duplicates.push(Utils.summarizeText(trimmed, 26));
+            }
+        });
+        return duplicates;
+    }
+
+    detectAiCliche(content) {
+        const phrases = ["嘴角微扬", "不由得", "下一刻", "与此同时", "仿佛", "只见", "这一刻", "顿时"];
+        return phrases.filter((phrase) => String(content || "").includes(phrase));
+    }
+
+    detectNextChapterLeakage(content, nextChapter) {
+        if (!nextChapter || !nextChapter.summary) {
+            return false;
+        }
+        const keywords = this.extractContentKeywords(`${nextChapter.title || ""}\n${nextChapter.summary}`, 5)
+            .split("、")
+            .filter(Boolean);
+        const hitCount = keywords.filter((item) => String(content || "").includes(item)).length;
+        return hitCount >= 3;
+    }
+
+    getAdjacentChapter(chapterNumber, offset, volumeNumber = 1) {
+        const allChapters = (this.novelData.outline.volumes || []).flatMap((volume, volumeIndex) =>
+            (volume.chapters || []).map((chapter) => ({
+                ...chapter,
+                _volumeNumber: Number(volume.volume_number || volumeIndex + 1)
+            }))
+        ).sort((left, right) => {
+            if (left._volumeNumber !== right._volumeNumber) {
+                return left._volumeNumber - right._volumeNumber;
+            }
+            return Number(left.number || 0) - Number(right.number || 0);
+        });
+
+        const currentIndex = allChapters.findIndex((item) =>
+            Number(item._volumeNumber) === Number(volumeNumber) && Number(item.number || 0) === Number(chapterNumber || 0)
+        );
+        if (currentIndex === -1) {
+            return null;
+        }
+        return allChapters[currentIndex + offset] || null;
+    }
+
+    getVolumeNumberForChapter(chapter) {
+        const found = (this.novelData.outline.volumes || []).findIndex((volume) =>
+            (volume.chapters || []).some((item) => item.id === chapter.id || Number(item.number || 0) === Number(chapter.number || 0))
+        );
+        return found >= 0 ? found + 1 : Number(this.elements.chapterEditorVolumeSelect?.value || this.elements.chapterVolumeSelect?.value || 1);
     }
 
     extractExtraCharacters(block) {

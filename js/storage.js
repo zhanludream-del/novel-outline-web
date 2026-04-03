@@ -83,6 +83,12 @@ class StorageManager {
         merged.chapter_emotions = merged.chapter_emotions && typeof merged.chapter_emotions === "object"
             ? merged.chapter_emotions
             : {};
+        merged.chapter_analysis_reports = merged.chapter_analysis_reports && typeof merged.chapter_analysis_reports === "object"
+            ? merged.chapter_analysis_reports
+            : {};
+        merged.chapter_qc_reports = merged.chapter_qc_reports && typeof merged.chapter_qc_reports === "object"
+            ? merged.chapter_qc_reports
+            : {};
         merged.supporting_characters = merged.supporting_characters && typeof merged.supporting_characters === "object"
             ? merged.supporting_characters
             : {};

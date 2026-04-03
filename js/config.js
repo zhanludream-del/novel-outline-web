@@ -333,6 +333,8 @@ const DEFAULT_NOVEL_DATA = {
     foreshadows: [],
     chapter_rhythms: {},
     chapter_emotions: {},
+    chapter_analysis_reports: {},
+    chapter_qc_reports: {},
     supporting_characters: {},
     prompt_state: {
         current_prompt: "",

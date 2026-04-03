@@ -451,6 +451,10 @@
                                     <select class="input" id="chapterEditorVolumeSelect"></select>
                                 </label>
                             </div>
+                            <div class="panel-actions">
+                                <button class="btn btn-ghost" id="btnRefreshChapterList" type="button">刷新列表</button>
+                                <button class="btn btn-danger" id="btnBatchDeleteChapters" type="button">批量删除章节</button>
+                            </div>
                             <div class="chapter-list" id="chapterList"></div>
                         </section>
 
@@ -495,6 +499,22 @@
                                 <article class="info-card">
                                     <strong>章节分析</strong>
                                     <div class="mini-text" id="chapterAnalysisPreview">还没有分析标签。</div>
+                                </article>
+                            </div>
+
+                            <div class="panel-actions chapter-tool-row">
+                                <button class="btn btn-ghost" id="btnAnalyzeChapter" type="button">生成分析报告</button>
+                                <button class="btn btn-ghost" id="btnRunChapterQc" type="button">运行章节质检</button>
+                            </div>
+
+                            <div class="chapter-report-grid">
+                                <article class="info-card report-card">
+                                    <strong>章节分析报告</strong>
+                                    <div class="mini-text" id="chapterAnalysisReportPreview">还没有分析报告。</div>
+                                </article>
+                                <article class="info-card report-card">
+                                    <strong>章节质检结果</strong>
+                                    <div class="mini-text" id="chapterQcPreview">还没有质检结果。</div>
                                 </article>
                             </div>
 
