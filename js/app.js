@@ -1927,6 +1927,7 @@ ${(detailedOutline || concept || "未填写").slice(0, 2200)}`;
         }
 
         volume.chapters = volume.chapters.filter((chapter) => !deleteSet.has(chapter.id));
+        this.rollbackStateSystemsToChapter(start - 1);
         if (this.state.selectedChapterId && deleteSet.has(this.state.selectedChapterId)) {
             this.state.selectedChapterId = null;
             this.clearChapterEditor();
@@ -1936,6 +1937,7 @@ ${(detailedOutline || concept || "未填写").slice(0, 2200)}`;
         this.renderChapterList();
         this.renderDashboard();
         this.renderAdvancedState();
+        Utils.log(`状态系统已回滚到第 ${Math.max(0, start - 1)} 章结束时的状态。`, "info");
         Utils.showMessage(`已删除 ${deleteSet.size} 个章节。`, "success");
         Utils.log(`已批量删除第 ${start}-${end} 章范围内的 ${deleteSet.size} 个章节。`, "success");
     }
@@ -2746,11 +2748,17 @@ ${(detailedOutline || concept || "未填写").slice(0, 2200)}`;
             return;
         }
 
+        const deletedChapter = volume.chapters.find((chapter) => chapter.id === this.state.selectedChapterId);
+        const deletedChapterNumber = Number(deletedChapter?.number || 0);
         volume.chapters = volume.chapters.filter((chapter) => chapter.id !== this.state.selectedChapterId);
+        this.rollbackStateSystemsToChapter(deletedChapterNumber - 1);
         this.state.selectedChapterId = null;
         this.clearChapterEditor();
         this.persist(true);
         this.renderChapterList();
+        this.renderDashboard();
+        this.renderAdvancedState();
+        Utils.log(`状态系统已回滚到第 ${Math.max(0, deletedChapterNumber - 1)} 章结束时的状态。`, "info");
         Utils.showMessage("章节已删除。", "success");
     }
 
@@ -2924,6 +2932,7 @@ ${(detailedOutline || concept || "未填写").slice(0, 2200)}`;
         this.recordCharacterCheckerState(chapterNumber, stateData);
         this.recordGenreProgressUpdate(chapterNumber, stateData);
         this.recordPendingSubplots(chapterNumber, stateData);
+        this.recordFullStateSnapshot(chapterNumber, chapterTitle);
     }
 
     recordChapterSnapshot(chapterNumber, chapterTitle, stateData, chapter = null) {
@@ -2951,7 +2960,130 @@ ${(detailedOutline || concept || "未填写").slice(0, 2200)}`;
             key_event: stateData.key_event || ""
         };
         this.novelData.chapter_snapshot.snapshots = snapshots;
-        this.novelData.outline.state_snapshots = JSON.parse(JSON.stringify(snapshots));
+    }
+
+    deepClone(value) {
+        return JSON.parse(JSON.stringify(value));
+    }
+
+    extractSnapshotChapterNumber(key) {
+        const match = String(key || "").match(/chapter_(\d+)/i) || String(key || "").match(/(\d+)/);
+        return match ? Number(match[1]) : 0;
+    }
+
+    recordFullStateSnapshot(chapterNumber, chapterTitle) {
+        const snapshots = this.novelData.outline.state_snapshots || {};
+        snapshots[`chapter_${chapterNumber}`] = {
+            chapter: chapterNumber,
+            title: chapterTitle,
+            story_state: this.deepClone(this.novelData.outline.story_state || {}),
+            compatibility_story_state: this.deepClone(this.novelData.story_state || {}),
+            dynamic_tracker: this.deepClone(this.novelData.dynamic_tracker || {}),
+            timeline_tracker: this.deepClone(this.novelData.timeline_tracker || {}),
+            chapter_snapshot: this.deepClone(this.novelData.chapter_snapshot || {}),
+            foreshadow_tracker: this.deepClone(this.novelData.foreshadow_tracker || {}),
+            foreshadow_manager: this.deepClone(this.novelData.foreshadow_manager || {}),
+            secret_matrix: this.deepClone(this.novelData.secret_matrix || {}),
+            character_checker: this.deepClone(this.novelData.character_checker || {}),
+            character_appearance_tracker: this.deepClone(this.novelData.character_appearance_tracker || {}),
+            personality_enforcer: this.deepClone(this.novelData.personality_enforcer || {}),
+            dialogue_tracker: this.deepClone(this.novelData.dialogue_tracker || {}),
+            world_tracker: this.deepClone(this.novelData.world_tracker || {}),
+            genre_progress_tracker: this.deepClone(this.novelData.genre_progress_tracker || {}),
+            name_locker: this.deepClone(this.novelData.name_locker || {}),
+            used_temp_subplots: this.deepClone(this.novelData.used_temp_subplots || [])
+        };
+        this.novelData.outline.state_snapshots = snapshots;
+    }
+
+    trimStateSystemsAfterChapter(targetChapterNumber) {
+        const target = Math.max(0, Number(targetChapterNumber || 0));
+        const filterSnapshotObject = (source) => Object.fromEntries(
+            Object.entries(source || {}).filter(([key]) => this.extractSnapshotChapterNumber(key) <= target)
+        );
+
+        this.novelData.chapter_snapshot.snapshots = filterSnapshotObject(this.novelData.chapter_snapshot?.snapshots);
+        this.novelData.outline.state_snapshots = filterSnapshotObject(this.novelData.outline?.state_snapshots);
+
+        const timelineTracker = this.novelData.timeline_tracker || {};
+        timelineTracker.timeline_events = (timelineTracker.timeline_events || []).filter((item) => Number(item.chapter || item["章节"] || 0) <= target);
+        timelineTracker.time_constraints = (timelineTracker.time_constraints || []).filter((item) => Number(item.chapter || item["章节"] || 0) <= target);
+        this.novelData.timeline_tracker = timelineTracker;
+
+        const worldTracker = this.novelData.world_tracker || {};
+        worldTracker.world_events = (worldTracker.world_events || []).filter((item) => Number(item.chapter || item["章节"] || 0) <= target);
+        this.novelData.world_tracker = worldTracker;
+
+        const genreTracker = this.novelData.genre_progress_tracker || {};
+        genreTracker.progress_events = (genreTracker.progress_events || []).filter((item) => Number(item.chapter || item["章节"] || 0) <= target);
+        ["pregnancy_progress", "rank_progress", "status_progress"].forEach((key) => {
+            genreTracker[key] = Object.fromEntries(
+                Object.entries(genreTracker[key] || {}).filter(([, item]) => Number(item?.chapter || item?.["章节"] || 0) <= target)
+            );
+        });
+        this.novelData.genre_progress_tracker = genreTracker;
+
+        ["chapter_analysis_reports", "chapter_qc_reports", "chapter_rhythms", "chapter_emotions"].forEach((key) => {
+            this.novelData[key] = filterSnapshotObject(this.novelData[key] || {});
+        });
+    }
+
+    rollbackStateSystemsToChapter(targetChapterNumber) {
+        const target = Math.max(0, Number(targetChapterNumber || 0));
+        this.trimStateSystemsAfterChapter(target);
+
+        if (target <= 0) {
+            this.novelData.outline.story_state = this.deepClone(DEFAULT_NOVEL_DATA.outline.story_state);
+            this.novelData.story_state = this.deepClone(DEFAULT_NOVEL_DATA.story_state);
+            this.novelData.dynamic_tracker = this.deepClone(DEFAULT_NOVEL_DATA.dynamic_tracker);
+            this.novelData.timeline_tracker = this.deepClone(DEFAULT_NOVEL_DATA.timeline_tracker);
+            this.novelData.chapter_snapshot = this.deepClone(DEFAULT_NOVEL_DATA.chapter_snapshot);
+            this.novelData.foreshadow_tracker = this.deepClone(DEFAULT_NOVEL_DATA.foreshadow_tracker);
+            this.novelData.foreshadow_manager = this.deepClone(DEFAULT_NOVEL_DATA.foreshadow_manager);
+            this.novelData.secret_matrix = this.deepClone(DEFAULT_NOVEL_DATA.secret_matrix);
+            this.novelData.character_checker = this.deepClone(DEFAULT_NOVEL_DATA.character_checker);
+            this.novelData.character_appearance_tracker = this.deepClone(DEFAULT_NOVEL_DATA.character_appearance_tracker);
+            this.novelData.personality_enforcer = this.deepClone(DEFAULT_NOVEL_DATA.personality_enforcer);
+            this.novelData.dialogue_tracker = this.deepClone(DEFAULT_NOVEL_DATA.dialogue_tracker);
+            this.novelData.name_locker = this.deepClone(DEFAULT_NOVEL_DATA.name_locker);
+            this.novelData.world_tracker = this.deepClone(DEFAULT_NOVEL_DATA.world_tracker);
+            this.novelData.genre_progress_tracker = this.deepClone(DEFAULT_NOVEL_DATA.genre_progress_tracker);
+            this.novelData.used_temp_subplots = [];
+            return;
+        }
+
+        const snapshot = this.novelData.outline.state_snapshots?.[`chapter_${target}`];
+        if (snapshot && snapshot.story_state) {
+            this.novelData.outline.story_state = this.deepClone(snapshot.story_state);
+            this.novelData.story_state = this.deepClone(snapshot.compatibility_story_state || this.novelData.story_state || {});
+            this.novelData.dynamic_tracker = this.deepClone(snapshot.dynamic_tracker || this.novelData.dynamic_tracker || {});
+            this.novelData.timeline_tracker = this.deepClone(snapshot.timeline_tracker || this.novelData.timeline_tracker || {});
+            this.novelData.chapter_snapshot = this.deepClone(snapshot.chapter_snapshot || this.novelData.chapter_snapshot || {});
+            this.novelData.foreshadow_tracker = this.deepClone(snapshot.foreshadow_tracker || this.novelData.foreshadow_tracker || {});
+            this.novelData.foreshadow_manager = this.deepClone(snapshot.foreshadow_manager || this.novelData.foreshadow_manager || {});
+            this.novelData.secret_matrix = this.deepClone(snapshot.secret_matrix || this.novelData.secret_matrix || {});
+            this.novelData.character_checker = this.deepClone(snapshot.character_checker || this.novelData.character_checker || {});
+            this.novelData.character_appearance_tracker = this.deepClone(snapshot.character_appearance_tracker || this.novelData.character_appearance_tracker || {});
+            this.novelData.personality_enforcer = this.deepClone(snapshot.personality_enforcer || this.novelData.personality_enforcer || {});
+            this.novelData.dialogue_tracker = this.deepClone(snapshot.dialogue_tracker || this.novelData.dialogue_tracker || {});
+            this.novelData.world_tracker = this.deepClone(snapshot.world_tracker || this.novelData.world_tracker || {});
+            this.novelData.genre_progress_tracker = this.deepClone(snapshot.genre_progress_tracker || this.novelData.genre_progress_tracker || {});
+            this.novelData.name_locker = this.deepClone(snapshot.name_locker || this.novelData.name_locker || {});
+            this.novelData.used_temp_subplots = this.deepClone(snapshot.used_temp_subplots || this.novelData.used_temp_subplots || []);
+            return;
+        }
+
+        const chapterSnapshot = this.novelData.chapter_snapshot?.snapshots?.[`chapter_${target}`];
+        if (chapterSnapshot) {
+            const outlineState = this.novelData.outline.story_state || this.deepClone(DEFAULT_NOVEL_DATA.outline.story_state);
+            outlineState.timeline = chapterSnapshot.timeline || chapterSnapshot["时间"] || outlineState.timeline || "";
+            outlineState.current_location = chapterSnapshot.current_location || chapterSnapshot["位置"] || outlineState.current_location || "";
+            outlineState.important_items = chapterSnapshot.important_items || outlineState.important_items || "";
+            outlineState.pending_plots = chapterSnapshot.pending_plots || outlineState.pending_plots || "";
+            this.novelData.outline.story_state = outlineState;
+            this.novelData.story_state.current_location = outlineState.current_location || "";
+            this.novelData.story_state.current_time = outlineState.timeline || "";
+        }
     }
 
     recordTimelineUpdate(chapterNumber, stateData) {
