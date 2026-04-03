@@ -132,11 +132,14 @@ class NovelOutlineWebApp {
             btnGenerateVolumes: document.getElementById("btnGenerateVolumes"),
             btnGenerateChapterSynopsis: document.getElementById("btnGenerateChapterSynopsis"),
             btnGenerateAllSynopsis: document.getElementById("btnGenerateAllSynopsis"),
+            btnClearCurrentSynopsis: document.getElementById("btnClearCurrentSynopsis"),
             btnImportSynopsisToOutline: document.getElementById("btnImportSynopsisToOutline"),
             btnCopySynopsis: document.getElementById("btnCopySynopsis"),
             btnAddVolume: document.getElementById("btnAddVolume"),
             btnClearVolumes: document.getElementById("btnClearVolumes"),
             btnGenerateChapters: document.getElementById("btnGenerateChapters"),
+            btnRegenerateChapters: document.getElementById("btnRegenerateChapters"),
+            btnDeleteOutlineRange: document.getElementById("btnDeleteOutlineRange"),
             btnContinueChapters: document.getElementById("btnContinueChapters"),
             btnDetectGaps: document.getElementById("btnDetectGaps"),
             btnExpandChapterContent: document.getElementById("btnExpandChapterContent"),
@@ -497,12 +500,21 @@ class NovelOutlineWebApp {
         this.elements.btnGenerateVolumes.addEventListener("click", () => this.safeAsync(() => this.generateVolumeSynopsis()));
         this.elements.btnGenerateChapterSynopsis.addEventListener("click", () => this.safeAsync(() => this.generateCurrentVolumeSynopsis()));
         this.elements.btnGenerateAllSynopsis.addEventListener("click", () => this.safeAsync(() => this.generateAllVolumeSynopsis()));
+        if (this.elements.btnClearCurrentSynopsis) {
+            this.elements.btnClearCurrentSynopsis.addEventListener("click", () => this.clearCurrentVolumeSynopsis());
+        }
         this.elements.btnImportSynopsisToOutline.addEventListener("click", () => this.importSynopsisToOutline());
         this.elements.btnCopySynopsis.addEventListener("click", () => Utils.copyText(this.elements.synopsisOutput.value));
         this.elements.btnAddVolume.addEventListener("click", () => this.addVolume());
         this.elements.btnClearVolumes.addEventListener("click", () => this.clearVolumes());
 
         this.elements.btnGenerateChapters.addEventListener("click", () => this.safeAsync(() => this.generateChapters()));
+        if (this.elements.btnRegenerateChapters) {
+            this.elements.btnRegenerateChapters.addEventListener("click", () => this.safeAsync(() => this.regenerateChapters()));
+        }
+        if (this.elements.btnDeleteOutlineRange) {
+            this.elements.btnDeleteOutlineRange.addEventListener("click", () => this.deleteOutlineRange());
+        }
         this.elements.btnContinueChapters.addEventListener("click", () => this.safeAsync(() => this.continueChapters()));
         this.elements.btnDetectGaps.addEventListener("click", () => this.detectGaps());
         this.elements.btnExpandChapterContent.addEventListener("click", () => this.safeAsync(() => this.expandCurrentChapter()));
@@ -1060,6 +1072,7 @@ ${(detailedOutline || concept || "未填写").slice(0, 2200)}`;
                         <p class="volume-card-meta">已保存章节：${volume.chapters.length} 章</p>
                     </div>
                     <div class="volume-card-actions">
+                        <button class="btn btn-ghost btn-small" data-volume-action="clear-synopsis">清空细纲</button>
                         <button class="btn btn-ghost btn-small" data-volume-action="focus">去看章节</button>
                         <button class="btn btn-danger btn-small" data-volume-action="remove">删除此卷</button>
                     </div>
@@ -1092,7 +1105,7 @@ ${(detailedOutline || concept || "未填写").slice(0, 2200)}`;
             return;
         }
         if (!volume || volume.chapters.length === 0) {
-            const emptyHTML = '<div class="empty-state">当前卷还没有章节。可以先在“批量章纲”里跑四批生成，再切到“单章正文”逐章扩写。</div>';
+            const emptyHTML = '<div class="empty-state">当前卷还没有章节。可以先在“批量章纲”里生成章纲，再切到“单章正文”逐章扩写。</div>';
             if (this.elements.chapterBatchList) {
                 this.elements.chapterBatchList.innerHTML = emptyHTML;
             }
@@ -1441,6 +1454,28 @@ ${(detailedOutline || concept || "未填写").slice(0, 2200)}`;
             this.state.selectedChapterId = null;
             this.renderChapterList();
             this.clearChapterEditor();
+            return;
+        }
+
+        if (action === "clear-synopsis") {
+            const ok = window.confirm(`确定清空第 ${volumeIndex + 1} 卷细纲吗？`);
+            if (!ok) {
+                return;
+            }
+            const volume = this.novelData.outline.volumes[volumeIndex];
+            volume.chapterSynopsis = "";
+            volume.chapter_synopsis = "";
+            this.novelData.synopsisData.synopsis_volumes = this.novelData.synopsisData.synopsis_volumes || {};
+            this.novelData.synopsisData.synopsis_volumes[String(volumeIndex + 1)] = "";
+            if (Number(this.elements.synopsisCurrentVolume?.value || 0) === volumeIndex + 1) {
+                this.novelData.synopsisData.synopsisOutput = "";
+                this.novelData.synopsisData.synopsis_output = "";
+                this.elements.synopsisOutput.value = "";
+            }
+            this.persist(true);
+            this.renderVolumeCards();
+            this.renderDashboard();
+            Utils.showMessage(`第 ${volumeIndex + 1} 卷细纲已清空。`, "success");
             return;
         }
 
@@ -2289,8 +2324,8 @@ ${(detailedOutline || concept || "未填写").slice(0, 2200)}`;
             });
 
             const formatted = chapters.map((chapter) =>
-                `【第${chapter.chapter_number}章】${chapter.title}\n核心事件：${chapter.key_event}\n情绪曲线：${chapter.emotion_curve}\n细纲：${chapter.synopsis}`
-            ).join("\n\n");
+                chapter.line || `第${chapter.chapter_number}章：${chapter.title} - ${chapter.synopsis || chapter.key_event || ""}`
+            ).join("\n");
 
             const synopsisSyncResult = this.generator.mergeSynopsisStateFromGeneratedChapters(
                 this.novelData,
@@ -2342,6 +2377,42 @@ ${(detailedOutline || concept || "未填写").slice(0, 2200)}`;
         }
     }
 
+    clearCurrentVolumeSynopsis() {
+        const volumeNumber = Number(this.elements.synopsisCurrentVolume.value || 1);
+        const volume = this.novelData.outline.volumes[volumeNumber - 1];
+        if (!volume) {
+            Utils.showMessage("当前卷不存在。", "error");
+            return;
+        }
+
+        const hasText = String(volume.chapterSynopsis || volume.chapter_synopsis || this.elements.synopsisOutput.value || "").trim();
+        if (!hasText) {
+            this.elements.synopsisOutput.value = "";
+            Utils.showMessage("当前卷细纲本来就是空的。", "info");
+            return;
+        }
+
+        const ok = window.confirm(`确定清空第 ${volumeNumber} 卷细纲吗？`);
+        if (!ok) {
+            return;
+        }
+
+        volume.chapterSynopsis = "";
+        volume.chapter_synopsis = "";
+        this.novelData.synopsisData.synopsis_volumes = this.novelData.synopsisData.synopsis_volumes || {};
+        this.novelData.synopsisData.synopsis_volumes[String(volumeNumber)] = "";
+        if (this.novelData.synopsisData.currentVolume === volumeNumber) {
+            this.novelData.synopsisData.synopsisOutput = "";
+            this.novelData.synopsisData.synopsis_output = "";
+            this.elements.synopsisOutput.value = "";
+        }
+
+        this.persist(true);
+        this.renderVolumeCards();
+        this.renderDashboard();
+        Utils.showMessage(`第 ${volumeNumber} 卷细纲已清空。`, "success");
+    }
+
     importSynopsisToOutline() {
         const volumeNumber = Number(this.elements.synopsisCurrentVolume.value || 1);
         const volume = this.novelData.outline.volumes[volumeNumber - 1];
@@ -2368,30 +2439,28 @@ ${(detailedOutline || concept || "未填写").slice(0, 2200)}`;
         return this.novelData.outline.volumes[volumeNumber - 1];
     }
 
-    splitRangeIntoBatches(startChapter, endChapter, batchCount = 4) {
+    splitRangeIntoBatches(startChapter, endChapter, maxBatchSize = 15) {
         const total = Math.max(0, endChapter - startChapter + 1);
         if (!total) {
             return [];
         }
-
-        const normalizedCount = Math.max(1, Math.min(batchCount, total));
-        const baseSize = Math.floor(total / normalizedCount);
-        const remainder = total % normalizedCount;
         const segments = [];
         let cursor = startChapter;
 
-        for (let index = 0; index < normalizedCount; index += 1) {
-            const size = baseSize + (index < remainder ? 1 : 0);
+        while (cursor <= endChapter) {
             const segmentStart = cursor;
-            const segmentEnd = cursor + size - 1;
+            const segmentEnd = Math.min(endChapter, cursor + Math.max(1, maxBatchSize) - 1);
             segments.push({
-                batchIndex: index + 1,
-                totalBatches: normalizedCount,
                 start: segmentStart,
                 end: segmentEnd
             });
             cursor = segmentEnd + 1;
         }
+
+        segments.forEach((segment, index) => {
+            segment.batchIndex = index + 1;
+            segment.totalBatches = segments.length;
+        });
 
         return segments;
     }
@@ -2404,20 +2473,20 @@ ${(detailedOutline || concept || "未填写").slice(0, 2200)}`;
         const startChapter = Number(this.elements.chapterStart.value || 0);
         const endChapter = Number(this.elements.chapterEnd.value || 0);
         if (!startChapter || !endChapter || startChapter > endChapter) {
-            this.elements.chapterBatchPreview.innerHTML = '<div class="empty-state compact">设置起止章后，这里会显示固定四批的生成拆分。</div>';
+            this.elements.chapterBatchPreview.innerHTML = '<div class="empty-state compact">设置起止章后，这里会显示章纲生成拆分。15 章以内单批生成，超过后自动分批，每批最多 15 章。</div>';
             return;
         }
 
-        const segments = this.splitRangeIntoBatches(startChapter, endChapter, 4);
+        const segments = this.splitRangeIntoBatches(startChapter, endChapter, 15);
         this.elements.chapterBatchPreview.innerHTML = segments.map((segment) => `
             <article class="batch-preview-card">
-                <span>第 ${segment.batchIndex}/${segment.totalBatches} 批</span>
+                <span>${segment.totalBatches > 1 ? `第 ${segment.batchIndex}/${segment.totalBatches} 批` : "单批生成"}</span>
                 <strong>第 ${segment.start}-${segment.end} 章</strong>
             </article>
         `).join("");
     }
 
-    async generateChapters() {
+    async generateChapters(forceOverwrite = false) {
         const volume = this.getCurrentChapterVolume();
         const volumeNumber = Number(this.elements.chapterVolumeSelect.value || 1);
         const startChapter = Number(this.elements.chapterStart.value || 1);
@@ -2431,10 +2500,14 @@ ${(detailedOutline || concept || "未填写").slice(0, 2200)}`;
             throw new Error("起始章不能大于结束章。");
         }
 
-        await this.runWithLoading("正在批量生成章节大纲...", async () => {
+        await this.runWithLoading(forceOverwrite ? "正在重生成章节大纲..." : "正在批量生成章节大纲...", async () => {
             const targetNumbers = [];
             for (let number = startChapter; number <= endChapter; number += 1) {
                 targetNumbers.push(number);
+            }
+
+            if (forceOverwrite) {
+                this.deleteOutlineRangeInternal({ volume, start: startChapter, end: endChapter, silent: true });
             }
 
             const existingNumbers = new Set(
@@ -2454,7 +2527,7 @@ ${(detailedOutline || concept || "未填写").slice(0, 2200)}`;
                 Utils.log(`智能检测：已有 ${skipped} 章存在，将只生成缺失的 ${missingNumbers.length} 章。`, "info");
             }
 
-            const batchSegments = this.splitRangeIntoBatches(startChapter, endChapter, 4);
+            const batchSegments = this.splitRangeIntoBatches(startChapter, endChapter, 15);
             const MAX_RETRIES_PER_BATCH = 3;
             const generatedAll = [];
 
@@ -2467,11 +2540,11 @@ ${(detailedOutline || concept || "未填写").slice(0, 2200)}`;
                 }
 
                 if (!batchMissingNumbers.length) {
-                    Utils.log(`第 ${batch.batchIndex}/${batch.totalBatches} 批（第 ${batch.start}-${batch.end} 章）已齐全，跳过。`, "info");
+                    Utils.log(`${batch.totalBatches > 1 ? `第 ${batch.batchIndex}/${batch.totalBatches} 批` : "当前批次"}（第 ${batch.start}-${batch.end} 章）已齐全，跳过。`, "info");
                     continue;
                 }
 
-                Utils.log(`第 ${batch.batchIndex}/${batch.totalBatches} 批：准备生成第 ${batch.start}-${batch.end} 章。`, "info");
+                Utils.log(`${batch.totalBatches > 1 ? `第 ${batch.batchIndex}/${batch.totalBatches} 批` : "单批任务"}：准备生成第 ${batch.start}-${batch.end} 章。`, "info");
 
                 const gapSegments = this.findGapSegments(batchMissingNumbers);
                 gapSegments.forEach(([segStart, segEnd]) => {
@@ -2484,7 +2557,7 @@ ${(detailedOutline || concept || "未填写").slice(0, 2200)}`;
 
                     while (!success && attempt < MAX_RETRIES_PER_BATCH) {
                         attempt += 1;
-                        Utils.log(`正在生成第 ${batch.batchIndex}/${batch.totalBatches} 批 · 第 ${segmentStart}-${segmentEnd} 章（尝试 ${attempt}/${MAX_RETRIES_PER_BATCH}）...`, "info");
+                        Utils.log(`正在生成${batch.totalBatches > 1 ? `第 ${batch.batchIndex}/${batch.totalBatches} 批` : "当前批次"} · 第 ${segmentStart}-${segmentEnd} 章（尝试 ${attempt}/${MAX_RETRIES_PER_BATCH}）...`, "info");
 
                         try {
                             const generated = await this.generator.generateChapterOutlinesBatch({
@@ -2505,7 +2578,7 @@ ${(detailedOutline || concept || "未填写").slice(0, 2200)}`;
                             this.renderChapterList();
                             success = true;
                         } catch (error) {
-                            Utils.log(`第 ${batch.batchIndex} 批 · 第 ${segmentStart}-${segmentEnd} 章生成失败：${error.message || error}`, "error");
+                            Utils.log(`${batch.totalBatches > 1 ? `第 ${batch.batchIndex} 批` : "当前批次"} · 第 ${segmentStart}-${segmentEnd} 章生成失败：${error.message || error}`, "error");
                             if (attempt >= MAX_RETRIES_PER_BATCH) {
                                 throw error;
                             }
@@ -2525,6 +2598,21 @@ ${(detailedOutline || concept || "未填写").slice(0, 2200)}`;
         });
     }
 
+    async regenerateChapters() {
+        const startChapter = Number(this.elements.chapterStart.value || 1);
+        const endChapter = Number(this.elements.chapterEnd.value || 1);
+        if (!startChapter || !endChapter || startChapter > endChapter) {
+            throw new Error("请输入有效的章纲范围。");
+        }
+
+        const ok = window.confirm(`确定删除并重生成第 ${startChapter}-${endChapter} 章的章纲吗？已有正文也会一起删除。`);
+        if (!ok) {
+            return;
+        }
+
+        await this.generateChapters(true);
+    }
+
     async continueChapters() {
         const volume = this.getCurrentChapterVolume();
         if (!volume) {
@@ -2532,7 +2620,7 @@ ${(detailedOutline || concept || "未填写").slice(0, 2200)}`;
         }
 
         const currentMax = volume.chapters.reduce((max, chapter) => Math.max(max, Number(chapter.number || 0)), 0);
-        const continueRangeSize = 16;
+        const continueRangeSize = 15;
         const existingNumbers = volume.chapters
             .map((chapter) => Number(chapter.number || 0))
             .filter(Boolean)
@@ -2584,6 +2672,80 @@ ${(detailedOutline || concept || "未填写").slice(0, 2200)}`;
             Utils.showMessage(`检测到缺口：第 ${gaps.join("、")} 章`, "info");
             Utils.log(`章节缺口：${gaps.join(", ")}`, "info");
         }
+    }
+
+    deleteOutlineRangeInternal({ volume, start, end, silent = false }) {
+        const deleteSet = new Set();
+        let deletedCount = 0;
+
+        volume.chapters.forEach((chapter) => {
+            const number = Number(chapter.number || 0);
+            if (number < start || number > end) {
+                return;
+            }
+            deleteSet.add(chapter.id);
+            deletedCount += 1;
+            if (chapter.uuid && this.novelData.chapters?.[chapter.uuid]) {
+                delete this.novelData.chapters[chapter.uuid];
+            }
+            delete this.novelData.chapter_analysis_reports?.[`chapter_${number}`];
+            delete this.novelData.chapter_qc_reports?.[`chapter_${number}`];
+            delete this.novelData.chapter_rhythms?.[`chapter_${number}`];
+            delete this.novelData.chapter_rhythms?.[`第${number}章`];
+            delete this.novelData.chapter_emotions?.[`chapter_${number}`];
+            delete this.novelData.chapter_emotions?.[`第${number}章`];
+            delete this.novelData.chapter_snapshot?.snapshots?.[`chapter_${number}`];
+        });
+
+        if (!deleteSet.size) {
+            return 0;
+        }
+
+        volume.chapters = volume.chapters.filter((chapter) => !deleteSet.has(chapter.id));
+        this.rollbackStateSystemsToChapter(start - 1);
+        if (this.state.selectedChapterId && deleteSet.has(this.state.selectedChapterId)) {
+            this.state.selectedChapterId = null;
+            this.clearChapterEditor();
+        }
+
+        if (!silent) {
+            this.persist(true);
+            this.renderChapterList();
+            this.renderDashboard();
+            this.renderAdvancedState();
+            Utils.log(`状态系统已回滚到第 ${Math.max(0, start - 1)} 章结束时的状态。`, "info");
+            Utils.showMessage(`已删除第 ${start}-${end} 章范围内的 ${deletedCount} 个章纲。`, "success");
+        }
+
+        return deletedCount;
+    }
+
+    deleteOutlineRange() {
+        const volume = this.getCurrentChapterVolume();
+        const start = Number(this.elements.chapterStart.value || 0);
+        const end = Number(this.elements.chapterEnd.value || 0);
+
+        if (!volume || !(volume.chapters || []).length) {
+            Utils.showMessage("当前卷还没有章纲。", "info");
+            return;
+        }
+        if (!start || !end || start > end) {
+            Utils.showMessage("请输入有效的章纲范围。", "error");
+            return;
+        }
+
+        const ok = window.confirm(`确定删除第 ${start}-${end} 章的章纲吗？如果这些章节已经有正文，也会一起删除。`);
+        if (!ok) {
+            return;
+        }
+
+        const deletedCount = this.deleteOutlineRangeInternal({ volume, start, end, silent: false });
+        if (!deletedCount) {
+            Utils.showMessage("指定范围内没有可删除的章纲。", "info");
+            return;
+        }
+
+        Utils.log(`已删除第 ${start}-${end} 章的章纲，可直接重新生成。`, "success");
     }
 
     findGapSegments(numbers) {

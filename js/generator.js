@@ -164,12 +164,13 @@ class NovelGenerator {
             genreConstraint,
             "你是一名中文长篇小说章节细纲策划编辑。",
             "你的输出必须简单易懂、直白、口语化，要像会讲故事的网文编辑，而不是论文写手。",
-            "请严格根据当前卷卷纲、世界观、前置卷细纲、已用剧情去重要求和人物一致性约束，拆解出当前卷的章节细纲。",
+            "请严格根据当前卷卷纲、世界观、前置卷细纲、已用剧情去重要求和人物一致性约束，拆解出当前卷的简要章节细纲。",
             "你现在只允许处理当前卷，不能提前写后续卷的重要剧情。",
             "细纲续写必须紧接前文最后一章或上一卷结尾，不准跳场、不准回退、不准重复已经发生的事件。",
             "如果前文细纲存在轻微逻辑毛边，你要在新的细纲里自然修顺，但不能改主线结果。",
             "情绪曲线要前后连续，角色状态、地点、时间线都要顺着前文往前走。",
-            "输出必须是 JSON 数组，不要输出任何额外解释。"
+            "输出必须严格保持这种格式：第X章：章节标题 - 核心内容（20-50字）。",
+            "一章只占一行，不要输出 JSON，不要加序号列表、说明、代码块或小标题。"
         ].filter(Boolean).join("\n");
 
         const volumeSynopsisContext = this.buildVolumeSynopsisContext(project, volumeNumber);
@@ -199,12 +200,10 @@ class NovelGenerator {
             `当前卷卷纲：${volumeSummary || "暂无"}`,
             existingSynopsis ? `已有细纲参考：${existingSynopsis}` : "",
             "",
-            "请输出 JSON 数组，每个对象包含以下字段：",
-            "chapter_number: 章节号",
-            "title: 章节标题",
-            "key_event: 核心事件",
-            "emotion_curve: 情绪曲线",
-            "synopsis: 100-180 字的章节细纲",
+            "请严格按下面格式直接输出：",
+            "第1章：章节标题 - 核心内容（20-50字）",
+            "第2章：章节标题 - 核心内容（20-50字）",
+            "第3章：章节标题 - 核心内容（20-50字）",
             "",
             "额外要求：",
             "1. 章节之间必须层层递进，不能重复同一冲突。",
@@ -220,20 +219,74 @@ class NovelGenerator {
             "11. 下一章的开头必须能接住上一章结尾，不要让人物突然换地点、换状态、换目标。",
             "12. 如果前文某件事已经发生，后续细纲不能再把它写成“即将发生”或“刚要发生”。",
             "13. 情绪曲线要前后顺滑衔接，不能上一章刚爆发，下一章无缘无故平静重开。",
-            "14. 如果前面的细纲或卷末衔接略生硬，你要在本卷前几章自然补桥，让读者感觉顺。"
+            "14. 如果前面的细纲或卷末衔接略生硬，你要在本卷前几章自然补桥，让读者感觉顺。",
+            "15. 每章只写一句简要细纲，不要扩写成详细章纲，不要写【章节目标】【情节推进】这些标签。"
         ].filter(Boolean).join("\n");
 
-        const parsed = await this.requestJSONArray(systemPrompt, userPrompt, {
+        const raw = await this.api.callLLM(userPrompt, systemPrompt, {
             temperature: 0.72,
             maxTokens: 8000
         });
 
-        return parsed.map((item, index) => ({
+        return this.parseChapterSynopsisLines(raw, chapterCount);
+    }
+
+    parseChapterSynopsisLines(rawText, chapterCount = 0) {
+        const lines = String(rawText || "")
+            .split(/\r?\n/)
+            .map((line) => line.trim())
+            .filter(Boolean)
+            .map((line) => line.replace(/^[\-•*]\s*/, ""))
+            .filter((line) => /第\s*\d+\s*章/.test(line));
+
+        const parsed = [];
+        lines.forEach((line, index) => {
+            const match = line.match(/^第\s*(\d+)\s*章[：:、.\-）)]?\s*(.+?)\s*[—\-－–]\s*(.+)$/);
+            if (match) {
+                const chapterNumber = Number(match[1] || index + 1);
+                const title = String(match[2] || "").trim();
+                const synopsis = String(match[3] || "").trim();
+                parsed.push({
+                    chapter_number: chapterNumber,
+                    title: title || `第${chapterNumber}章`,
+                    key_event: synopsis,
+                    emotion_curve: "",
+                    synopsis,
+                    line: `第${chapterNumber}章：${title || `第${chapterNumber}章`} - ${synopsis}`
+                });
+                return;
+            }
+
+            const fallback = line.match(/^第\s*(\d+)\s*章[：:、.\-）)]?\s*(.+)$/);
+            if (fallback) {
+                const chapterNumber = Number(fallback[1] || index + 1);
+                const content = String(fallback[2] || "").trim();
+                const parts = content.split(/\s*[—\-－–]\s*/);
+                const title = String(parts.shift() || `第${chapterNumber}章`).trim();
+                const synopsis = String(parts.join(" - ") || content).trim();
+                parsed.push({
+                    chapter_number: chapterNumber,
+                    title,
+                    key_event: synopsis,
+                    emotion_curve: "",
+                    synopsis,
+                    line: `第${chapterNumber}章：${title} - ${synopsis}`
+                });
+            }
+        });
+
+        if (!parsed.length) {
+            throw new Error("AI 没有按细纲格式返回内容。");
+        }
+
+        const targetCount = Math.max(0, Number(chapterCount || 0));
+        return (targetCount ? parsed.slice(0, targetCount) : parsed).map((item, index) => ({
+            ...item,
             chapter_number: Number(item.chapter_number || index + 1),
-            title: item.title || `第${index + 1}章`,
-            key_event: item.key_event || "",
-            emotion_curve: item.emotion_curve || "",
-            synopsis: item.synopsis || ""
+            title: item.title || `第${Number(item.chapter_number || index + 1)}章`,
+            synopsis: item.synopsis || item.key_event || "",
+            key_event: item.key_event || item.synopsis || "",
+            line: item.line || `第${Number(item.chapter_number || index + 1)}章：${item.title || `第${Number(item.chapter_number || index + 1)}章`} - ${item.synopsis || item.key_event || ""}`
         }));
     }
 
