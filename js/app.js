@@ -23,6 +23,7 @@ class NovelOutlineWebApp {
 
     cacheElements() {
         this.elements = {
+            appVersionChip: document.getElementById("appVersionChip"),
             menuToggle: document.getElementById("menuToggle"),
             sidebar: document.getElementById("sidebar"),
             sidebarBackdrop: document.getElementById("sidebarBackdrop"),
@@ -174,6 +175,7 @@ class NovelOutlineWebApp {
 
     init() {
         this.ensureBaseData();
+        this.renderAppVersion();
         this.applyStoredGenreExtensions();
         this.populateGenreOptions();
         this.loadSettingsToForm();
@@ -184,6 +186,22 @@ class NovelOutlineWebApp {
         this.registerServiceWorker();
         this.loadBundledPrompts();
         Utils.log("Web 版已完成初始化。", "success");
+    }
+
+    renderAppVersion() {
+        if (!this.elements.appVersionChip) {
+            return;
+        }
+
+        const params = new URLSearchParams(window.location.search);
+        const urlVersion = params.get("v");
+        const buildVersion = "2026.04.03-b";
+        const label = urlVersion ? `版本 ${urlVersion}` : `版本 ${buildVersion}`;
+
+        this.elements.appVersionChip.textContent = label;
+        this.elements.appVersionChip.title = urlVersion
+            ? `当前打开的是带版本参数的页面：${urlVersion}`
+            : `当前内置版本：${buildVersion}`;
     }
 
     ensureBaseData() {

@@ -103,9 +103,15 @@
     }
 
     .brand-kicker,
-    .brand-subtitle,
-    .version-chip {
+    .brand-subtitle {
         display: none;
+    }
+
+    .version-chip {
+        display: inline-flex;
+        padding: 4px 8px;
+        font-size: 11px;
+        line-height: 1;
     }
 
     .brand-row h1 {
