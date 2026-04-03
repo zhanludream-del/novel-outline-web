@@ -454,6 +454,7 @@ class NovelGenerator {
         const detailedOutline = project.outline?.detailed_outline || "";
         const worldbuilding = project.outline?.worldbuilding || "";
         const existingCharacters = project.outline?.characters || [];
+        const establishedRelationshipText = this.buildEstablishedRelationshipText(project, rawItems.map(([name]) => name));
         const existingCharsText = existingCharacters.length
             ? existingCharacters.map((character) => [
                 `- ${character.name || "未命名"}`,
@@ -509,6 +510,9 @@ class NovelGenerator {
                 "",
                 "【已有角色及其背景（必须保持关系一致性！）】",
                 existingCharsText,
+                "",
+                "【已建立的人物关系】",
+                establishedRelationshipText,
                 "",
                 "【需要生成人设的角色描述】",
                 batchStr,
@@ -3569,6 +3573,46 @@ class NovelGenerator {
         });
 
         return roleMap;
+    }
+
+    buildEstablishedRelationshipText(project, focusNames = []) {
+        const lines = [];
+        const seen = new Set();
+        const focusSet = new Set((focusNames || []).map((item) => String(item || "").trim()).filter(Boolean));
+        const pushLine = (line) => {
+            const clean = String(line || "").trim();
+            if (!clean || seen.has(clean)) {
+                return;
+            }
+            seen.add(clean);
+            lines.push(clean);
+        };
+
+        (project.outline?.characters || []).forEach((character) => {
+            const name = String(character.name || "").trim();
+            const relationships = String(character.relationships || character["人物关系"] || "").trim();
+            if (!name || !relationships) {
+                return;
+            }
+            if (!focusSet.size || focusSet.has(name) || Array.from(focusSet).some((target) => relationships.includes(target))) {
+                pushLine(`- ${name}：${Utils.summarizeText(relationships, 120)}`);
+            }
+        });
+
+        const trackerRelationships = project.character_appearance_tracker?.relationships || {};
+        Object.entries(trackerRelationships).forEach(([key, value]) => {
+            const [left, right] = String(key || "").split("|").map((item) => item.trim()).filter(Boolean);
+            if (!left || !right) {
+                return;
+            }
+            if (focusSet.size && !focusSet.has(left) && !focusSet.has(right)) {
+                return;
+            }
+            const relation = value?.关系 || value?.relationship || value?.relations || "相关";
+            pushLine(`- ${left} <-> ${right}：${relation}`);
+        });
+
+        return lines.length ? lines.join("\n") : "暂无已建立关系";
     }
 
     limitContext(text, max = 2000) {

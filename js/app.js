@@ -4484,6 +4484,307 @@ ${(detailedOutline || concept || "未填写").slice(0, 2200)}`;
         return changed;
     }
 
+    mergeRelationshipText(...texts) {
+        const parts = [];
+        const seen = new Set();
+        texts
+            .flatMap((text) => String(text || "").split(/[\r\n]+|[；;]+/))
+            .map((item) => item.trim())
+            .filter(Boolean)
+            .forEach((item) => {
+                if (!seen.has(item)) {
+                    seen.add(item);
+                    parts.push(item);
+                }
+            });
+        return parts.join("\n");
+    }
+
+    inferRelationshipLabel(description) {
+        const text = String(description || "");
+        if (!text.trim()) {
+            return "";
+        }
+
+        const rules = [
+            { label: "师徒", patterns: [/师父|师尊|徒弟|弟子|门下/] },
+            { label: "夫妻", patterns: [/夫妻|妻子|丈夫|夫君|娘子/] },
+            { label: "恋人", patterns: [/恋人|爱人|心上人|未婚妻|未婚夫|道侣/] },
+            { label: "父子", patterns: [/父子/] },
+            { label: "母子", patterns: [/母子/] },
+            { label: "父女", patterns: [/父女/] },
+            { label: "母女", patterns: [/母女/] },
+            { label: "兄妹", patterns: [/兄妹/] },
+            { label: "姐弟", patterns: [/姐弟/] },
+            { label: "姐妹", patterns: [/姐妹/] },
+            { label: "兄弟", patterns: [/兄弟/] },
+            { label: "朋友", patterns: [/朋友|挚友/] },
+            { label: "同门", patterns: [/同门|师兄|师姐|师弟|师妹/] },
+            { label: "盟友", patterns: [/盟友|同盟|合作/] },
+            { label: "主仆", patterns: [/侍女|仆从|家臣|护卫/] },
+            { label: "上下级", patterns: [/上司|下属|部下|统领|掌柜|老板/] },
+            { label: "敌对", patterns: [/敌人|死敌|仇人|仇敌|敌对|对手/] },
+            { label: "旧识", patterns: [/旧识|旧友|青梅竹马|发小/] }
+        ];
+
+        const matched = rules.find((rule) => rule.patterns.some((pattern) => pattern.test(text)));
+        if (matched) {
+            return matched.label;
+        }
+        if (/父亲|母亲|哥哥|姐姐|妹妹|弟弟/.test(text)) {
+            return "亲属";
+        }
+        if (/关系|牵扯|相关/.test(text)) {
+            return Utils.summarizeText(text, 24);
+        }
+        return "";
+    }
+
+    extractRelationshipInfoForSeed(name, description, knownNames = []) {
+        const cleanName = this.resolveKnownCharacterName(name);
+        const cleanDescription = String(description || "").trim();
+        if (!cleanDescription) {
+            return { relationships: "", relationPairs: [] };
+        }
+
+        const resolvedKnownNames = Array.from(new Set((knownNames || [])
+            .map((item) => this.resolveKnownCharacterName(item))
+            .filter((item) => item && item !== cleanName && this.isValidOutlineCharacterName(item))));
+
+        const relation = this.inferRelationshipLabel(cleanDescription);
+        const relationPairs = [];
+        const snippets = [];
+
+        resolvedKnownNames.forEach((otherName) => {
+            if (!cleanDescription.includes(otherName) || !relation) {
+                return;
+            }
+            relationPairs.push({
+                left: cleanName,
+                right: otherName,
+                relation
+            });
+            snippets.push(`${otherName}：${relation}`);
+        });
+
+        if (!snippets.length && /父亲|母亲|哥哥|姐姐|妹妹|弟弟|师父|徒弟|恋人|朋友|敌人|对手|同门|上司|下属|属下|盟友/.test(cleanDescription)) {
+            snippets.push(Utils.summarizeText(cleanDescription, 36));
+        }
+
+        return {
+            relationships: this.mergeRelationshipText(...snippets),
+            relationPairs
+        };
+    }
+
+    recordOutlineRelationshipPairs(relationPairs = [], chapterNumber = 0) {
+        if (!relationPairs.length) {
+            return 0;
+        }
+
+        const tracker = this.novelData.character_appearance_tracker || {};
+        tracker.relationships = tracker.relationships || {};
+        this.novelData.character_appearance_tracker = tracker;
+
+        let changed = 0;
+        relationPairs.forEach(({ left, right, relation }) => {
+            if (!left || !right || left === right) {
+                return;
+            }
+            const key = [left, right].sort().join("|");
+            if (!tracker.relationships[key]) {
+                tracker.relationships[key] = {
+                    首次见面: chapterNumber || 0,
+                    关系: relation || "",
+                    互动章节: chapterNumber ? [chapterNumber] : []
+                };
+                changed += 1;
+                return;
+            }
+            if (relation && !tracker.relationships[key].关系) {
+                tracker.relationships[key].关系 = relation;
+                changed += 1;
+            }
+            if (chapterNumber && !tracker.relationships[key].互动章节.includes(chapterNumber)) {
+                tracker.relationships[key].互动章节.push(chapterNumber);
+                changed += 1;
+            }
+        });
+
+        return changed;
+    }
+
+    extractCharacterSeedsFromSummary(summary, chapterNumber = 0, knownNames = []) {
+        const text = String(summary || "");
+        if (!text.trim()) {
+            return [];
+        }
+
+        const sectionMatch = text.match(/【出场人物】\s*([\s\S]*?)(?=\n【|$)/);
+        const section = sectionMatch?.[1] ? String(sectionMatch[1]).trim() : "";
+        const seeds = [];
+        const sectionKnownNames = [];
+
+        if (section) {
+            section.split(/\r?\n/).forEach((line) => {
+                const rawLine = line.trim();
+                if (!rawLine || (!rawLine.startsWith("-") && !rawLine.startsWith("•"))) {
+                    return;
+                }
+                const cleaned = rawLine.replace(/^[•-]\s*/, "");
+                const primaryMatch = cleaned.match(/^([\u4e00-\u9fa5]{2,4})/);
+                const rawName = primaryMatch?.[1] || "";
+                const name = this.resolveKnownCharacterName(rawName);
+                if (this.isValidOutlineCharacterName(name)) {
+                    sectionKnownNames.push(name);
+                }
+            });
+
+            const mergedKnownNames = [...knownNames, ...sectionKnownNames];
+            section.split(/\r?\n/).forEach((line) => {
+                const rawLine = line.trim();
+                if (!rawLine || (!rawLine.startsWith("-") && !rawLine.startsWith("•"))) {
+                    return;
+                }
+                const cleaned = rawLine.replace(/^[•-]\s*/, "");
+                if (!cleaned) {
+                    return;
+                }
+
+                const primaryMatch = cleaned.match(/^([\u4e00-\u9fa5]{2,4})(?:[（(]([^）)]+)[）)])?/);
+                const rawName = primaryMatch?.[1] || cleaned.split(/[（(：:]/)[0]?.trim() || "";
+                const name = this.resolveKnownCharacterName(rawName);
+                if (!this.isValidOutlineCharacterName(name)) {
+                    return;
+                }
+
+                const desc = String(primaryMatch?.[2] || cleaned.replace(rawName, "").replace(/^[：:\s-]+/, "")).trim();
+                const relationInfo = this.extractRelationshipInfoForSeed(name, desc, mergedKnownNames);
+                seeds.push({
+                    name,
+                    identity: desc,
+                    relationships: relationInfo.relationships,
+                    relationPairs: relationInfo.relationPairs,
+                    source: chapterNumber ? `第${chapterNumber}章出场人物` : "章纲出场人物"
+                });
+            });
+        }
+
+        return seeds;
+    }
+
+    syncCharactersFromOutlineSections(chapters = []) {
+        let added = 0;
+        let updated = 0;
+        const appearanceTracker = this.novelData.character_appearance_tracker || {};
+        appearanceTracker.appearances = appearanceTracker.appearances || {};
+        appearanceTracker.relationships = appearanceTracker.relationships || {};
+        this.novelData.character_appearance_tracker = appearanceTracker;
+
+        (chapters || []).forEach((chapter) => {
+            const chapterNumber = Number(chapter.number || chapter.chapter_number || 0);
+            const directNames = Utils.ensureArrayFromText(chapter.characters)
+                .map((name) => this.resolveKnownCharacterName(name))
+                .filter((name) => this.isValidOutlineCharacterName(name))
+                .map((name) => ({
+                    name,
+                    identity: "",
+                    relationships: "",
+                    relationPairs: [],
+                    source: chapterNumber ? `第${chapterNumber}章章纲角色数组` : "章纲角色数组"
+                }));
+            const knownNames = [
+                ...this.novelData.outline.characters.flatMap((item) => Array.from(this.getCharacterAliasSet(item))),
+                ...directNames.map((item) => item.name)
+            ];
+            const sectionSeeds = this.extractCharacterSeedsFromSummary(chapter.summary || "", chapterNumber, knownNames);
+            const seeds = [...directNames, ...sectionSeeds];
+
+            seeds.forEach((seed) => {
+                const existingIndex = this.findExistingCharacterIndexByAnyName(seed.name);
+                if (existingIndex >= 0) {
+                    const existing = this.novelData.outline.characters[existingIndex];
+                    const nextCharacter = {
+                        ...existing,
+                        identity: existing.identity || seed.identity || "",
+                        background: existing.background || `${seed.source}提及角色，后续可补充背景。`,
+                        relationships: this.mergeRelationshipText(existing.relationships || "", seed.relationships || ""),
+                        appearance: existing.appearance || ""
+                    };
+                    if (JSON.stringify(nextCharacter) !== JSON.stringify(existing)) {
+                        this.novelData.outline.characters[existingIndex] = storage.normalizeCharacter(nextCharacter);
+                        updated += 1;
+                    }
+                } else {
+                    this.novelData.outline.characters.push(storage.normalizeCharacter({
+                        id: Utils.uid("character"),
+                        name: seed.name,
+                        identity: seed.identity || "章纲出场角色",
+                        background: `${seed.source}提及角色，后续可补充背景。`,
+                        personality: "",
+                        appearance: "",
+                        abilities: "",
+                        goals: "",
+                        relationships: seed.relationships || ""
+                    }));
+                    added += 1;
+                }
+
+                this.recordOutlineRelationshipPairs(seed.relationPairs || [], chapterNumber);
+
+                if (chapterNumber) {
+                    if (!appearanceTracker.appearances[seed.name]) {
+                        appearanceTracker.appearances[seed.name] = {
+                            身份: seed.identity || "",
+                            出场章节: [chapterNumber]
+                        };
+                    } else if (!appearanceTracker.appearances[seed.name].出场章节.includes(chapterNumber)) {
+                        appearanceTracker.appearances[seed.name].出场章节.push(chapterNumber);
+                    }
+                }
+            });
+        });
+
+        return { added, updated };
+    }
+
+    mergeGeneratedCharacters(characters) {
+        let changed = 0;
+
+        characters.forEach((character) => {
+            const normalized = storage.normalizeCharacter({
+                ...character,
+                id: character.id || Utils.uid("character")
+            });
+            const existingIndex = this.findExistingCharacterIndexByAnyName(normalized.name);
+
+            if (existingIndex >= 0) {
+                const existing = this.novelData.outline.characters[existingIndex];
+                const mergedAliases = Array.from(new Set([
+                    ...Utils.ensureArrayFromText(existing.aliases || existing["别名"] || ""),
+                    ...Utils.ensureArrayFromText(normalized.aliases || normalized["别名"] || "")
+                ])).filter(Boolean);
+                const mergedRelationships = this.mergeRelationshipText(
+                    existing.relationships || existing["人物关系"] || "",
+                    normalized.relationships || normalized["人物关系"] || ""
+                );
+                this.novelData.outline.characters[existingIndex] = storage.normalizeCharacter({
+                    ...existing,
+                    ...normalized,
+                    relationships: mergedRelationships,
+                    人物关系: mergedRelationships,
+                    aliases: mergedAliases,
+                    别名: mergedAliases.join("、")
+                });
+            } else {
+                this.novelData.outline.characters.push(normalized);
+            }
+            changed += 1;
+        });
+
+        return changed;
+    }
+
     saveCharacter() {
         const existingIndex = this.novelData.outline.characters.findIndex((item) => item.id === this.state.editingCharacterId);
         const existing = existingIndex >= 0 ? this.novelData.outline.characters[existingIndex] : {};
