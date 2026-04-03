@@ -159,12 +159,16 @@ class NovelGenerator {
         const previousVolumeEnding = this.buildPreviousVolumeEnding(project, volumeNumber);
         const clicheWarning = this.buildSynopsisClicheWarning(project, volumeNumber);
         const volumeBoundaryGuard = this.buildSynopsisVolumeBoundaryGuard(project, volumeNumber);
+        const storyStateSummary = this.buildStoryStateSummary(project, volumeNumber, 1);
         const systemPrompt = [
             genreConstraint,
             "你是一名中文长篇小说章节细纲策划编辑。",
             "你的输出必须简单易懂、直白、口语化，要像会讲故事的网文编辑，而不是论文写手。",
             "请严格根据当前卷卷纲、世界观、前置卷细纲、已用剧情去重要求和人物一致性约束，拆解出当前卷的章节细纲。",
             "你现在只允许处理当前卷，不能提前写后续卷的重要剧情。",
+            "细纲续写必须紧接前文最后一章或上一卷结尾，不准跳场、不准回退、不准重复已经发生的事件。",
+            "如果前文细纲存在轻微逻辑毛边，你要在新的细纲里自然修顺，但不能改主线结果。",
+            "情绪曲线要前后连续，角色状态、地点、时间线都要顺着前文往前走。",
             "输出必须是 JSON 数组，不要输出任何额外解释。"
         ].filter(Boolean).join("\n");
 
@@ -184,6 +188,7 @@ class NovelGenerator {
             volumeSynopsisContext ? `【卷纲前置】\n${volumeSynopsisContext}` : "",
             previousChapterSynopsisContext ? `【前置细纲衔接】\n${previousChapterSynopsisContext}` : "",
             previousVolumeEnding ? `【上一卷结尾（用于衔接）】\n${previousVolumeEnding}` : "",
+            storyStateSummary ? `【前文状态摘要】\n${storyStateSummary}` : "",
             volumeBoundaryGuard,
             usedPlotsContext,
             clicheWarning,
@@ -211,7 +216,11 @@ class NovelGenerator {
             "7. 人物说话方式、行为逻辑、关系进展必须符合已有人设。",
             "8. 如果出现男主、女主、师尊、反派等模糊代称，必须替换成真实姓名。",
             "9. 尚未正式见面的人物，不能在细纲里提前写成熟人互动。",
-            "10. 如果当前卷后面还有其他卷，当前卷结尾应该留下钩子，但不要直接写成下一卷开篇。"
+            "10. 如果当前卷后面还有其他卷，当前卷结尾应该留下钩子，但不要直接写成下一卷开篇。",
+            "11. 下一章的开头必须能接住上一章结尾，不要让人物突然换地点、换状态、换目标。",
+            "12. 如果前文某件事已经发生，后续细纲不能再把它写成“即将发生”或“刚要发生”。",
+            "13. 情绪曲线要前后顺滑衔接，不能上一章刚爆发，下一章无缘无故平静重开。",
+            "14. 如果前面的细纲或卷末衔接略生硬，你要在本卷前几章自然补桥，让读者感觉顺。"
         ].filter(Boolean).join("\n");
 
         const parsed = await this.requestJSONArray(systemPrompt, userPrompt, {
@@ -234,6 +243,8 @@ class NovelGenerator {
 
         const characterDigest = this.buildRelevantCharactersInfo(project.outline.characters || []);
         const guardContext = this.buildGenerationGuards(project, volumeNumber, startChapter);
+        const storyStateSummary = this.buildStoryStateSummary(project, volumeNumber, startChapter);
+        const setupContinuityGuard = this.buildSetupContinuityGuard(project, volumeNumber, startChapter);
         const consistencyContext = this.buildCharacterConsistencyContext(
             project,
             `${volume.summary || ""}\n${volume.chapterSynopsis || volume.chapter_synopsis || ""}`,
@@ -257,6 +268,9 @@ class NovelGenerator {
             "必须 100% 严格按照细纲内容进行扩充，严禁偏离原定剧情走向。",
             "如果细纲已经给出某章发生什么，就必须写什么；如果某章节信息较少，也必须补满所有字段，但不能改主线结果。",
             "必须严格遵守当前卷边界，不得提前串卷，不得擅自改写主线。",
+            "续写必须紧接前文最后一章的剧情发展，不能跳跃、不能重复、不能回退。",
+            "如果前文大纲存在矛盾、不合理或节奏失当，你要在新章纲里自然修顺，但不能改掉既定主线结果。",
+            "每批生成的第一章，必须直接承接前文最后一章的【下章铺垫】与情绪尾调。",
             guardContext,
             consistencyContext
         ].filter(Boolean).join("\n\n");
@@ -270,6 +284,8 @@ class NovelGenerator {
             volumeSynopsisContext ? `【卷纲前置】\n${volumeSynopsisContext}` : "",
             allChapterSynopsisContext ? `【细纲前置】\n${allChapterSynopsisContext}` : "",
             outlineSlice.adjacentSummary ? `【相邻卷衔接提示】\n${outlineSlice.adjacentSummary}` : "",
+            storyStateSummary ? `【当前故事状态（必须延续）】\n${storyStateSummary}` : "",
+            setupContinuityGuard || "",
             plotUnitContext ? `【8章剧情单元规则】\n${plotUnitContext}` : "",
             plotUnitReport,
             plotUnitSuggestions,
@@ -287,6 +303,9 @@ class NovelGenerator {
             "4. 新引入角色必须符合当前场景和剧情逻辑。",
             "5. 如果细纲里包含后续卷内容，严禁压缩写进当前卷。",
             "6. 如果某个细纲事件已经在已有章节中写过了，必须跳过，改写下一个新事件。",
+            "7. 每章【下章铺垫】必须能被下一章【章节目标】或【核心事件】直接接住。",
+            "8. 前一章情绪曲线的结尾，要能自然过渡到下一章情绪曲线的开头。",
+            "9. 如果前文摘要里某个事件已经发生，后续章纲不能再写它“即将发生”。",
             "",
             "【输出格式标准（System 9）】",
             "summary 字段必须严格包含以下标签，并保留空行结构：",
@@ -476,7 +495,8 @@ class NovelGenerator {
     async expandChapterContent({ project, volume, chapter }) {
         const relevantCharacters = this.collectRelevantCharacters(project, `${chapter.summary || ""}\n${chapter.content || ""}`);
         const characterDigest = this.buildRelevantCharactersInfo(relevantCharacters);
-        const guardContext = this.buildGenerationGuards(project, null, chapter.number || 0);
+        const volumeNumber = this.getVolumeNumber(project, volume);
+        const guardContext = this.buildGenerationGuards(project, volumeNumber, chapter.number || 0);
         const characterConsistencyContext = this.buildCharacterConsistencyContext(
             project,
             `${chapter.summary || ""}\n${chapter.content || ""}`,
@@ -490,12 +510,19 @@ class NovelGenerator {
         const worldAndPlanContext = this.buildWorldAndPlanContext(project);
         const currentVolumeOutlineContext = this.extractCurrentVolumeOutlineContext(
             project,
-            this.getVolumeNumber(project, volume)
+            volumeNumber
         ).currentOutline;
         const expansionHint = this.buildExpansionHint(chapter.summary || "", chapter.number || 0);
         const nextChapterSetupInstruction = this.buildNextChapterSetupInstruction(chapter);
         const nextChapterForbiddenPreview = this.buildNextChapterForbiddenPreview(nextOutline);
         const transitionGuide = this.buildChapterTransitionGuide(project, volume, chapter, prevContent);
+        const storyStateSummary = this.buildStoryStateSummary(project, volumeNumber, chapter.number || 0);
+        const setupContinuityGuard = this.buildSetupContinuityGuard(
+            project,
+            volumeNumber,
+            chapter.number || 0,
+            `${chapter.title || ""}\n${chapter.summary || ""}`
+        );
         const extraOutputProtocol = this.buildExtraOutputProtocol();
         const stateOutputProtocol = this.buildStateOutputProtocol(project, chapter, relevantCharacters);
 
@@ -505,6 +532,8 @@ class NovelGenerator {
             "你必须严格遵守本章大纲、全局设定、本章设定、角色锁定、世界观、人物一致性、动态状态和章末快照衔接。",
             "你可以在不改变主线的前提下进行血肉填充、动作延展、心理补强和场景渲染，但绝不能偏离大纲主线。",
             "必须完成本章结尾铺垫任务，但绝对不能把下一章核心事件提前写出来。",
+            "正文必须紧接前文最后一个有效场景和状态展开，不准平地重开，不准把已经发生的事再写成预告。",
+            "如果本章大纲或前文衔接略显生硬，你要在正文里自然补足因果与过桥动作，让读者读起来顺，但不能篡改主线结果。",
             "拒绝AI味：不要堆砌嘴角、眼神、瞳孔、喉结、指节等模板化微表情；不要写空泛比喻、总结腔和文绉绉的抽象抒情。",
             "短句优先，动词优先，口语化，少副词，少形容词，少套路比喻。",
             "正文写完后，必须按要求追加状态输出和追踪输出。",
@@ -524,7 +553,9 @@ class NovelGenerator {
             worldAndPlanContext,
             currentVolumeOutlineContext,
             previousOutlineContext,
+            storyStateSummary,
             expansionHint,
+            setupContinuityGuard,
             nextChapterSetupInstruction,
             nextChapterForbiddenPreview,
             transitionGuide,
@@ -895,6 +926,167 @@ class NovelGenerator {
         return lines.length ? `【当前故事状态（必须延续）】\n${lines.join("\n")}` : "";
     }
 
+    getOrderedChapterRecords(project) {
+        const all = [];
+        (project?.outline?.volumes || []).forEach((volume, volumeIndex) => {
+            (volume?.chapters || []).forEach((chapter) => {
+                all.push({
+                    volumeIndex,
+                    volumeNumber: volumeIndex + 1,
+                    volumeTitle: volume.title || `第${volumeIndex + 1}卷`,
+                    volumeId: volume.id || volume.uuid || "",
+                    chapterId: chapter.id || chapter.uuid || "",
+                    uuid: chapter.uuid || chapter.id || "",
+                    number: Number(chapter.number || chapter.chapter_number || 0),
+                    title: chapter.title || "",
+                    summary: chapter.summary || "",
+                    content: chapter.content || (chapter.uuid ? project.chapters?.[chapter.uuid] : "") || "",
+                    keyEvent: chapter.key_event || chapter.keyEvent || "",
+                    emotionCurve: chapter.emotion_curve || chapter.emotionCurve || "",
+                    nextChapterSetup: chapter.next_chapter_setup || {},
+                    chapter
+                });
+            });
+        });
+        all.sort((left, right) => left.volumeIndex - right.volumeIndex || left.number - right.number);
+        return all;
+    }
+
+    getLatestChapterBefore(project, volumeNumber, chapterNumber) {
+        const records = this.getOrderedChapterRecords(project);
+        return records
+            .filter((item) =>
+                item.volumeNumber < volumeNumber ||
+                (item.volumeNumber === volumeNumber && item.number && item.number < chapterNumber)
+            )
+            .pop() || null;
+    }
+
+    getSnapshotBeforeChapter(project, chapterNumber) {
+        const snapshots = project?.chapter_snapshot?.snapshots || project?.outline?.state_snapshots || {};
+        const keys = Object.keys(snapshots || {});
+        if (!keys.length) {
+            return { key: "", snapshot: null };
+        }
+
+        const sorted = keys
+            .map((key) => ({
+                key,
+                number: Number(String(key).replace(/[^\d]/g, "")) || 0
+            }))
+            .sort((left, right) => left.number - right.number);
+
+        const target = chapterNumber
+            ? sorted.filter((item) => item.number && item.number < chapterNumber).pop() || sorted[sorted.length - 1]
+            : sorted[sorted.length - 1];
+        if (!target?.key) {
+            return { key: "", snapshot: null };
+        }
+
+        return {
+            key: target.key,
+            snapshot: snapshots[target.key] || null
+        };
+    }
+
+    describeNextChapterSetup(setup) {
+        if (!setup || typeof setup !== "object") {
+            return "";
+        }
+        const parts = [
+            setup.state_setup ? `状态：${setup.state_setup}` : "",
+            setup.atmosphere_setup ? `氛围：${setup.atmosphere_setup}` : "",
+            setup.suspense_hook ? `悬念：${setup.suspense_hook}` : "",
+            setup.clue_hint ? `线索：${setup.clue_hint}` : "",
+            setup.countdown ? `倒计时：${setup.countdown}` : ""
+        ].filter(Boolean);
+        return parts.join("；");
+    }
+
+    buildStoryStateSummary(project, volumeNumber, chapterNumber) {
+        const lines = [];
+        const previousChapter = this.getLatestChapterBefore(project, volumeNumber, chapterNumber);
+        if (previousChapter) {
+            const previousBrief = previousChapter.keyEvent
+                || Utils.summarizeText(previousChapter.summary, 120)
+                || previousChapter.title;
+            lines.push(`上一章进度：第${previousChapter.number}章《${previousChapter.title || "未命名"}》 -> ${previousBrief}`);
+            if (previousChapter.emotionCurve) {
+                lines.push(`上一章情绪尾调：${Utils.summarizeText(previousChapter.emotionCurve, 60)}`);
+            }
+            const previousSetup = this.describeNextChapterSetup(previousChapter.nextChapterSetup);
+            if (previousSetup) {
+                lines.push(`上一章留下的下章铺垫：${Utils.summarizeText(previousSetup, 120)}`);
+            }
+        }
+
+        const { snapshot } = this.getSnapshotBeforeChapter(project, chapterNumber);
+        if (snapshot) {
+            if (snapshot.current_location || snapshot["位置"]) {
+                lines.push(`承接地点：${snapshot.current_location || snapshot["位置"]}`);
+            }
+            if (snapshot.timeline || snapshot["时间"]) {
+                lines.push(`承接时间：${Utils.summarizeText(snapshot.timeline || snapshot["时间"], 80)}`);
+            }
+            if (snapshot.pending_plots) {
+                lines.push(`未完事项：${Utils.summarizeText(snapshot.pending_plots, 90)}`);
+            }
+            if (snapshot.important_items) {
+                lines.push(`重要物品状态：${Utils.summarizeText(snapshot.important_items, 90)}`);
+            }
+        }
+
+        const storyState = project?.outline?.story_state || project?.story_state || {};
+        if (storyState.current_location && !lines.some((line) => line.startsWith("承接地点："))) {
+            lines.push(`当前地点：${storyState.current_location}`);
+        }
+        if (storyState.timeline && !lines.some((line) => line.startsWith("承接时间："))) {
+            lines.push(`当前时间线：${Utils.summarizeText(storyState.timeline, 80)}`);
+        }
+        if (storyState.pending_plots && !lines.some((line) => line.startsWith("未完事项："))) {
+            lines.push(`待推进事项：${Utils.summarizeText(storyState.pending_plots, 100)}`);
+        }
+
+        const unresolvedForeshadows = Object.values(project?.foreshadow_tracker?.foreshadows || {})
+            .filter((item) => item && item["状态"] !== "已回收")
+            .slice(0, 4)
+            .map((item) => item["伏笔内容"] || item.content || "")
+            .filter(Boolean);
+        if (unresolvedForeshadows.length) {
+            lines.push(`未回收伏笔：${unresolvedForeshadows.map((item) => Utils.summarizeText(item, 22)).join("、")}`);
+        }
+
+        return lines.join("\n");
+    }
+
+    buildSetupContinuityGuard(project, volumeNumber, chapterNumber, currentText = "") {
+        const previousChapter = this.getLatestChapterBefore(project, volumeNumber, chapterNumber);
+        if (!previousChapter) {
+            return "";
+        }
+
+        const setupText = this.describeNextChapterSetup(previousChapter.nextChapterSetup);
+        const lines = ["【下章铺垫承接规则】"];
+        if (setupText) {
+            lines.push(`上一章明确留下的铺垫：${Utils.summarizeText(setupText, 160)}`);
+        } else {
+            const previousBrief = previousChapter.keyEvent
+                || Utils.summarizeText(previousChapter.summary, 100)
+                || previousChapter.title;
+            lines.push(`上一章结尾重点：${Utils.summarizeText(previousBrief, 100)}`);
+        }
+        if (previousChapter.emotionCurve) {
+            lines.push(`上一章情绪尾调：${Utils.summarizeText(previousChapter.emotionCurve, 70)}`);
+        }
+        if (currentText) {
+            lines.push(`当前待写内容：${Utils.summarizeText(currentText, 150)}`);
+        }
+        lines.push("本次内容开头必须先接住上一章结尾留下的状态、氛围、悬念或未完事项，再展开新的推进。");
+        lines.push("上一章已经发生的事件，不要再写成“即将发生”“正要发生”或重复发生。");
+        lines.push("如果上章到本章之间需要过桥动作，请自然补上，不要生硬跳切。");
+        return lines.join("\n");
+    }
+
     buildNameLockGuard(project) {
         const lines = [];
 
@@ -1232,29 +1424,12 @@ class NovelGenerator {
     }
 
     buildChapterTransitionGuide(project, currentVolume, currentChapter, prevContent = "") {
-        const snapshots = project.chapter_snapshot?.snapshots || project.outline?.state_snapshots || {};
-        const keys = Object.keys(snapshots);
-        if (!keys.length) {
+        const chapterNumber = Number(currentChapter?.number || currentChapter?.chapter_number || 0);
+        const { key: targetKey, snapshot: latest } = this.getSnapshotBeforeChapter(project, chapterNumber);
+        if (!latest) {
             return prevContent ? "【开章衔接指导】\n本章开头要紧接前文最后一个有效场景，不要平地跳场。" : "";
         }
 
-        const chapterNumber = Number(currentChapter?.number || currentChapter?.chapter_number || 0);
-        let targetKey = keys[keys.length - 1];
-        if (chapterNumber) {
-            const previous = keys
-                .map((key) => ({
-                    key,
-                    number: Number(String(key).replace(/[^\d]/g, "")) || 0
-                }))
-                .filter((item) => item.number && item.number < chapterNumber)
-                .sort((left, right) => left.number - right.number)
-                .pop();
-            if (previous?.key) {
-                targetKey = previous.key;
-            }
-        }
-
-        const latest = snapshots[targetKey] || {};
         const lines = ["【开章衔接指导】", `请先承接上一章快照 ${targetKey}，再展开本章剧情。`];
 
         if (latest.current_location || latest["位置"]) {
@@ -1272,6 +1447,14 @@ class NovelGenerator {
         if (latest["下一章预期"]) {
             lines.push(`5. 上章对本章的预期：${Utils.summarizeText(latest["下一章预期"], 120)}`);
         }
+        const previousChapter = this.getLatestChapterBefore(project, this.getVolumeNumber(project, currentVolume), chapterNumber);
+        if (previousChapter?.emotionCurve) {
+            lines.push(`6. 延续上一章情绪尾调：${Utils.summarizeText(previousChapter.emotionCurve, 60)}`);
+        }
+        const previousSetup = this.describeNextChapterSetup(previousChapter?.nextChapterSetup);
+        if (previousSetup) {
+            lines.push(`7. 先接住上一章铺垫：${Utils.summarizeText(previousSetup, 120)}`);
+        }
 
         const setup = currentChapter?.next_chapter_setup || {};
         const setupHints = [
@@ -1280,11 +1463,11 @@ class NovelGenerator {
             setup.suspense_hook ? `悬念起点：${setup.suspense_hook}` : ""
         ].filter(Boolean);
         if (setupHints.length) {
-            lines.push(`6. 本章章纲自带衔接任务：${setupHints.join("；")}`);
+            lines.push(`本章章纲自带衔接任务：${setupHints.join("；")}`);
         }
 
         if (prevContent) {
-            lines.push("7. 开头前几段必须紧接前文结尾的动作、情绪或对话，不要无故跳天、跳地点、跳关系状态。");
+            lines.push("开头前几段必须紧接前文结尾的动作、情绪或对话，不要无故跳天、跳地点、跳关系状态。");
         }
 
         return lines.join("\n");
@@ -1769,7 +1952,9 @@ class NovelGenerator {
         worldAndPlanContext,
         currentVolumeOutlineContext,
         previousOutlineContext,
+        storyStateSummary,
         expansionHint,
+        setupContinuityGuard,
         nextChapterSetupInstruction,
         nextChapterForbiddenPreview,
         transitionGuide,
@@ -1804,6 +1989,9 @@ class NovelGenerator {
                 "【前文大纲摘要】",
                 "{{previous_outline_context}}",
                 "",
+                "【前文状态摘要】",
+                "{{story_state_summary}}",
+                "",
                 "【相关人物设定】",
                 "{{relevant_characters}}",
                 "",
@@ -1818,6 +2006,8 @@ class NovelGenerator {
                 "",
                 "{{transition_guide}}",
                 "",
+                "{{setup_continuity_guard}}",
+                "",
                 "{{expansion_hint}}",
                 "",
                 "{{next_chapter_setup_instruction}}",
@@ -1831,6 +2021,8 @@ class NovelGenerator {
                 "4. 【拒绝流水账】如果大纲只有一句话，也要扩成有波折、有细节、有情绪起伏的完整章节，不能一笔带过。",
                 "5. 【逻辑自洽】如果大纲表述略粗，你要自动补足合理因果，让剧情更顺，但不能改主线结果。",
                 "6. 【卷边界】只能写当前卷范围内的剧情，不要提前写后续卷的核心地图、核心人物、核心冲突。",
+                "7. 【承接上章铺垫】如果上一章结尾已经留下下章铺垫，本章开头必须先接住那条铺垫，再推进本章主事件。",
+                "8. 【事件时态正确】前文已经发生的事，正文里不能再写成马上要发生或刚要发生。",
                 "",
                 "写作要求：",
                 "1. 必须严格遵守本章大纲、全局设定、本章设定、世界观、详细大纲参考和角色锁定。",
@@ -1838,7 +2030,9 @@ class NovelGenerator {
                 "3. 人物行为、对话、物品、技能、身份、时间地点必须与既有状态一致。",
                 "4. 不要把下一章核心事件提前展开，只能做铺垫。",
                 "5. 尚未正式见面的角色，不能突然写成熟人互动；模糊称呼尽量改成真实姓名。",
-                "6. 正文写完后，必须按下面协议追加追踪输出。",
+                "6. 如果上一章情绪还没落下，本章开头要延续那股情绪，不要突然换频道。",
+                "7. 如果前文交接略生硬，要用动作、对话、场景变化自然补桥，不要生硬跳切。",
+                "8. 正文写完后，必须按下面协议追加追踪输出。",
                 "",
                 "{{state_output_protocol}}",
                 "",
@@ -1855,10 +2049,12 @@ class NovelGenerator {
             relevant_characters: characterDigest || "暂无明确角色设定",
             outline: chapter.summary || "",
             previous_outline_context: previousOutlineContext || "暂无前文大纲",
+            story_state_summary: storyStateSummary || "暂无明确前文状态摘要",
             prev_content: prevContent || "暂无前文",
             global_setting_note: project.global_setting_note || "暂无",
             chapter_setting_note: chapter.chapter_setting_note || "暂无",
             transition_guide: transitionGuide || "【开章衔接指导】请直接承接上一章最后一个有效场景与状态展开，不要平地重开。",
+            setup_continuity_guard: setupContinuityGuard || "【下章铺垫承接规则】如果上一章没有明确铺垫，就按本章大纲自然起势，不要硬插新冲突。",
             expansion_hint: expansionHint || "【智能扩写建议】可围绕本章核心事件补充动作细节、人物心理、对话博弈、环境反馈和伏笔呼应。",
             current_volume: volume.title || "",
             current_volume_summary: volume.summary || "",
