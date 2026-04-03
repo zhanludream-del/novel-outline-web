@@ -779,7 +779,7 @@ ${(detailedOutline || concept || "未填写").slice(0, 2200)}`;
         this.elements.detailedOutlineInput.value = outline.detailed_outline || "";
         this.elements.globalSettingNoteInput.value = this.novelData.global_setting_note || "";
         if (!this.novelData.prompt_state.current_prompt) {
-            this.novelData.prompt_state.current_prompt = this.getDefaultPromptTemplate();
+            this.novelData.prompt_state.current_prompt = this.getDesktopAlignedPromptTemplate();
         }
         this.elements.currentPromptTemplateInput.value = this.novelData.prompt_state.current_prompt || "";
         this.elements.promptFrequencySelect.value = this.novelData.prompt_state.chapter_frequency || "male";
@@ -1036,7 +1036,7 @@ ${(detailedOutline || concept || "未填写").slice(0, 2200)}`;
         ].join("");
         this.elements.savedPromptSelect.value = promptState.selected_prompt || "";
         this.elements.promptFrequencySelect.value = promptState.chapter_frequency || "male";
-        this.elements.currentPromptTemplateInput.value = promptState.current_prompt || this.getDefaultPromptTemplate();
+        this.elements.currentPromptTemplateInput.value = promptState.current_prompt || this.getDesktopAlignedPromptTemplate();
     }
 
     renderTrackerInsights() {
@@ -1207,7 +1207,7 @@ ${(detailedOutline || concept || "未填写").slice(0, 2200)}`;
             }
 
             if (!promptState.current_prompt) {
-                promptState.current_prompt = this.getDefaultPromptTemplate();
+                promptState.current_prompt = this.getDesktopAlignedPromptTemplate();
             }
 
             this.persist(true);
@@ -1431,7 +1431,7 @@ ${(detailedOutline || concept || "未填写").slice(0, 2200)}`;
         this.novelData.synopsis_data = JSON.parse(JSON.stringify(synopsis));
         this.novelData.chapters = this.novelData.chapters || {};
         this.novelData.prompt_state = this.novelData.prompt_state || JSON.parse(JSON.stringify(DEFAULT_NOVEL_DATA.prompt_state));
-        this.novelData.prompt_state.current_prompt = this.novelData.prompt_state.current_prompt || this.getDefaultPromptTemplate();
+        this.novelData.prompt_state.current_prompt = this.novelData.prompt_state.current_prompt || this.getDesktopAlignedPromptTemplate();
         this.novelData.prompt_state.saved_prompts = this.novelData.prompt_state.saved_prompts || {};
         this.novelData.generated_context = this.novelData.generated_context || JSON.parse(JSON.stringify(DEFAULT_NOVEL_DATA.generated_context));
         this.novelData.genre_extensions = this.novelData.genre_extensions && typeof this.novelData.genre_extensions === "object"
@@ -3783,8 +3783,58 @@ ${(detailedOutline || concept || "未填写").slice(0, 2200)}`;
         ].join("\n");
     }
 
+    getDesktopAlignedPromptTemplate() {
+        return [
+            "请根据以下内容生成小说章节正文。",
+            "",
+            "【小说标题】",
+            "{{title}}",
+            "",
+            "【题材】",
+            "{{genre}}",
+            "",
+            "【核心主题】",
+            "{{theme}}",
+            "",
+            "【世界观】",
+            "{{worldbuilding}}",
+            "",
+            "【相关角色设定】",
+            "{{relevant_characters}}",
+            "",
+            "【当前章节】",
+            "第{{chapter_number}}章 {{chapter_title}}",
+            "",
+            "【章节细纲】",
+            "{{outline}}",
+            "",
+            "【前文参考】",
+            "{{prev_content}}",
+            "",
+            "【下章预警（仅供边界控制，不可提前写）】",
+            "{{next_outline}}",
+            "",
+            "【全局设定提醒】",
+            "{{global_setting_note}}",
+            "",
+            "【本章设定提醒】",
+            "{{chapter_setting_note}}",
+            "",
+            "要求：",
+            "1. 严格沿用既有设定与名字，不得擅自改身份、改秘密、改关系。",
+            "2. 正文必须严格执行本章细纲，可以扩写血肉，但不能偏离主线事件。",
+            "3. 结尾要留下悬念，但不要提前写到下一章的核心事件。",
+            "4. 保持移动端阅读友好的节奏，多用短段，多动作，多对白。",
+            "5. 拒绝AI味，不要堆砌嘴角、眼神、瞳孔、喉结、指节等模板化微表情。",
+            "6. 不要写空泛比喻、总结腔、文绉绉抒情，不要为了显得高级而故作深沉。",
+            "7. 用短句，少副词，少万能形容词，优先让人物通过动作、反应、对白说话。",
+            "8. 多用动作和对白推进，不要连续几段都在解释人物心理或总结局势。",
+            "9. 正文字数控制在 1200-1800 字左右。"
+        ].join("\n");
+    }
+
     loadDefaultPromptTemplate() {
-        const prompt = this.getDefaultPromptTemplate();
+        const prompt = this.getDesktopAlignedPromptTemplate();
         this.novelData.prompt_state.current_prompt = prompt;
         this.elements.currentPromptTemplateInput.value = prompt;
         this.persist(true);

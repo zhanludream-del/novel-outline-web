@@ -547,8 +547,8 @@ class NovelGenerator {
 
         const targetWords = this.getAiHighFrequencyWords();
         const suspiciousPatterns = this.getAiSuspiciousPatterns();
-        const whitelist = this.getAiWhitelist(project);
-        const blacklist = this.getAiBlacklist(project);
+        const whitelist = this.getEffectiveAiWhitelist(project);
+        const blacklist = this.getEffectiveAiBlacklist(project);
         const segments = this.splitSentencesForAiFilter(sourceText);
         const taintedIndices = [];
         const hitWords = new Set();
@@ -564,6 +564,14 @@ class NovelGenerator {
 
             const forced = blacklist.some((item) => item && sentence.includes(item));
             let flagged = forced;
+
+            if (forced) {
+                blacklist.forEach((item) => {
+                    if (item && sentence.includes(item)) {
+                        hitWords.add(item);
+                    }
+                });
+            }
 
             targetWords.forEach((word) => {
                 if (word && sentence.includes(word)) {
@@ -756,6 +764,42 @@ class NovelGenerator {
             "(缓缓地|微不可察|微不可查|不易察觉)[^。！？\\n]{0,8}",
             "(眼神|目光)[^。！？\\n]{0,12}?(深邃|锐利|热切|复杂)",
             "(时间仿佛被按下了暂停|空气凝滞|仿佛被按下了暂停)"
+        ];
+    }
+
+    getEffectiveAiWhitelist(project) {
+        const projectList = project?.prompt_state?.ai_filter_whitelist;
+        if (Array.isArray(projectList) && projectList.length) {
+            return projectList;
+        }
+        return [
+            "他笑了",
+            "她笑了",
+            "他看着窗外",
+            "她看着窗外",
+            "看着远方",
+            "看着对方",
+            "沉默了一会",
+            "没人说话",
+            "屋里很安静"
+        ];
+    }
+
+    getEffectiveAiBlacklist(project) {
+        const projectList = project?.prompt_state?.ai_filter_blacklist;
+        if (Array.isArray(projectList) && projectList.length) {
+            return projectList;
+        }
+        return [
+            "指节泛白",
+            "喉结滚动",
+            "舔了舔嘴唇",
+            "全场死寂",
+            "空气凝滞",
+            "时间仿佛被按下了暂停",
+            "像一记重锤",
+            "眼中闪过一丝",
+            "嘴角勾起一抹弧度"
         ];
     }
 
