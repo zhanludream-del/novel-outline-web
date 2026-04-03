@@ -1,4 +1,4 @@
-class NovelGenerator {
+﻿class NovelGenerator {
     constructor(apiClient) {
         this.api = apiClient;
     }
@@ -3759,68 +3759,94 @@ class NovelGenerator {
     }
 
     extractRoleCandidatesFromChapters(project, chapters, volumeNumber) {
-        const existingNames = new Set();
+        const existingAllNames = new Set();
         (project.outline.characters || []).forEach((character) => {
             const primaryName = String(character.name || "").trim();
             if (primaryName) {
-                existingNames.add(primaryName);
+                existingAllNames.add(primaryName);
             }
             Utils.ensureArrayFromText(character.aliases || character["别名"] || "")
                 .map((alias) => String(alias || "").trim())
                 .filter(Boolean)
-                .forEach((alias) => existingNames.add(alias));
+                .forEach((alias) => existingAllNames.add(alias));
         });
+
         const vagueLabels = new Set(["男主", "女主", "师尊", "反派", "主角", "配角", "众人", "路人", "黑衣人"]);
         const roleMap = {};
+        const mapping = project.synopsisData?.vague_to_name_mapping || project.synopsis_data?.vague_to_name_mapping || {};
+        const normalizeLabel = (value) => String(value || "")
+            .replace(/^[•\-]\s*/, "")
+            .split(/[（(：:]/)[0]
+            .trim();
 
         const addRole = (name, description) => {
-            const cleanName = String(name || "").trim();
-            if (!cleanName || cleanName.length < 2 || vagueLabels.has(cleanName)) {
+            const mappedName = mapping[name] || name;
+            const cleanName = normalizeLabel(mappedName);
+            if (!cleanName || cleanName.length < 2 || cleanName.length > 10 || vagueLabels.has(cleanName)) {
                 return;
             }
-            if (existingNames.has(cleanName)) {
+            if (existingAllNames.has(cleanName) || roleMap[cleanName]) {
                 return;
             }
-            if (!roleMap[cleanName]) {
-                roleMap[cleanName] = description || "";
-            } else if (description && !roleMap[cleanName].includes(description)) {
-                roleMap[cleanName] = `${roleMap[cleanName]}；${description}`.slice(0, 240);
-            }
+            roleMap[cleanName] = String(description || "").trim();
         };
 
         (chapters || []).forEach((chapter) => {
-            Utils.ensureArrayFromText(chapter.characters).forEach((name) => addRole(name, `第${chapter.number}章出场人物`));
+            const summary = String(chapter.summary || "");
+            const lines = summary.split(/\r?\n/);
+            let inCharSection = false;
 
-            const summary = chapter.summary || "";
-            this.extractOutlineCharacterEntries(summary).forEach((entry) => {
-                addRole(entry.name, entry.description || `第${chapter.number}章出场人物`);
-            });
-            const sceneMatch = summary.match(/【出场人物】([\s\S]*?)(?:【|$)/);
-            if (sceneMatch?.[1]) {
-                sceneMatch[1]
-                    .split(/[、,，\n]/)
-                    .map((item) => item.replace(/（.*?）|\(.*?\)/g, "").trim())
-                    .filter(Boolean)
-                    .forEach((name) => addRole(name, `第${chapter.number}章出场人物`));
-            }
-
-            const namedChunks = summary.match(/([\u4e00-\u9fa5]{2,4})(?:（([^）]{2,30})）|\(([^)]{2,30})\))/g) || [];
-            namedChunks.forEach((chunk) => {
-                const matched = chunk.match(/^([\u4e00-\u9fa5]{2,4})(?:（([^）]{2,30})）|\(([^)]{2,30})\))$/);
-                if (matched) {
-                    addRole(matched[1], matched[2] || matched[3] || `第${chapter.number}章相关人物`);
+            lines.forEach((rawLine) => {
+                const line = String(rawLine || "").trim();
+                if (!line) {
+                    return;
                 }
+                if (line.includes("【出场人物】")) {
+                    inCharSection = true;
+                    return;
+                }
+                if (inCharSection && line.startsWith("【")) {
+                    inCharSection = false;
+                    return;
+                }
+                if (!inCharSection || (!line.startsWith("-") && !line.startsWith("•"))) {
+                    return;
+                }
+
+                const content = line.slice(1).trim();
+                if (!content) {
+                    return;
+                }
+
+                let label = content;
+                let desc = "";
+                if (content.includes("（")) {
+                    const parts = content.split("（", 2);
+                    label = parts[0].trim();
+                    desc = parts[1].replace(/）/g, "").trim();
+                } else if (content.includes("(")) {
+                    const parts = content.split("(", 2);
+                    label = parts[0].trim();
+                    desc = parts[1].replace(/\)/g, "").trim();
+                } else if (content.includes("：")) {
+                    const parts = content.split("：", 2);
+                    label = parts[0].trim();
+                    desc = parts[1].trim();
+                } else if (content.includes(":")) {
+                    const parts = content.split(":", 2);
+                    label = parts[0].trim();
+                    desc = parts[1].trim();
+                }
+
+                addRole(label, desc || `第${chapter.number}章出场人物`);
             });
         });
 
         const mainMappings = project.synopsisData?.main_characters || project.synopsis_data?.main_characters || {};
         Object.values(mainMappings).forEach((name) => addRole(name, "主角映射角色"));
-        const lockedNames = project.synopsisData?.locked_character_names || project.synopsis_data?.locked_character_names || [];
-        Utils.ensureArrayFromText(lockedNames).forEach((name) => addRole(name, "已锁定角色"));
 
         return roleMap;
     }
-
     extractOutlineCharacterEntries(summary) {
         const text = String(summary || "");
         if (!text.trim()) {
@@ -3903,3 +3929,4 @@ class NovelGenerator {
         return Utils.summarizeText(text, max);
     }
 }
+
