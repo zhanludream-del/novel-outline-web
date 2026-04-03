@@ -1,4 +1,10 @@
 class Utils {
+    static loadingState = {
+        startedAt: 0,
+        progress: 0,
+        logs: []
+    };
+
     static uid(prefix = "id") {
         return `${prefix}_${Math.random().toString(36).slice(2, 10)}${Date.now().toString(36)}`;
     }
@@ -30,7 +36,7 @@ class Utils {
         }
 
         return String(value)
-            .split(/[、,，\n]/)
+            .split(/[\n,，、；;]/)
             .map((item) => item.trim())
             .filter(Boolean);
     }
@@ -50,11 +56,30 @@ class Utils {
     static showLoading(message = "AI 正在处理中...") {
         const overlay = document.getElementById("loadingOverlay");
         const loadingText = document.getElementById("loadingText");
+        const loadingMeta = document.getElementById("loadingMeta");
+        const loadingLog = document.getElementById("loadingLog");
+        const progressBar = document.getElementById("loadingProgressBar");
+
+        Utils.loadingState = {
+            startedAt: Date.now(),
+            progress: 8,
+            logs: []
+        };
+
         if (overlay) {
             overlay.classList.add("active");
         }
         if (loadingText) {
             loadingText.textContent = message;
+        }
+        if (loadingMeta) {
+            loadingMeta.textContent = "任务已开始，请稍等...";
+        }
+        if (loadingLog) {
+            loadingLog.textContent = "等待开始...";
+        }
+        if (progressBar) {
+            progressBar.style.width = "8%";
         }
     }
 
@@ -62,6 +87,44 @@ class Utils {
         const overlay = document.getElementById("loadingOverlay");
         if (overlay) {
             overlay.classList.remove("active");
+        }
+
+        Utils.loadingState = {
+            startedAt: 0,
+            progress: 0,
+            logs: []
+        };
+    }
+
+    static updateLoading(message = "", options = {}) {
+        const loadingText = document.getElementById("loadingText");
+        const loadingMeta = document.getElementById("loadingMeta");
+        const loadingLog = document.getElementById("loadingLog");
+        const progressBar = document.getElementById("loadingProgressBar");
+        const { progress, detail, appendLog = false } = options;
+
+        if (loadingText && message) {
+            loadingText.textContent = message;
+        }
+
+        if (typeof progress === "number" && progressBar) {
+            const normalized = Math.max(6, Math.min(100, progress));
+            Utils.loadingState.progress = normalized;
+            progressBar.style.width = `${normalized}%`;
+        }
+
+        if (loadingMeta) {
+            const elapsedMs = Utils.loadingState.startedAt ? Date.now() - Utils.loadingState.startedAt : 0;
+            const elapsedSeconds = Math.max(0, Math.floor(elapsedMs / 1000));
+            loadingMeta.textContent = detail
+                ? `${detail} | 已等待 ${elapsedSeconds} 秒`
+                : `已等待 ${elapsedSeconds} 秒`;
+        }
+
+        if (appendLog && loadingLog && message) {
+            Utils.loadingState.logs.unshift(`[${Utils.formatTime()}] ${message}`);
+            Utils.loadingState.logs = Utils.loadingState.logs.slice(0, 6);
+            loadingLog.textContent = Utils.loadingState.logs.join("\n");
         }
     }
 
@@ -100,6 +163,14 @@ class Utils {
 
         while (logContent.children.length > 120) {
             logContent.removeChild(logContent.lastElementChild);
+        }
+
+        const overlay = document.getElementById("loadingOverlay");
+        if (overlay?.classList.contains("active")) {
+            Utils.updateLoading(message, {
+                appendLog: true,
+                detail: type === "error" ? "处理中遇到问题，正在继续重试" : "任务仍在进行中"
+            });
         }
     }
 

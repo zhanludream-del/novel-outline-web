@@ -2626,6 +2626,21 @@ ${(detailedOutline || concept || "未填写").slice(0, 2200)}`;
             const batchSegments = this.splitRangeIntoBatches(startChapter, endChapter, 15);
             const MAX_RETRIES_PER_BATCH = 3;
             const generatedAll = [];
+            const totalGapSegments = Math.max(1, batchSegments.reduce((sum, batch) => {
+                const batchMissing = [];
+                for (let number = batch.start; number <= batch.end; number += 1) {
+                    if (!existingNumbers.has(number)) {
+                        batchMissing.push(number);
+                    }
+                }
+                return sum + this.findGapSegments(batchMissing).length;
+            }, 0));
+            let completedGapSegments = 0;
+
+            Utils.updateLoading("正在分析缺口范围...", {
+                progress: 10,
+                detail: `共需处理 ${totalGapSegments} 段缺口`
+            });
 
             for (const batch of batchSegments) {
                 const batchMissingNumbers = [];
@@ -2635,13 +2650,25 @@ ${(detailedOutline || concept || "未填写").slice(0, 2200)}`;
                     }
                 }
 
+                const batchLabel = batch.totalBatches > 1
+                    ? `第 ${batch.batchIndex}/${batch.totalBatches} 批`
+                    : "当前批次";
+
                 if (!batchMissingNumbers.length) {
+                    Utils.updateLoading(`跳过第 ${batch.start}-${batch.end} 章`, {
+                        progress: Math.round((completedGapSegments / totalGapSegments) * 88),
+                        detail: `${batchLabel} 已齐全，无需重生`
+                    });
                     Utils.log(`${batch.totalBatches > 1 ? `第 ${batch.batchIndex}/${batch.totalBatches} 批` : "当前批次"}（第 ${batch.start}-${batch.end} 章）已齐全，跳过。`, "info");
                     continue;
                 }
 
                 Utils.log(`${batch.totalBatches > 1 ? `第 ${batch.batchIndex}/${batch.totalBatches} 批` : "单批任务"}：准备生成第 ${batch.start}-${batch.end} 章。`, "info");
 
+                Utils.updateLoading(`准备生成第 ${batch.start}-${batch.end} 章`, {
+                    progress: Math.round((completedGapSegments / totalGapSegments) * 88),
+                    detail: `${batchLabel} 即将开始`
+                });
                 const gapSegments = this.findGapSegments(batchMissingNumbers);
                 gapSegments.forEach(([segStart, segEnd]) => {
                     Utils.log(`第 ${batch.batchIndex} 批缺口：第 ${segStart}-${segEnd} 章`, "info");
@@ -2653,6 +2680,12 @@ ${(detailedOutline || concept || "未填写").slice(0, 2200)}`;
 
                     while (!success && attempt < MAX_RETRIES_PER_BATCH) {
                         attempt += 1;
+                        const baseProgress = Math.round((completedGapSegments / totalGapSegments) * 88);
+                        const retryProgress = Math.min(92, baseProgress + Math.round((attempt / MAX_RETRIES_PER_BATCH) * 4));
+                        Utils.updateLoading(`正在生成第 ${segmentStart}-${segmentEnd} 章`, {
+                            progress: retryProgress,
+                            detail: `${batchLabel} | 第 ${attempt}/${MAX_RETRIES_PER_BATCH} 次尝试`
+                        });
                         Utils.log(`正在生成${batch.totalBatches > 1 ? `第 ${batch.batchIndex}/${batch.totalBatches} 批` : "当前批次"} · 第 ${segmentStart}-${segmentEnd} 章（尝试 ${attempt}/${MAX_RETRIES_PER_BATCH}）...`, "info");
 
                         try {
@@ -2672,8 +2705,17 @@ ${(detailedOutline || concept || "未填写").slice(0, 2200)}`;
                             volume.chapters.sort(Utils.chapterSort);
                             this.persist(true);
                             this.renderChapterList();
+                            completedGapSegments += 1;
+                            Utils.updateLoading(`已完成第 ${segmentStart}-${segmentEnd} 章`, {
+                                progress: Math.round((completedGapSegments / totalGapSegments) * 92),
+                                detail: `当前已完成 ${completedGapSegments}/${totalGapSegments} 段`
+                            });
                             success = true;
                         } catch (error) {
+                            Utils.updateLoading(`第 ${segmentStart}-${segmentEnd} 章生成失败`, {
+                                progress: Math.round((completedGapSegments / totalGapSegments) * 88),
+                                detail: `第 ${attempt}/${MAX_RETRIES_PER_BATCH} 次尝试失败，准备重试`
+                            });
                             Utils.log(`${batch.totalBatches > 1 ? `第 ${batch.batchIndex} 批` : "当前批次"} · 第 ${segmentStart}-${segmentEnd} 章生成失败：${error.message || error}`, "error");
                             if (attempt >= MAX_RETRIES_PER_BATCH) {
                                 throw error;
@@ -2684,9 +2726,17 @@ ${(detailedOutline || concept || "未填写").slice(0, 2200)}`;
             }
 
             if (generatedAll.length) {
+                Utils.updateLoading("章纲已生成，正在根据大纲补全人设...", {
+                    progress: 96,
+                    detail: `本次共完成 ${generatedAll.length} 章，正在补全人物设定`
+                });
                 await this.generateCharactersFromOutlines(volume.chapters || generatedAll, volumeNumber, false);
             }
 
+            Utils.updateLoading("批量章纲生成完成", {
+                progress: 100,
+                detail: `本次共完成 ${generatedAll.length} 章`
+            });
             this.persist(true);
             this.renderChapterList();
             Utils.showMessage(`已生成 ${generatedAll.length} 章章节大纲。`, "success");
