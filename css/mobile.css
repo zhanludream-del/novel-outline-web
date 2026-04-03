@@ -81,6 +81,10 @@
         justify-content: flex-end;
     }
 
+    .mobile-only {
+        display: inline-flex;
+    }
+
     .hero-card,
     .panel,
     .stat-card,
@@ -165,6 +169,14 @@
 
     .chapter-selector-actions {
         width: 100%;
+    }
+
+    .chapter-list-drawer {
+        display: none;
+    }
+
+    .chapter-list-drawer.open {
+        display: grid;
     }
 
     .topbar-actions .btn {

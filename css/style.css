@@ -769,6 +769,15 @@ button {
     align-self: end;
 }
 
+.chapter-list-drawer {
+    display: grid;
+    gap: 12px;
+}
+
+.mobile-only {
+    display: none;
+}
+
 .chapter-tool-row {
     margin-bottom: 14px;
 }

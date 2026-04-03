@@ -9,6 +9,7 @@ class NovelOutlineWebApp {
             activeChapterSubview: window.localStorage.getItem("novel_outline_chapter_subview") || "batch",
             selectedChapterId: null,
             editingCharacterId: null,
+            chapterListCollapsedMobile: window.localStorage.getItem("novel_outline_mobile_chapter_list") !== "open",
             logVisible: window.localStorage.getItem("novel_outline_log_visible") === "1",
             logCollapsed: window.localStorage.getItem("novel_outline_log_collapsed") !== "0"
         };
@@ -70,6 +71,7 @@ class NovelOutlineWebApp {
             chapterBatchPreview: document.getElementById("chapterBatchPreview"),
             chapterBatchList: document.getElementById("chapterBatchList"),
             chapterList: document.getElementById("chapterList"),
+            chapterListDrawer: document.getElementById("chapterListDrawer"),
             chapterEditorHeading: document.getElementById("chapterEditorHeading"),
             chapterNumberInput: document.getElementById("chapterNumberInput"),
             chapterTitleInput: document.getElementById("chapterTitleInput"),
@@ -154,6 +156,7 @@ class NovelOutlineWebApp {
             btnAnalyzeChapter: document.getElementById("btnAnalyzeChapter"),
             btnRunChapterQc: document.getElementById("btnRunChapterQc"),
             btnRefreshChapterList: document.getElementById("btnRefreshChapterList"),
+            btnToggleChapterList: document.getElementById("btnToggleChapterList"),
             btnPrevChapter: document.getElementById("btnPrevChapter"),
             btnNextChapter: document.getElementById("btnNextChapter"),
             btnBatchDeleteChapters: document.getElementById("btnBatchDeleteChapters"),
@@ -552,6 +555,9 @@ class NovelOutlineWebApp {
         this.elements.btnAnalyzeChapter.addEventListener("click", () => this.analyzeCurrentChapter());
         this.elements.btnRunChapterQc.addEventListener("click", () => this.runCurrentChapterQc());
         this.elements.btnRefreshChapterList.addEventListener("click", () => this.refreshChapterWorkspace());
+        if (this.elements.btnToggleChapterList) {
+            this.elements.btnToggleChapterList.addEventListener("click", () => this.toggleMobileChapterList());
+        }
         if (this.elements.btnPrevChapter) {
             this.elements.btnPrevChapter.addEventListener("click", () => this.selectAdjacentChapter(-1));
         }
@@ -1179,6 +1185,7 @@ ${(detailedOutline || concept || "未填写").slice(0, 2200)}`;
         if (this.elements.chapterList) {
             this.elements.chapterList.innerHTML = cardsHTML;
         }
+        this.applyMobileChapterListState();
     }
 
     renderChapterQuickSelect(chapters = []) {
@@ -1623,6 +1630,7 @@ ${(detailedOutline || concept || "未填写").slice(0, 2200)}`;
             panel.classList.toggle("active", panel.id === `tab-${tabName}`);
         });
         this.toggleSidebar(false);
+        this.applyMobileChapterListState();
     }
 
     switchChapterSubview(viewName, silent = false) {
@@ -2982,6 +2990,7 @@ ${(detailedOutline || concept || "未填写").slice(0, 2200)}`;
         if (this.elements.chapterQuickSelect) {
             this.elements.chapterQuickSelect.value = chapter.id;
         }
+        this.applyMobileChapterListState();
         this.scrollChapterEditorIntoView();
     }
 
@@ -3010,6 +3019,34 @@ ${(detailedOutline || concept || "未填写").slice(0, 2200)}`;
         const safeIndex = currentIndex >= 0 ? currentIndex : 0;
         const nextIndex = Math.max(0, Math.min(chapters.length - 1, safeIndex + Number(offset || 0)));
         this.selectChapter(chapters[nextIndex].id);
+    }
+
+    toggleMobileChapterList(forceOpen = null) {
+        const collapsed = typeof forceOpen === "boolean"
+            ? !forceOpen
+            : !this.state.chapterListCollapsedMobile;
+        this.state.chapterListCollapsedMobile = collapsed;
+        window.localStorage.setItem("novel_outline_mobile_chapter_list", collapsed ? "collapsed" : "open");
+        this.applyMobileChapterListState();
+    }
+
+    applyMobileChapterListState() {
+        const drawer = this.elements.chapterListDrawer;
+        const toggleButton = this.elements.btnToggleChapterList;
+        if (!drawer || !toggleButton) {
+            return;
+        }
+
+        const isMobile = window.matchMedia("(max-width: 960px)").matches;
+        if (!isMobile) {
+            drawer.classList.add("open");
+            toggleButton.textContent = "展开章节列表";
+            return;
+        }
+
+        const open = !this.state.chapterListCollapsedMobile;
+        drawer.classList.toggle("open", open);
+        toggleButton.textContent = open ? "收起章节列表" : "展开章节列表";
     }
 
     scrollChapterEditorIntoView() {

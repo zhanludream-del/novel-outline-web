@@ -475,13 +475,16 @@
                                 <div class="panel-actions chapter-selector-actions">
                                     <button class="btn btn-ghost" id="btnPrevChapter" type="button">上一章</button>
                                     <button class="btn btn-ghost" id="btnNextChapter" type="button">下一章</button>
+                                    <button class="btn btn-ghost mobile-only" id="btnToggleChapterList" type="button">展开章节列表</button>
                                 </div>
                             </div>
-                            <div class="panel-actions">
-                                <button class="btn btn-ghost" id="btnRefreshChapterList" type="button">刷新列表</button>
-                                <button class="btn btn-danger" id="btnBatchDeleteChapters" type="button">批量删除章节</button>
+                            <div class="chapter-list-drawer" id="chapterListDrawer">
+                                <div class="panel-actions">
+                                    <button class="btn btn-ghost" id="btnRefreshChapterList" type="button">刷新列表</button>
+                                    <button class="btn btn-danger" id="btnBatchDeleteChapters" type="button">批量删除章节</button>
+                                </div>
+                                <div class="chapter-list" id="chapterList"></div>
                             </div>
-                            <div class="chapter-list" id="chapterList"></div>
                         </section>
 
                         <section class="panel chapter-editor-panel">
