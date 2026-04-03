@@ -195,6 +195,54 @@ class Utils {
         return null;
     }
 
+    static coerceJSONArray(value) {
+        if (Array.isArray(value)) {
+            return value;
+        }
+
+        if (typeof value === "string") {
+            const parsed = this.parseJsonResponse(value);
+            return Array.isArray(parsed) ? parsed : this.coerceJSONArray(parsed);
+        }
+
+        if (!value || typeof value !== "object") {
+            return null;
+        }
+
+        const preferredKeys = [
+            "items",
+            "data",
+            "list",
+            "results",
+            "chapters",
+            "volumes",
+            "characters",
+            "output",
+            "content",
+            "response"
+        ];
+
+        for (const key of preferredKeys) {
+            if (Array.isArray(value[key])) {
+                return value[key];
+            }
+            if (typeof value[key] === "string") {
+                const nested = this.coerceJSONArray(value[key]);
+                if (Array.isArray(nested)) {
+                    return nested;
+                }
+            }
+        }
+
+        const values = Object.values(value);
+        const firstArray = values.find((item) => Array.isArray(item));
+        if (firstArray) {
+            return firstArray;
+        }
+
+        return null;
+    }
+
     static normalizeJsonCandidate(text) {
         const raw = String(text || "").trim();
         if (!raw) {
@@ -208,6 +256,13 @@ class Utils {
             .replace(/,\s*([}\]])/g, "$1");
 
         normalized = this.extractBalancedJson(normalized, "[", "]") || normalized;
+
+        if (!normalized.startsWith("[")) {
+            const objectArray = this.extractObjectArrayCandidate(normalized);
+            if (objectArray) {
+                normalized = objectArray;
+            }
+        }
 
         return normalized.trim();
     }
@@ -260,6 +315,31 @@ class Utils {
         }
 
         return "";
+    }
+
+    static extractObjectArrayCandidate(text) {
+        const source = String(text || "");
+        const objects = [];
+        let searchIndex = 0;
+
+        while (searchIndex < source.length) {
+            const chunk = this.extractBalancedJson(source.slice(searchIndex), "{", "}");
+            if (!chunk) {
+                break;
+            }
+            try {
+                objects.push(JSON.parse(chunk));
+            } catch (error) {
+                break;
+            }
+            const chunkIndex = source.indexOf(chunk, searchIndex);
+            if (chunkIndex < 0) {
+                break;
+            }
+            searchIndex = chunkIndex + chunk.length;
+        }
+
+        return objects.length >= 2 ? JSON.stringify(objects) : "";
     }
 
     static newlineJoin(items) {

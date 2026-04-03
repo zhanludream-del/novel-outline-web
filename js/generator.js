@@ -718,12 +718,14 @@ class NovelGenerator {
 
     async requestJSONArray(systemPrompt, userPrompt, options) {
         const raw = await this.api.callLLM(userPrompt, systemPrompt, options);
-        let parsed = Utils.parseJsonResponse(raw);
+        let parsed = Utils.coerceJSONArray(Utils.parseJsonResponse(raw) ?? raw);
         if (!Array.isArray(parsed)) {
             const repaired = await this.repairJSONArrayResponse(raw, options);
-            parsed = Utils.parseJsonResponse(repaired);
+            parsed = Utils.coerceJSONArray(Utils.parseJsonResponse(repaired) ?? repaired);
         }
         if (!Array.isArray(parsed)) {
+            const rawPreview = String(raw || "").replace(/\s+/g, " ").slice(0, 300);
+            Utils.log(`JSON 数组解析失败，原始返回片段：${rawPreview || "空响应"}`, "error");
             throw new Error("AI 返回内容无法解析为 JSON 数组，请重试一次。");
         }
         return parsed;
