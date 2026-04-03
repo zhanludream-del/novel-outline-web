@@ -291,14 +291,20 @@ class NovelOutlineWebApp {
             this.persist(true);
         });
 
-        this.elements.chapterVolumeSelect.addEventListener("change", () => {
-            this.state.selectedChapterId = null;
-            this.renderChapterList();
-            this.clearChapterEditor();
-        });
+        if (this.elements.chapterVolumeSelect) {
+            this.elements.chapterVolumeSelect.addEventListener("change", () => {
+                this.state.selectedChapterId = null;
+                this.renderChapterList();
+                this.clearChapterEditor();
+            });
+        }
 
-        this.elements.chapterStart.addEventListener("input", () => this.renderChapterBatchPreview());
-        this.elements.chapterEnd.addEventListener("input", () => this.renderChapterBatchPreview());
+        if (this.elements.chapterStart) {
+            this.elements.chapterStart.addEventListener("input", () => this.renderChapterBatchPreview());
+        }
+        if (this.elements.chapterEnd) {
+            this.elements.chapterEnd.addEventListener("input", () => this.renderChapterBatchPreview());
+        }
 
         this.elements.promptFrequencySelect.addEventListener("change", () => {
             this.novelData.prompt_state.chapter_frequency = this.elements.promptFrequencySelect.value;
@@ -307,8 +313,12 @@ class NovelOutlineWebApp {
 
         this.elements.outlineVolumeList.addEventListener("input", (event) => this.handleVolumeInput(event));
         this.elements.outlineVolumeList.addEventListener("click", (event) => this.handleVolumeActions(event));
-        this.elements.chapterBatchList.addEventListener("click", (event) => this.handleChapterBatchListClick(event));
-        this.elements.chapterList.addEventListener("click", (event) => this.handleChapterListClick(event));
+        if (this.elements.chapterBatchList) {
+            this.elements.chapterBatchList.addEventListener("click", (event) => this.handleChapterBatchListClick(event));
+        }
+        if (this.elements.chapterList) {
+            this.elements.chapterList.addEventListener("click", (event) => this.handleChapterListClick(event));
+        }
         this.elements.characterList.addEventListener("click", (event) => this.handleCharacterListClick(event));
 
         this.elements.btnOpenSettings.addEventListener("click", () => this.openSettingsModal());
@@ -364,7 +374,14 @@ class NovelOutlineWebApp {
     safeAsync(task) {
         Promise.resolve()
             .then(() => task())
-            .catch(() => {});
+            .catch((error) => {
+                if (error?.__handled) {
+                    return;
+                }
+                const message = error?.message || "处理失败";
+                Utils.showMessage(message, "error");
+                Utils.log(message, "error");
+            });
     }
 
     applyLogDrawerState() {
@@ -800,10 +817,17 @@ ${(detailedOutline || concept || "未填写").slice(0, 2200)}`;
 
     renderChapterList() {
         const volume = this.getCurrentChapterVolume();
+        if (!this.elements.chapterBatchList && !this.elements.chapterList) {
+            return;
+        }
         if (!volume || volume.chapters.length === 0) {
             const emptyHTML = '<div class="empty-state">当前卷还没有章节。可以先在“批量章纲”里跑四批生成，再切到“单章正文”逐章扩写。</div>';
-            this.elements.chapterBatchList.innerHTML = emptyHTML;
-            this.elements.chapterList.innerHTML = emptyHTML;
+            if (this.elements.chapterBatchList) {
+                this.elements.chapterBatchList.innerHTML = emptyHTML;
+            }
+            if (this.elements.chapterList) {
+                this.elements.chapterList.innerHTML = emptyHTML;
+            }
             return;
         }
 
@@ -822,8 +846,12 @@ ${(detailedOutline || concept || "未填写").slice(0, 2200)}`;
             </article>
         `).join("");
 
-        this.elements.chapterBatchList.innerHTML = cardsHTML;
-        this.elements.chapterList.innerHTML = cardsHTML;
+        if (this.elements.chapterBatchList) {
+            this.elements.chapterBatchList.innerHTML = cardsHTML;
+        }
+        if (this.elements.chapterList) {
+            this.elements.chapterList.innerHTML = cardsHTML;
+        }
     }
 
     buildChapterBadgeHTML(chapter) {
@@ -1061,7 +1089,9 @@ ${(detailedOutline || concept || "未填写").slice(0, 2200)}`;
         if (!("serviceWorker" in navigator) || !window.isSecureContext && location.hostname !== "127.0.0.1" && location.hostname !== "localhost") {
             return;
         }
-        navigator.serviceWorker.register("service-worker.js").catch(() => {});
+        navigator.serviceWorker.register("service-worker.js?v=20260403").then((registration) => {
+            registration.update().catch(() => {});
+        }).catch(() => {});
     }
 
     renderSystemEditors() {
@@ -1504,6 +1534,7 @@ ${(detailedOutline || concept || "未填写").slice(0, 2200)}`;
             Utils.showLoading(message);
             return await task();
         } catch (error) {
+            error.__handled = true;
             Utils.showMessage(error.message || "处理失败", "error");
             Utils.log(error.message || "处理失败", "error");
             throw error;
@@ -1715,6 +1746,10 @@ ${(detailedOutline || concept || "未填写").slice(0, 2200)}`;
     }
 
     renderChapterBatchPreview() {
+        if (!this.elements.chapterBatchPreview || !this.elements.chapterStart || !this.elements.chapterEnd) {
+            return;
+        }
+
         const startChapter = Number(this.elements.chapterStart.value || 0);
         const endChapter = Number(this.elements.chapterEnd.value || 0);
         if (!startChapter || !endChapter || startChapter > endChapter) {

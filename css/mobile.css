@@ -14,7 +14,7 @@
 
 @media (max-width: 960px) {
     .topbar {
-        padding: 16px 18px;
+        padding: 12px 14px;
     }
 
     body::before,
@@ -34,10 +34,10 @@
 
     .sidebar {
         position: fixed;
-        top: 88px;
-        left: 18px;
-        bottom: 18px;
-        width: min(320px, calc(100vw - 36px));
+        top: 72px;
+        left: 14px;
+        bottom: 14px;
+        width: min(320px, calc(100vw - 28px));
         z-index: 35;
         transform: translateX(calc(-100% - 24px));
         transition: transform 0.22s ease;
@@ -86,18 +86,45 @@
     }
 
     .log-drawer {
-        left: 18px;
-        right: 18px;
+        left: 14px;
+        right: 14px;
     }
 }
 
 @media (max-width: 680px) {
     .topbar {
-        align-items: flex-start;
-        flex-direction: column;
+        align-items: stretch;
+        gap: 10px;
     }
 
-    .topbar-actions,
+    .topbar-left {
+        gap: 10px;
+        align-items: center;
+    }
+
+    .brand-kicker,
+    .brand-subtitle,
+    .version-chip {
+        display: none;
+    }
+
+    .brand-row h1 {
+        font-size: 1.1rem;
+    }
+
+    .topbar-actions {
+        width: 100%;
+        overflow-x: auto;
+        flex-wrap: nowrap;
+        justify-content: flex-start;
+        padding-bottom: 2px;
+        scrollbar-width: none;
+    }
+
+    .topbar-actions::-webkit-scrollbar {
+        display: none;
+    }
+
     .panel-actions,
     .quick-actions,
     .modal-actions,
@@ -107,13 +134,19 @@
         flex-wrap: wrap;
     }
 
-    .topbar-actions .btn,
     .panel-actions .btn,
     .quick-actions .btn,
     .modal-actions .btn,
     .field-actions .btn,
     .chapter-subtab {
         flex: 1 1 100%;
+    }
+
+    .topbar-actions .btn {
+        flex: 0 0 auto;
+        min-height: 38px;
+        padding: 8px 14px;
+        white-space: nowrap;
     }
 
     .log-head {
@@ -166,7 +199,7 @@
 
 @media (max-width: 480px) {
     .workspace {
-        padding: 14px;
+        padding: 12px;
     }
 
     .brand-subtitle {
