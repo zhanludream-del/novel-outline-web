@@ -285,10 +285,34 @@
                         <div class="panel-head">
                             <div>
                                 <p class="section-kicker">大纲生成</p>
-                                <h2>章纲批量生成与卷纲整理</h2>
+                                <h2>先细纲整理，再批量生成章纲</h2>
+                            </div>
+                        </div>
+                        <p class="panel-note">流程顺序已经调整为：先整理当前卷卷纲与细纲，再往下批量生成章纲。</p>
+                    </div>
+
+                    <div class="panel">
+                        <div class="panel-head">
+                            <div>
+                                <p class="section-kicker">卷纲编辑</p>
+                                <h3>卷纲与总结构</h3>
+                            </div>
+                            <div class="panel-actions">
+                                <button class="btn btn-ghost" id="btnAddVolume" type="button">新增一卷</button>
+                                <button class="btn btn-danger" id="btnClearVolumes" type="button">清空所有卷</button>
                             </div>
                         </div>
 
+                        <div class="volume-stack" id="outlineVolumeList"></div>
+                    </div>
+
+                    <div class="panel">
+                        <div class="panel-head">
+                            <div>
+                                <p class="section-kicker">章纲生成</p>
+                                <h3>当前卷批量生成章纲</h3>
+                            </div>
+                        </div>
                         <div class="form-grid three-column">
                             <label class="field">
                                 <span>卷</span>
@@ -321,21 +345,6 @@
                             </div>
                         </div>
                         <div class="chapter-list" id="chapterBatchList"></div>
-                    </div>
-
-                    <div class="panel">
-                        <div class="panel-head">
-                            <div>
-                                <p class="section-kicker">卷纲编辑</p>
-                                <h3>卷纲与总结构</h3>
-                            </div>
-                            <div class="panel-actions">
-                                <button class="btn btn-ghost" id="btnAddVolume" type="button">新增一卷</button>
-                                <button class="btn btn-danger" id="btnClearVolumes" type="button">清空所有卷</button>
-                            </div>
-                        </div>
-
-                        <div class="volume-stack" id="outlineVolumeList"></div>
                     </div>
                 </section>
 
