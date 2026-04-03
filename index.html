@@ -6,8 +6,8 @@
     <meta name="theme-color" content="#4a5f72">
     <meta name="apple-mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-status-bar-style" content="default">
-    <meta name="apple-mobile-web-app-title" content="灏忚澶х翰">
-    <title>鏅ㄦ洣寰湶灏忚澶х翰鐢熸垚鍣?Web</title>
+    <meta name="apple-mobile-web-app-title" content="小说大纲">
+    <title>晨曦微露小说大纲生成器 Web</title>
     <link rel="manifest" href="manifest.webmanifest">
     <link rel="icon" href="icons/app-icon.svg" type="image/svg+xml">
     <link rel="apple-touch-icon" href="icons/app-icon.svg">
@@ -18,24 +18,24 @@
     <div class="app-shell">
         <header class="topbar">
             <div class="topbar-left">
-                <button class="icon-btn menu-btn" id="menuToggle" type="button" aria-label="鎵撳紑鑿滃崟">鈽?/button>
+                <button class="icon-btn menu-btn" id="menuToggle" type="button" aria-label="打开菜单">☰</button>
                 <div class="brand-block">
-                    <p class="brand-kicker">鏅ㄦ洣寰湶</p>
+                    <p class="brand-kicker">晨曦微露</p>
                     <div class="brand-row">
-                        <h1>灏忚澶х翰鐢熸垚鍣?Web</h1>
-                        <span class="version-chip" id="appVersionChip">鐗堟湰鍔犺浇涓?/span>
+                        <h1>小说大纲生成器 Web</h1>
+                        <span class="version-chip" id="appVersionChip">版本加载中</span>
                     </div>
-                    <p class="brand-subtitle">妗岄潰鐗堝姛鑳界户缁縼绉讳腑锛岀幇闃舵浼樺厛淇濊瘉鎵嬫満鍜岀數鑴戦兘鑳介『鎵嬩娇鐢ㄣ€?/p>
+                    <p class="brand-subtitle">桌面版功能继续迁移中，现阶段优先保证手机和电脑都能顺手使用。</p>
                 </div>
             </div>
 
             <div class="topbar-actions">
-                <button class="btn btn-ghost" id="btnShowLog" type="button">鏌ョ湅鏃ュ織</button>
-                <button class="btn btn-ghost" id="btnOpenSettings" type="button">API 璁剧疆</button>
-                <button class="btn btn-ghost" id="btnSaveData" type="button">淇濆瓨</button>
-                <button class="btn btn-ghost" id="btnExportTxt" type="button">瀵煎嚭TXT</button>
-                <button class="btn btn-primary" id="btnExportData" type="button">瀵煎嚭JSON</button>
-                <button class="btn btn-secondary" id="btnImportData" type="button">瀵煎叆</button>
+                <button class="btn btn-ghost" id="btnShowLog" type="button">查看日志</button>
+                <button class="btn btn-ghost" id="btnOpenSettings" type="button">API 设置</button>
+                <button class="btn btn-ghost" id="btnSaveData" type="button">保存</button>
+                <button class="btn btn-ghost" id="btnExportTxt" type="button">导出TXT</button>
+                <button class="btn btn-primary" id="btnExportData" type="button">导出JSON</button>
+                <button class="btn btn-secondary" id="btnImportData" type="button">导入</button>
             </div>
         </header>
 
@@ -71,11 +71,11 @@
                 </nav>
 
                 <div class="sidebar-note">
-                    <p>褰撳墠鐗堟湰閫傚悎锛?/p>
+                    <p>当前版本适合：</p>
                     <ul>
-                        <li>鎵嬫満涓婃暣鐞嗗皬璇寸粨鏋?/li>
-                        <li>鐢佃剳涓婃壒閲忕敓鎴愬嵎绾插拰绔犺妭</li>
-                        <li>鏈湴淇濆瓨銆丣SON 瀵煎叆瀵煎嚭</li>
+                        <li>手机上整理小说结构</li>
+                        <li>电脑上批量生成卷纲和章节</li>
+                        <li>本地保存、JSON 导入导出</li>
                     </ul>
                 </div>
             </aside>
@@ -84,31 +84,31 @@
                 <section class="tab-panel active" id="tab-dashboard">
                     <div class="hero-card">
                         <div>
-                            <p class="section-kicker">鎬昏</p>
-                            <h2>鎶婃闈㈢増鐨勫垱浣滄祦绋嬶紝鏁寸悊鎴愭洿杞荤殑 Web 宸ヤ綔娴?/h2>
-                            <p class="hero-copy">杩欓噷浼氳嚜鍔ㄦ眹鎬绘爣棰樸€佸嵎鏁般€佺珷鑺傚拰浜虹墿淇℃伅銆傛棤璁烘槸鍦ㄧ數鑴戠户缁惌缁撴瀯锛岃繕鏄敤鎵嬫満涓存椂鏀圭珷绾诧紝閮借兘鍦ㄤ竴涓〉闈㈤噷瀹屾垚銆?/p>
+                            <p class="section-kicker">总览</p>
+                            <h2>把桌面版的创作流程，整理成更轻的 Web 工作流</h2>
+                            <p class="hero-copy">这里会自动汇总标题、卷数、章节和人物信息。无论是在电脑继续搭结构，还是用手机临时改章纲，都能在一个页面里完成。</p>
                         </div>
                         <div class="quick-actions">
-                            <button class="btn btn-primary" data-jump-tab="planner" type="button">寮€濮嬬敓鎴愮粏绾?/button>
-                            <button class="btn btn-ghost" data-jump-tab="chapters" type="button">缁х画绔犺妭宸ヤ綔</button>
+                            <button class="btn btn-primary" data-jump-tab="planner" type="button">开始生成细纲</button>
+                            <button class="btn btn-ghost" data-jump-tab="chapters" type="button">继续章节工作</button>
                         </div>
                     </div>
 
                     <div class="stats-grid">
                         <article class="stat-card">
-                            <span class="stat-label">灏忚鏍囬</span>
-                            <strong class="stat-value" id="statTitle">鏈懡鍚?/strong>
+                            <span class="stat-label">小说标题</span>
+                            <strong class="stat-value" id="statTitle">未命名</strong>
                         </article>
                         <article class="stat-card">
-                            <span class="stat-label">鍗锋暟</span>
+                            <span class="stat-label">卷数</span>
                             <strong class="stat-value" id="statVolumes">0</strong>
                         </article>
                         <article class="stat-card">
-                            <span class="stat-label">绔犺妭鏁?/span>
+                            <span class="stat-label">章节数</span>
                             <strong class="stat-value" id="statChapters">0</strong>
                         </article>
                         <article class="stat-card">
-                            <span class="stat-label">浜虹墿鏁?/span>
+                            <span class="stat-label">人物数</span>
                             <strong class="stat-value" id="statCharacters">0</strong>
                         </article>
                     </div>
@@ -117,22 +117,22 @@
                         <section class="panel">
                             <div class="panel-head">
                                 <div>
-                                    <p class="section-kicker">椤圭洰鎽樿</p>
-                                    <h3>褰撳墠璁惧畾</h3>
+                                    <p class="section-kicker">项目摘要</p>
+                                    <h3>当前设定</h3>
                                 </div>
                             </div>
                             <dl class="summary-list">
                                 <div>
-                                    <dt>棰樻潗</dt>
-                                    <dd id="summaryGenre">鏈缃?/dd>
+                                    <dt>题材</dt>
+                                    <dd id="summaryGenre">未设置</dd>
                                 </div>
                                 <div>
-                                    <dt>鏍稿績涓婚</dt>
-                                    <dd id="summaryTheme">鏈缃?/dd>
+                                    <dt>核心主题</dt>
+                                    <dd id="summaryTheme">未设置</dd>
                                 </div>
                                 <div>
-                                    <dt>鏁呬簨姒傚康</dt>
-                                    <dd id="summaryConcept">杩樻病鏈夊～鍐欐晠浜嬫蹇点€?/dd>
+                                    <dt>故事概念</dt>
+                                    <dd id="summaryConcept">还没有填写故事概念。</dd>
                                 </div>
                             </dl>
                         </section>
@@ -140,8 +140,8 @@
                         <section class="panel">
                             <div class="panel-head">
                                 <div>
-                                    <p class="section-kicker">鏈€杩戠姸鎬?/p>
-                                    <h3>褰撳墠杩涘害</h3>
+                                    <p class="section-kicker">最近状态</p>
+                                    <h3>当前进度</h3>
                                 </div>
                             </div>
                             <div class="milestone-list" id="dashboardMilestones"></div>
@@ -153,51 +153,51 @@
                     <div class="panel">
                         <div class="panel-head">
                             <div>
-                                <p class="section-kicker">绗竴姝?/p>
-                                <h2>鍩虹璁惧畾涓庣粏绾茬敓鎴?/h2>
+                                <p class="section-kicker">第一步</p>
+                                <h2>基础设定与细纲生成</h2>
                             </div>
                         </div>
 
                         <div class="form-grid two-column">
                             <label class="field">
-                                <span>灏忚鏍囬</span>
-                                <input class="input" id="projectTitle" type="text" placeholder="渚嬪锛氭垜鍦ㄤ慨鐪熺晫寮€渚垮埄搴?>
+                                <span>小说标题</span>
+                                <input class="input" id="projectTitle" type="text" placeholder="例如：我在修真界开便利店">
                             </label>
 
                             <label class="field">
-                                <span>鏍稿績涓婚</span>
-                                <input class="input" id="projectTheme" type="text" placeholder="渚嬪锛氭櫘閫氫汉濡備綍鎾姩涓栫晫瑙勫垯">
+                                <span>核心主题</span>
+                                <input class="input" id="projectTheme" type="text" placeholder="例如：普通人如何撬动世界规则">
                             </label>
 
                             <label class="field">
-                                <span>涓荤被鐩?/span>
+                                <span>主类目</span>
                                 <select class="input" id="projectGenre"></select>
                             </label>
 
                             <label class="field">
-                                <span>瀛愰鏉?/span>
+                                <span>子题材</span>
                                 <select class="input" id="projectSubgenre"></select>
                             </label>
 
                             <div class="field field-actions">
-                                <span>鏅鸿兘璇嗗埆</span>
-                                <button class="btn btn-secondary" id="btnAutoDetectGenre" type="button">鏅鸿兘璇嗗埆棰樻潗</button>
+                                <span>智能识别</span>
+                                <button class="btn btn-secondary" id="btnAutoDetectGenre" type="button">智能识别题材</button>
                             </div>
 
                             <div class="field field-full">
                                 <div class="genre-guide-card">
                                     <div class="genre-guide-head">
-                                        <strong id="genreGuideTitle">棰樻潗绾︽潫璇存槑</strong>
-                                        <span id="genreGuideSubgenres" class="genre-guide-meta">璇烽€夋嫨涓荤被鐩?/span>
+                                        <strong id="genreGuideTitle">题材约束说明</strong>
+                                        <span id="genreGuideSubgenres" class="genre-guide-meta">请选择主类目</span>
                                     </div>
-                                    <p id="genreGuideDescription" class="genre-guide-description">杩欓噷浼氭樉绀哄綋鍓嶉鏉愮殑棰樻潗璇存槑銆佸厑璁稿厓绱犲拰绂佹鍏冪礌銆傝鍒嗙被绯荤粺鍙弬涓庝笘鐣岃銆佸嵎绾层€佺粏绾茬敓鎴愶紝涓嶅弬涓庡悗缁ぇ绾蹭笌姝ｆ枃鐢熸垚銆?/p>
+                                    <p id="genreGuideDescription" class="genre-guide-description">这里会显示当前题材的题材说明、允许元素和禁止元素。该分类系统只参与世界观、卷纲、细纲生成，不参与后续大纲与正文生成。</p>
                                     <div class="genre-guide-grid">
                                         <div class="genre-guide-block">
-                                            <span class="genre-guide-label">鍏佽鍏冪礌</span>
+                                            <span class="genre-guide-label">允许元素</span>
                                             <div id="genreGuideAllowed" class="tag-list"></div>
                                         </div>
                                         <div class="genre-guide-block">
-                                            <span class="genre-guide-label">绂佹鍏冪礌</span>
+                                            <span class="genre-guide-label">禁止元素</span>
                                             <div id="genreGuideForbidden" class="tag-list"></div>
                                         </div>
                                     </div>
@@ -205,18 +205,18 @@
                             </div>
 
                             <label class="field">
-                                <span>璁″垝鍗锋暟</span>
+                                <span>计划卷数</span>
                                 <input class="input" id="projectVolumeCount" type="number" min="1" value="5">
                             </label>
 
                             <label class="field">
-                                <span>姣忓嵎璁″垝绔犺妭鏁?/span>
+                                <span>每卷计划章节数</span>
                                 <input class="input" id="projectChaptersPerVolume" type="number" min="1" value="20">
                             </label>
 
                             <label class="field field-full">
-                                <span>鏁呬簨姒傚康</span>
-                                <textarea class="input textarea" id="projectConcept" rows="6" placeholder="鐢ㄤ竴涓ゆ璇濊娓呬富瑙掋€佽瀹氥€佸啿绐佸拰鐖界偣銆?></textarea>
+                                <span>故事概念</span>
+                                <textarea class="input textarea" id="projectConcept" rows="6" placeholder="用一两段话说清主角、设定、冲突和爽点。"></textarea>
                             </label>
                         </div>
                     </div>
@@ -224,24 +224,24 @@
                     <div class="panel">
                         <div class="panel-head">
                             <div>
-                                <p class="section-kicker">绗簩姝?/p>
-                                <h3>AI 鐢熸垚杈呭姪</h3>
+                                <p class="section-kicker">第二步</p>
+                                <h3>AI 生成辅助</h3>
                             </div>
                             <div class="panel-actions">
-                                <button class="btn btn-primary" id="btnGenerateWorldbuilding" type="button">鐢熸垚涓栫晫瑙?/button>
-                                <button class="btn btn-primary" id="btnGenerateVolumes" type="button">鐢熸垚鍗风翰</button>
+                                <button class="btn btn-primary" id="btnGenerateWorldbuilding" type="button">生成世界观</button>
+                                <button class="btn btn-primary" id="btnGenerateVolumes" type="button">生成卷纲</button>
                             </div>
                         </div>
 
                         <div class="form-grid">
                             <label class="field field-full">
-                                <span>涓栫晫瑙傝瀹?/span>
-                                <textarea class="input textarea" id="worldbuildingText" rows="8" placeholder="杩欓噷浼氫繚瀛?AI 鐢熸垚鎴栦綘鎵嬪姩鏁寸悊鐨勪笘鐣岃銆?></textarea>
+                                <span>世界观设定</span>
+                                <textarea class="input textarea" id="worldbuildingText" rows="8" placeholder="这里会保存 AI 生成或你手动整理的世界观。"></textarea>
                             </label>
 
                             <label class="field field-full">
-                                <span>鍗风翰姹囨€?/span>
-                                <textarea class="input textarea" id="volumeSynopsisText" rows="10" placeholder="鐢熸垚鍗风翰鍚庝細鑷姩鍐欏叆杩欓噷锛屾柟渚挎暣浣撴煡鐪嬨€?></textarea>
+                                <span>卷纲汇总</span>
+                                <textarea class="input textarea" id="volumeSynopsisText" rows="10" placeholder="生成卷纲后会自动写入这里，方便整体查看。"></textarea>
                             </label>
                         </div>
                     </div>
@@ -249,38 +249,38 @@
                     <div class="panel">
                         <div class="panel-head">
                             <div>
-                                <p class="section-kicker">绗笁姝?/p>
-                                <h3>绔犺妭缁嗙翰</h3>
+                                <p class="section-kicker">第三步</p>
+                                <h3>章节细纲</h3>
                             </div>
                             <div class="panel-actions">
-                                <button class="btn btn-primary" id="btnGenerateChapterSynopsis" type="button">鐢熸垚褰撳墠鍗风粏绾?/button>
-                                <button class="btn btn-ghost" id="btnGenerateAllSynopsis" type="button">鎵归噺鐢熸垚鎵€鏈夊嵎缁嗙翰</button>
+                                <button class="btn btn-primary" id="btnGenerateChapterSynopsis" type="button">生成当前卷细纲</button>
+                                <button class="btn btn-ghost" id="btnGenerateAllSynopsis" type="button">批量生成所有卷细纲</button>
                             </div>
                         </div>
 
                         <div class="form-grid narrow-grid">
                             <label class="field">
-                                <span>褰撳墠鍗?/span>
+                                <span>当前卷</span>
                                 <select class="input" id="synopsisCurrentVolume"></select>
                             </label>
                             <div class="field field-actions">
-                                <span>瀵煎叆</span>
-                                <button class="btn btn-secondary" id="btnImportSynopsisToOutline" type="button">鎶婄粏绾插鍏ュ嵎绾茬鐞?/button>
+                                <span>导入</span>
+                                <button class="btn btn-secondary" id="btnImportSynopsisToOutline" type="button">把细纲导入卷纲管理</button>
                             </div>
                         </div>
 
                         <label class="field">
-                            <span>绔犺妭缁嗙翰杈撳嚭</span>
-                            <textarea class="input textarea" id="synopsisOutput" rows="16" placeholder="绔犺妭缁嗙翰浼氭寜鍗峰啓鍏ヨ繖閲岋紝鍚屾椂鍚屾淇濆瓨鍒板搴斿嵎銆?></textarea>
+                            <span>章节细纲输出</span>
+                            <textarea class="input textarea" id="synopsisOutput" rows="16" placeholder="章节细纲会按卷写入这里，同时同步保存到对应卷。"></textarea>
                         </label>
 
                         <div class="panel-actions align-end">
-                            <button class="btn btn-ghost" id="btnCopySynopsis" type="button">澶嶅埗缁嗙翰</button>
+                            <button class="btn btn-ghost" id="btnCopySynopsis" type="button">复制细纲</button>
                         </div>
                     </div>
                 </section>
 
-                                <section class="tab-panel" id="tab-outline">
+                <section class="tab-panel" id="tab-outline">
                     <div class="panel">
                         <div class="panel-head">
                             <div>
@@ -336,6 +336,88 @@
                         </div>
 
                         <div class="volume-stack" id="outlineVolumeList"></div>
+                    </div>
+                </section>
+
+                <section class="tab-panel" id="tab-characters">
+                    <div class="panel">
+                        <div class="panel-head">
+                            <div>
+                                <p class="section-kicker">人物库</p>
+                                <h2>人物卡与关系整理</h2>
+                            </div>
+                            <div class="panel-actions">
+                                <button class="btn btn-ghost" id="btnGenerateCharacters" type="button">按章纲批量生成人设</button>
+                            </div>
+                        </div>
+
+                        <div class="form-grid two-column">
+                            <label class="field">
+                                <span>姓名</span>
+                                <input class="input" id="characterName" type="text" placeholder="角色姓名">
+                            </label>
+
+                            <label class="field">
+                                <span>身份定位</span>
+                                <input class="input" id="characterIdentity" type="text" placeholder="例如：便利店老板 / 魔界使者">
+                            </label>
+
+                            <label class="field">
+                                <span>年龄</span>
+                                <input class="input" id="characterAge" type="text" placeholder="例如：24">
+                            </label>
+
+                            <label class="field">
+                                <span>性别</span>
+                                <input class="input" id="characterGender" type="text" placeholder="例如：女">
+                            </label>
+
+                            <label class="field">
+                                <span>能力特长</span>
+                                <input class="input" id="characterAbilities" type="text" placeholder="技能、外挂或专业能力">
+                            </label>
+
+                            <label class="field">
+                                <span>目标动机</span>
+                                <input class="input" id="characterGoals" type="text" placeholder="这个角色最想得到什么">
+                            </label>
+
+                            <label class="field field-full">
+                                <span>性格特点</span>
+                                <textarea class="input textarea" id="characterPersonality" rows="4" placeholder="尽量写出鲜明矛盾点。"></textarea>
+                            </label>
+
+                            <label class="field field-full">
+                                <span>背景故事</span>
+                                <textarea class="input textarea" id="characterBackground" rows="5" placeholder="过去经历、伤口、秘密和立场。"></textarea>
+                            </label>
+
+                            <label class="field">
+                                <span>外貌描述</span>
+                                <textarea class="input textarea" id="characterAppearance" rows="4" placeholder="有辨识度的外形、穿着、气质。"></textarea>
+                            </label>
+
+                            <label class="field">
+                                <span>人物关系</span>
+                                <textarea class="input textarea" id="characterRelationships" rows="4" placeholder="和主角、配角、敌对势力的关系。"></textarea>
+                            </label>
+                        </div>
+
+                        <div class="panel-actions align-end">
+                            <button class="btn btn-ghost" id="btnResetCharacterForm" type="button">清空表单</button>
+                            <button class="btn btn-primary" id="btnSaveCharacter" type="button">保存人物</button>
+                        </div>
+                    </div>
+
+                    <div class="panel">
+                        <div class="panel-head">
+                            <div>
+                                <p class="section-kicker">人物列表</p>
+                                <h3>已创建人物</h3>
+                            </div>
+                        </div>
+
+                        <div class="character-grid" id="characterList"></div>
                     </div>
                 </section>
 
@@ -430,106 +512,24 @@
                     </div>
                 </section>
 
-                <section class="tab-panel" id="tab-characters">
-                    <div class="panel">
-                        <div class="panel-head">
-                            <div>
-                                <p class="section-kicker">浜虹墿搴?/p>
-                                <h2>浜虹墿鍗′笌鍏崇郴鏁寸悊</h2>
-                            </div>
-                            <div class="panel-actions">
-                                <button class="btn btn-ghost" id="btnGenerateCharacters" type="button">鎸夌珷绾叉壒閲忕敓鎴愪汉璁?/button>
-                            </div>
-                        </div>
-
-                        <div class="form-grid two-column">
-                            <label class="field">
-                                <span>濮撳悕</span>
-                                <input class="input" id="characterName" type="text" placeholder="瑙掕壊濮撳悕">
-                            </label>
-
-                            <label class="field">
-                                <span>韬唤瀹氫綅</span>
-                                <input class="input" id="characterIdentity" type="text" placeholder="渚嬪锛氫究鍒╁簵鑰佹澘 / 榄旂晫浣胯€?>
-                            </label>
-
-                            <label class="field">
-                                <span>骞撮緞</span>
-                                <input class="input" id="characterAge" type="text" placeholder="渚嬪锛?4">
-                            </label>
-
-                            <label class="field">
-                                <span>鎬у埆</span>
-                                <input class="input" id="characterGender" type="text" placeholder="渚嬪锛氬コ">
-                            </label>
-
-                            <label class="field">
-                                <span>鑳藉姏鐗归暱</span>
-                                <input class="input" id="characterAbilities" type="text" placeholder="鎶€鑳姐€佸鎸傛垨涓撲笟鑳藉姏">
-                            </label>
-
-                            <label class="field">
-                                <span>鐩爣鍔ㄦ満</span>
-                                <input class="input" id="characterGoals" type="text" placeholder="杩欎釜瑙掕壊鏈€鎯冲緱鍒颁粈涔?>
-                            </label>
-
-                            <label class="field field-full">
-                                <span>鎬ф牸鐗圭偣</span>
-                                <textarea class="input textarea" id="characterPersonality" rows="4" placeholder="灏介噺鍐欏嚭椴滄槑鐭涚浘鐐广€?></textarea>
-                            </label>
-
-                            <label class="field field-full">
-                                <span>鑳屾櫙鏁呬簨</span>
-                                <textarea class="input textarea" id="characterBackground" rows="5" placeholder="杩囧幓缁忓巻銆佷激鍙ｃ€佺瀵嗗拰绔嬪満銆?></textarea>
-                            </label>
-
-                            <label class="field">
-                                <span>澶栬矊鎻忚堪</span>
-                                <textarea class="input textarea" id="characterAppearance" rows="4" placeholder="鏈夎鲸璇嗗害鐨勫褰€佺┛鐫€銆佹皵璐ㄣ€?></textarea>
-                            </label>
-
-                            <label class="field">
-                                <span>浜虹墿鍏崇郴</span>
-                                <textarea class="input textarea" id="characterRelationships" rows="4" placeholder="鍜屼富瑙掋€侀厤瑙掋€佹晫瀵瑰娍鍔涚殑鍏崇郴銆?></textarea>
-                            </label>
-                        </div>
-
-                        <div class="panel-actions align-end">
-                            <button class="btn btn-ghost" id="btnResetCharacterForm" type="button">娓呯┖琛ㄥ崟</button>
-                            <button class="btn btn-primary" id="btnSaveCharacter" type="button">淇濆瓨浜虹墿</button>
-                        </div>
-                    </div>
-
-                    <div class="panel">
-                        <div class="panel-head">
-                            <div>
-                                <p class="section-kicker">浜虹墿鍒楄〃</p>
-                                <h3>宸插垱寤轰汉鐗?/h3>
-                            </div>
-                        </div>
-
-                        <div class="character-grid" id="characterList"></div>
-                    </div>
-                </section>
-
                 <section class="tab-panel" id="tab-advanced">
                     <div class="panel">
                         <div class="panel-head">
                             <div>
-                                <p class="section-kicker">楂樼骇璁惧畾</p>
-                                <h2>璇︾粏澶х翰涓庡叏灞€绾︽潫</h2>
+                                <p class="section-kicker">高级设定</p>
+                                <h2>详细大纲与全局约束</h2>
                             </div>
                         </div>
 
                         <div class="form-grid">
                             <label class="field field-full">
-                                <span>璇︾粏澶х翰</span>
-                                <textarea class="input textarea" id="detailedOutlineInput" rows="10" placeholder="杩欓噷瀵归綈妗岄潰鐗堢殑 detailed_outline锛岀敤鏉ュ绾冲畬鏁村墽鎯呰瀹氥€佸嵎缁撴瀯璇存槑鍜岃竟鐣岃鍒欍€?></textarea>
+                                <span>详细大纲</span>
+                                <textarea class="input textarea" id="detailedOutlineInput" rows="10" placeholder="这里对齐桌面版的 detailed_outline，用来容纳完整剧情设定、卷结构说明和边界规则。"></textarea>
                             </label>
 
                             <label class="field field-full">
-                                <span>鍏ㄥ眬璁惧畾鎻愰啋</span>
-                                <textarea class="input textarea" id="globalSettingNoteInput" rows="8" placeholder="渚嬪锛氶潪绌胯秺銆佺姝㈣鑹叉敼鍚嶃€佹煇绉樺瘑蹇呴』鍒扮 30 绔犲悗鎵嶈兘鎻湶绛夈€?></textarea>
+                                <span>全局设定提醒</span>
+                                <textarea class="input textarea" id="globalSettingNoteInput" rows="8" placeholder="例如：非穿越、禁止角色改名、某秘密必须到第 30 章后才能揭露等。"></textarea>
                             </label>
                         </div>
                     </div>
@@ -537,52 +537,52 @@
                     <div class="panel">
                         <div class="panel-head">
                             <div>
-                                <p class="section-kicker">鎻愮ず璇嶇鐞?/p>
-                                <h3>绔犺妭鐢熸垚 Prompt</h3>
+                                <p class="section-kicker">提示词管理</p>
+                                <h3>章节生成 Prompt</h3>
                             </div>
                             <div class="panel-actions">
-                                <button class="btn btn-ghost" id="btnLoadDefaultPrompt" type="button">杞藉叆榛樿妯℃澘</button>
-                                <button class="btn btn-secondary" id="btnCopyPrompt" type="button">澶嶅埗 Prompt</button>
+                                <button class="btn btn-ghost" id="btnLoadDefaultPrompt" type="button">载入默认模板</button>
+                                <button class="btn btn-secondary" id="btnCopyPrompt" type="button">复制 Prompt</button>
                             </div>
                         </div>
 
                         <div class="form-grid three-column">
                             <label class="field">
-                                <span>棰戦亾鍊惧悜</span>
+                                <span>频道倾向</span>
                                 <select class="input" id="promptFrequencySelect">
-                                    <option value="male">鐢烽</option>
-                                    <option value="female">濂抽</option>
+                                    <option value="male">男频</option>
+                                    <option value="female">女频</option>
                                 </select>
                             </label>
 
                             <label class="field">
-                                <span>宸蹭繚瀛樻ā鏉?/span>
+                                <span>已保存模板</span>
                                 <select class="input" id="savedPromptSelect"></select>
                             </label>
 
                             <label class="field">
-                                <span>淇濆瓨鍚嶇О</span>
-                                <input class="input" id="promptNameInput" type="text" placeholder="渚嬪锛氶€氱敤姝ｆ枃妯℃澘">
+                                <span>保存名称</span>
+                                <input class="input" id="promptNameInput" type="text" placeholder="例如：通用正文模板">
                             </label>
                         </div>
 
                         <div class="panel-actions">
-                            <button class="btn btn-primary" id="btnSavePromptTemplate" type="button">淇濆瓨妯℃澘</button>
-                            <button class="btn btn-ghost" id="btnApplyPromptTemplate" type="button">杞藉叆妯℃澘</button>
-                            <button class="btn btn-danger" id="btnDeletePromptTemplate" type="button">鍒犻櫎妯℃澘</button>
+                            <button class="btn btn-primary" id="btnSavePromptTemplate" type="button">保存模板</button>
+                            <button class="btn btn-ghost" id="btnApplyPromptTemplate" type="button">载入模板</button>
+                            <button class="btn btn-danger" id="btnDeletePromptTemplate" type="button">删除模板</button>
                         </div>
 
                         <label class="field">
-                            <span>褰撳墠 Prompt 妯℃澘</span>
-                            <textarea class="input textarea code-textarea" id="currentPromptTemplateInput" rows="18" placeholder="鏀寔鍗犱綅绗︼細{{title}} {{genre}} {{theme}} {{outline}} {{prev_content}} {{next_outline}} {{worldbuilding}} {{global_setting_note}} {{chapter_setting_note}} {{relevant_characters}}"></textarea>
+                            <span>当前 Prompt 模板</span>
+                            <textarea class="input textarea code-textarea" id="currentPromptTemplateInput" rows="18" placeholder="支持占位符：{{title}} {{genre}} {{theme}} {{outline}} {{prev_content}} {{next_outline}} {{worldbuilding}} {{global_setting_note}} {{chapter_setting_note}} {{relevant_characters}}"></textarea>
                         </label>
                     </div>
 
                     <div class="panel">
                         <div class="panel-head">
                             <div>
-                                <p class="section-kicker">鍒嗘瀽闈㈡澘</p>
-                                <h3>杩借釜鍣ㄨ仈鍔ㄦ瑙?/h3>
+                                <p class="section-kicker">分析面板</p>
+                                <h3>追踪器联动概览</h3>
                             </div>
                         </div>
 
@@ -590,19 +590,19 @@
 
                         <div class="insight-columns">
                             <section class="insight-card">
-                                <h4>鏈€杩戠珷鏈揩鐓?/h4>
+                                <h4>最近章末快照</h4>
                                 <div class="insight-list" id="trackerSnapshotList"></div>
                             </section>
                             <section class="insight-card">
-                                <h4>寰呭洖鏀朵紡绗?/h4>
+                                <h4>待回收伏笔</h4>
                                 <div class="insight-list" id="trackerForeshadowList"></div>
                             </section>
                             <section class="insight-card">
-                                <h4>浜虹墿涓€鑷存€у姩鎬?/h4>
+                                <h4>人物一致性动态</h4>
                                 <div class="insight-list" id="trackerConsistencyList"></div>
                             </section>
                             <section class="insight-card">
-                                <h4>涓栫晫涓庨緳濂楄褰?/h4>
+                                <h4>世界与龙套记录</h4>
                                 <div class="insight-list" id="trackerWorldEventList"></div>
                             </section>
                         </div>
@@ -611,12 +611,12 @@
                     <div class="panel">
                         <div class="panel-head">
                             <div>
-                                <p class="section-kicker">绯荤粺鏁版嵁</p>
-                                <h3>妗岄潰鐗堣拷韪櫒 JSON 闈㈡澘</h3>
+                                <p class="section-kicker">系统数据</p>
+                                <h3>桌面版追踪器 JSON 面板</h3>
                             </div>
                             <div class="panel-actions">
-                                <button class="btn btn-ghost" id="btnRefreshSystemEditors" type="button">鍒锋柊闈㈡澘</button>
-                                <button class="btn btn-primary" id="btnSaveSystemEditors" type="button">淇濆瓨绯荤粺 JSON</button>
+                                <button class="btn btn-ghost" id="btnRefreshSystemEditors" type="button">刷新面板</button>
+                                <button class="btn btn-primary" id="btnSaveSystemEditors" type="button">保存系统 JSON</button>
                             </div>
                         </div>
 
@@ -712,65 +712,65 @@
         <div class="modal-card">
             <div class="modal-head">
                 <div>
-                    <p class="section-kicker">鏈湴閰嶇疆</p>
-                    <h2>API 璁剧疆</h2>
+                    <p class="section-kicker">本地配置</p>
+                    <h2>API 设置</h2>
                 </div>
-                <button class="icon-btn" id="btnCloseSettings" type="button" aria-label="鍏抽棴璁剧疆">鉁?/button>
+                <button class="icon-btn" id="btnCloseSettings" type="button" aria-label="关闭设置">✕</button>
             </div>
 
             <div class="modal-body">
                 <div class="form-grid">
                     <label class="field">
-                        <span>鎻愪緵鍟?/span>
+                        <span>提供商</span>
                         <select class="input" id="settingProvider">
-                            <option value="doubao">璞嗗寘 / 鐏北寮曟搸</option>
+                            <option value="doubao">豆包 / 火山引擎</option>
                             <option value="openai">OpenAI</option>
-                            <option value="custom">鑷畾涔夊吋瀹规帴鍙?/option>
+                            <option value="custom">自定义兼容接口</option>
                         </select>
                     </label>
 
                     <label class="field">
-                        <span>妯″瀷鍚?/span>
-                        <input class="input" id="settingModel" type="text" placeholder="渚嬪锛歞oubao-pro-32k / gpt-4o-mini">
+                        <span>模型名</span>
+                        <input class="input" id="settingModel" type="text" placeholder="例如：doubao-pro-32k / gpt-4o-mini">
                     </label>
 
                     <label class="field field-full">
                         <span>API Base URL</span>
-                        <input class="input" id="settingApiBase" type="text" placeholder="渚嬪锛歨ttps://api.openai.com/v1">
+                        <input class="input" id="settingApiBase" type="text" placeholder="例如：https://api.openai.com/v1">
                     </label>
 
                     <label class="field field-full">
                         <span>API Key</span>
-                        <input class="input" id="settingApiKey" type="password" placeholder="浠呬繚瀛樺湪褰撳墠娴忚鍣ㄦ湰鍦?>
+                        <input class="input" id="settingApiKey" type="password" placeholder="仅保存在当前浏览器本地">
                     </label>
 
                     <label class="field">
-                        <span>娓╁害</span>
+                        <span>温度</span>
                         <input class="input" id="settingTemperature" type="number" step="0.1" min="0" max="2" value="0.7">
                     </label>
 
                     <label class="field">
-                        <span>鏈€澶?tokens</span>
+                        <span>最大 tokens</span>
                         <input class="input" id="settingMaxTokens" type="number" min="256" step="256" value="4000">
                     </label>
 
                     <label class="field">
-                        <span>瓒呮椂绉掓暟</span>
+                        <span>超时秒数</span>
                         <input class="input" id="settingTimeoutSeconds" type="number" min="30" step="30" value="600">
                     </label>
 
                     <label class="field">
-                        <span>澶辫触閲嶈瘯娆℃暟</span>
+                        <span>失败重试次数</span>
                         <input class="input" id="settingRetryCount" type="number" min="1" max="8" step="1" value="3">
                     </label>
                 </div>
 
-                <p class="modal-hint">鎻愮ず锛氳繖涓?Web 鐗堜粛鐒舵槸绾墠绔柟妗堬紝API Key 鍙繚瀛樺湪娴忚鍣ㄦ湰鍦帮紝涓嶄細涓婁紶鍒板埆鐨勬湇鍔″櫒銆?/p>
+                <p class="modal-hint">提示：这个 Web 版仍然是纯前端方案，API Key 只保存在浏览器本地，不会上传到别的服务器。</p>
             </div>
 
             <div class="modal-actions">
-                <button class="btn btn-secondary" id="btnCancelSettings" type="button">鍙栨秷</button>
-                <button class="btn btn-primary" id="btnSaveSettings" type="button">淇濆瓨璁剧疆</button>
+                <button class="btn btn-secondary" id="btnCancelSettings" type="button">取消</button>
+                <button class="btn btn-primary" id="btnSaveSettings" type="button">保存设置</button>
             </div>
         </div>
     </div>
@@ -778,18 +778,18 @@
     <div class="loading-overlay" id="loadingOverlay" aria-hidden="true">
         <div class="loading-card">
             <div class="spinner"></div>
-            <p id="loadingText">AI 姝ｅ湪澶勭悊涓?..</p>
+            <p id="loadingText">AI 正在处理中...</p>
         </div>
     </div>
 
     <section class="log-drawer hidden" id="logDrawer">
         <div class="log-head">
             <div>
-                <p class="section-kicker">杩愯鏃ュ織</p>
-                <h3>鏈湴璋冭瘯闈㈡澘</h3>
+                <p class="section-kicker">运行日志</p>
+                <h3>本地调试面板</h3>
             </div>
-            <button class="btn btn-ghost btn-small" id="btnHideLog" type="button">闅愯棌</button>
-            <button class="btn btn-ghost btn-small" id="btnToggleLog" type="button">鏀惰捣</button>
+            <button class="btn btn-ghost btn-small" id="btnHideLog" type="button">隐藏</button>
+            <button class="btn btn-ghost btn-small" id="btnToggleLog" type="button">收起</button>
         </div>
         <div class="log-body" id="logContent"></div>
     </section>
