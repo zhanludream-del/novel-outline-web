@@ -235,7 +235,21 @@ class NovelGenerator {
             maxTokens: this.getConfiguredMaxTokens(8000)
         });
 
-        return this.parseChapterSynopsisLines(raw, chapterCount);
+        const parsed = this.parseChapterSynopsisLines(raw, chapterCount);
+        return await this.ensureChapterSynopsisCount({
+            project,
+            title,
+            concept,
+            genre,
+            subgenre,
+            worldbuilding,
+            volumeNumber,
+            chapterCount,
+            volumeSummary,
+            existingSynopsis,
+            systemPrompt,
+            parsedSynopsis: parsed
+        });
     }
 
     parseChapterSynopsisLines(rawText, chapterCount = 0) {
@@ -287,6 +301,8 @@ class NovelGenerator {
         }
 
         const targetCount = Math.max(0, Number(chapterCount || 0));
+        const normalizedSynopsisItems = parsed.map((item, index) => this.buildNormalizedSynopsisItem(item, Number(item.chapter_number || index + 1)));
+        return this.normalizeChapterSynopsisSequence(normalizedSynopsisItems, targetCount);
         return (targetCount ? parsed.slice(0, targetCount) : parsed).map((item, index) => ({
             ...item,
             chapter_number: Number(item.chapter_number || index + 1),
@@ -295,6 +311,150 @@ class NovelGenerator {
             key_event: item.key_event || item.synopsis || "",
             line: item.line || `第${Number(item.chapter_number || index + 1)}章：${item.title || `第${Number(item.chapter_number || index + 1)}章`} - ${item.synopsis || item.key_event || ""}`
         }));
+    }
+
+    buildNormalizedSynopsisItem(item, chapterNumber) {
+        const normalizedChapterNumber = Number(chapterNumber || item?.chapter_number || 1);
+        const title = String(item?.title || `第${normalizedChapterNumber}章`).trim() || `第${normalizedChapterNumber}章`;
+        const synopsis = String(item?.synopsis || item?.key_event || "").trim();
+        return {
+            ...item,
+            chapter_number: normalizedChapterNumber,
+            title,
+            synopsis,
+            key_event: synopsis,
+            line: `第${normalizedChapterNumber}章：${title} - ${synopsis}`
+        };
+    }
+
+    normalizeChapterSynopsisSequence(items, chapterCount = 0) {
+        const targetCount = Math.max(0, Number(chapterCount || 0));
+        if (!targetCount) {
+            return (items || []).map((item, index) => this.buildNormalizedSynopsisItem(item, Number(item.chapter_number || index + 1)));
+        }
+
+        const normalizedItems = (items || []).map((item, index) =>
+            this.buildNormalizedSynopsisItem(item, Number(item.chapter_number || index + 1))
+        );
+        const assigned = new Map();
+        const leftovers = [];
+
+        normalizedItems.forEach((item) => {
+            const chapterNumber = Number(item.chapter_number || 0);
+            if (chapterNumber >= 1 && chapterNumber <= targetCount && !assigned.has(chapterNumber)) {
+                assigned.set(chapterNumber, item);
+            } else {
+                leftovers.push(item);
+            }
+        });
+
+        for (let chapterNumber = 1; chapterNumber <= targetCount && leftovers.length; chapterNumber += 1) {
+            if (!assigned.has(chapterNumber)) {
+                assigned.set(chapterNumber, this.buildNormalizedSynopsisItem(leftovers.shift(), chapterNumber));
+            }
+        }
+
+        const result = [];
+        for (let chapterNumber = 1; chapterNumber <= targetCount; chapterNumber += 1) {
+            if (assigned.has(chapterNumber)) {
+                result.push(this.buildNormalizedSynopsisItem(assigned.get(chapterNumber), chapterNumber));
+            }
+        }
+        return result;
+    }
+
+    getMissingChapterNumbers(items, chapterCount = 0) {
+        const targetCount = Math.max(0, Number(chapterCount || 0));
+        const existing = new Set((items || []).map((item) => Number(item.chapter_number || 0)).filter(Boolean));
+        const missing = [];
+        for (let chapterNumber = 1; chapterNumber <= targetCount; chapterNumber += 1) {
+            if (!existing.has(chapterNumber)) {
+                missing.push(chapterNumber);
+            }
+        }
+        return missing;
+    }
+
+    async ensureChapterSynopsisCount({
+        project,
+        title,
+        concept,
+        genre,
+        subgenre,
+        worldbuilding,
+        volumeNumber,
+        chapterCount,
+        volumeSummary,
+        existingSynopsis,
+        systemPrompt,
+        parsedSynopsis
+    }) {
+        const targetCount = Math.max(0, Number(chapterCount || 0));
+        let synopsisItems = this.normalizeChapterSynopsisSequence(parsedSynopsis || [], targetCount);
+        if (!targetCount) {
+            return synopsisItems;
+        }
+
+        let missingNumbers = this.getMissingChapterNumbers(synopsisItems, targetCount);
+        if (!missingNumbers.length) {
+            return synopsisItems;
+        }
+
+        const volumeSynopsisContext = this.buildVolumeSynopsisContext(project, volumeNumber);
+        const previousChapterSynopsisContext = this.buildPreviousChapterSynopsisContext(project, volumeNumber);
+        const previousVolumeEnding = this.buildPreviousVolumeEnding(project, volumeNumber);
+        const storyStateSummary = this.buildStoryStateSummary(project, volumeNumber, 1);
+
+        for (let round = 0; round < 2 && missingNumbers.length; round += 1) {
+            const knownLines = synopsisItems
+                .sort((a, b) => Number(a.chapter_number || 0) - Number(b.chapter_number || 0))
+                .map((item) => item.line)
+                .join("\n");
+
+            const repairPrompt = [
+                `小说标题：《${title || "未命名小说"}》`,
+                `题材：${subgenre || genre || "未指定"}`,
+                `故事概念：${concept || "暂无"}`,
+                `世界观：${worldbuilding || "暂无"}`,
+                volumeSynopsisContext ? `【卷纲前置】\n${volumeSynopsisContext}` : "",
+                previousChapterSynopsisContext ? `【前置细纲衔接】\n${previousChapterSynopsisContext}` : "",
+                previousVolumeEnding ? `【上一卷结尾】\n${previousVolumeEnding}` : "",
+                storyStateSummary ? `【前文状态摘要】\n${storyStateSummary}` : "",
+                `当前卷：第${volumeNumber}卷`,
+                `计划章节数：${targetCount}`,
+                `当前卷卷纲：${volumeSummary || "暂无"}`,
+                existingSynopsis ? `已有细纲参考：${existingSynopsis}` : "",
+                "",
+                "【已经成功生成的章节细纲】",
+                knownLines || "暂无",
+                "",
+                "【只允许补齐以下缺失章节】",
+                missingNumbers.map((num) => `第${num}章`).join("、"),
+                "",
+                "请只输出缺失章节，一章一行，严格使用格式：",
+                "第X章：章节标题 - 核心内容（20-50字）",
+                "不要重复已经生成过的章节，不要输出额外说明。"
+            ].filter(Boolean).join("\n");
+
+            const repairedRaw = await this.api.callLLM(repairPrompt, systemPrompt, {
+                temperature: 0.55,
+                maxTokens: this.getConfiguredMaxTokens(6000)
+            });
+
+            const repairedParsed = this.parseChapterSynopsisLines(repairedRaw, missingNumbers.length);
+            const repairedAligned = missingNumbers
+                .map((chapterNumber, index) => this.buildNormalizedSynopsisItem(repairedParsed[index] || {}, chapterNumber))
+                .filter((item) => item.synopsis);
+
+            synopsisItems = this.normalizeChapterSynopsisSequence([...synopsisItems, ...repairedAligned], targetCount);
+            missingNumbers = this.getMissingChapterNumbers(synopsisItems, targetCount);
+        }
+
+        if (missingNumbers.length) {
+            throw new Error(`章节细纲数量不足：要求 ${targetCount} 章，缺少 ${missingNumbers.map((num) => `第${num}章`).join("、")}。`);
+        }
+
+        return synopsisItems;
     }
 
     async generateChapterOutlinesBatch({ project, volume, volumeNumber, startChapter, endChapter, existingChapters }) {
