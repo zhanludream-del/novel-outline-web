@@ -3909,7 +3909,7 @@ ${(detailedOutline || concept || "未填写").slice(0, 2200)}`;
         const summary = String(chapter.summary || "").trim();
         const volumeNumber = this.getVolumeNumberForChapter(chapter);
         const outlineCoverage = this.estimateOutlineCoverage(summary, content);
-        const keywordSummary = this.extractContentKeywords(content, 6);
+        const keywordSummary = this.extractNarrativeFocusKeywords(summary, content, chapterNumber, 6);
         const characters = this.collectChapterCharacters(chapterNumber, content);
         const sceneCount = Math.max(1, content.split(/\n{2,}/).filter((block) => block.trim()).length);
         const rhythm = this.novelData.chapter_rhythms?.[`第${chapterNumber}章`] || this.novelData.chapter_rhythms?.[`chapter_${chapterNumber}`] || "待判断";
@@ -4066,6 +4066,76 @@ ${(detailedOutline || concept || "未填写").slice(0, 2200)}`;
             unique.push(item);
         });
         return unique.slice(0, limit).join("、");
+    }
+
+    extractNarrativeFocusKeywords(summary, content, chapterNumber, limit = 6) {
+        const focus = [];
+        const seen = new Set();
+        const push = (value) => {
+            const clean = String(value || "").trim();
+            if (!clean || seen.has(clean)) {
+                return;
+            }
+            seen.add(clean);
+            focus.push(clean);
+        };
+
+        const outlineSignals = this.extractOutlineExecutionSignals(summary);
+        outlineSignals.forEach((signal) => {
+            signal.keywords.forEach((keyword) => {
+                if (content.includes(keyword)) {
+                    push(keyword);
+                }
+            });
+        });
+
+        this.collectChapterCharacters(chapterNumber, content).forEach(push);
+
+        const eventKeywords = this.extractEventKeywordsFromContent(content);
+        eventKeywords.forEach(push);
+
+        return focus.slice(0, limit).join("、");
+    }
+
+    extractEventKeywordsFromContent(content) {
+        const text = String(content || "");
+        if (!text) {
+            return [];
+        }
+
+        const sentences = text
+            .split(/[。！？；\n]/)
+            .map((item) => item.trim())
+            .filter((item) => item.length >= 6);
+
+        const eventHints = [
+            "推", "坠", "跌", "抓", "绑", "拖", "刺", "杀", "救", "逃", "追", "审", "判", "祭", "揭", "问", "答",
+            "命令", "宣读", "祭品", "深渊", "悬崖", "血脉", "秘密", "身份", "罗盘", "圣殿", "裁判所", "骑士", "审判官"
+        ];
+        const environmentNoise = new Set([
+            "空气", "荒野", "风声", "狂风", "黑暗", "光线", "地面", "碎石", "声音", "气味", "场景", "氛围",
+            "周围", "前方", "后方", "衣领", "裙摆", "石头", "砂砾", "尘土", "呼啸", "寂静", "呼吸"
+        ]);
+
+        const hits = [];
+        sentences.forEach((sentence) => {
+            const matchedHints = eventHints.filter((hint) => sentence.includes(hint));
+            if (!matchedHints.length) {
+                return;
+            }
+
+            const keywords = this.extractContentKeywords(sentence, 4)
+                .split("、")
+                .filter(Boolean)
+                .filter((item) => !environmentNoise.has(item));
+            keywords.forEach((keyword) => {
+                if (matchedHints.some((hint) => keyword.includes(hint) || sentence.includes(keyword))) {
+                    hits.push(keyword);
+                }
+            });
+        });
+
+        return Array.from(new Set(hits));
     }
 
     extractOutlineExecutionSignals(summary) {
