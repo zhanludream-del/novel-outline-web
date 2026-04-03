@@ -181,11 +181,85 @@ class Utils {
             try {
                 return JSON.parse(candidate);
             } catch (error) {
-                continue;
+                const normalized = this.normalizeJsonCandidate(candidate);
+                if (normalized && normalized !== candidate) {
+                    try {
+                        return JSON.parse(normalized);
+                    } catch (nestedError) {
+                        continue;
+                    }
+                }
             }
         }
 
         return null;
+    }
+
+    static normalizeJsonCandidate(text) {
+        const raw = String(text || "").trim();
+        if (!raw) {
+            return "";
+        }
+
+        let normalized = raw
+            .replace(/[“”]/g, "\"")
+            .replace(/[‘’]/g, "'")
+            .replace(/^\uFEFF/, "")
+            .replace(/,\s*([}\]])/g, "$1");
+
+        normalized = this.extractBalancedJson(normalized, "[", "]") || normalized;
+
+        return normalized.trim();
+    }
+
+    static extractBalancedJson(text, openChar = "[", closeChar = "]") {
+        const source = String(text || "");
+        const start = source.indexOf(openChar);
+        if (start < 0) {
+            return "";
+        }
+
+        let depth = 0;
+        let inString = false;
+        let quoteChar = "";
+        let escaped = false;
+
+        for (let index = start; index < source.length; index += 1) {
+            const char = source[index];
+
+            if (inString) {
+                if (escaped) {
+                    escaped = false;
+                    continue;
+                }
+                if (char === "\\") {
+                    escaped = true;
+                    continue;
+                }
+                if (char === quoteChar) {
+                    inString = false;
+                    quoteChar = "";
+                }
+                continue;
+            }
+
+            if (char === "\"" || char === "'") {
+                inString = true;
+                quoteChar = char;
+                continue;
+            }
+
+            if (char === openChar) {
+                depth += 1;
+            } else if (char === closeChar) {
+                depth -= 1;
+                if (depth === 0) {
+                    return source.slice(start, index + 1);
+                }
+            }
+        }
+
+        return "";
     }
 
     static newlineJoin(items) {

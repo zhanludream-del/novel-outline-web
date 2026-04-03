@@ -718,11 +718,42 @@ class NovelGenerator {
 
     async requestJSONArray(systemPrompt, userPrompt, options) {
         const raw = await this.api.callLLM(userPrompt, systemPrompt, options);
-        const parsed = Utils.parseJsonResponse(raw);
+        let parsed = Utils.parseJsonResponse(raw);
+        if (!Array.isArray(parsed)) {
+            const repaired = await this.repairJSONArrayResponse(raw, options);
+            parsed = Utils.parseJsonResponse(repaired);
+        }
         if (!Array.isArray(parsed)) {
             throw new Error("AI 返回内容无法解析为 JSON 数组，请重试一次。");
         }
         return parsed;
+    }
+
+    async repairJSONArrayResponse(rawText, options = {}) {
+        const raw = String(rawText || "").trim();
+        if (!raw) {
+            return raw;
+        }
+
+        const repairSystemPrompt = [
+            "你是一个 JSON 修复器。",
+            "你的唯一任务是把用户给你的内容整理成合法的 JSON 数组。",
+            "不要补剧情，不要改字段含义，不要解释，不要加 markdown 代码块。",
+            "如果原文里有多余说明、前言、后记，只保留 JSON 数组本体。",
+            "如果有尾逗号、中文引号、包裹文字，请修正成标准 JSON。"
+        ].join("\n");
+
+        const repairUserPrompt = [
+            "请把下面内容修复成合法的 JSON 数组，只输出数组本体：",
+            raw
+        ].join("\n\n");
+
+        return this.api.callLLM(repairUserPrompt, repairSystemPrompt, {
+            temperature: 0.1,
+            maxTokens: Math.max(2000, Math.min(12000, raw.length * 2)),
+            timeout: options.timeout || 180000,
+            retryCount: 1
+        });
     }
 
     buildGenerationGuards(project, volumeNumber, chapterNumber) {
