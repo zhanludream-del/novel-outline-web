@@ -150,6 +150,18 @@
         flex: 1 1 100%;
     }
 
+    .chapter-primary-row {
+        position: sticky;
+        top: 78px;
+        z-index: 6;
+        margin: -2px 0 16px;
+        padding: 10px;
+        border-radius: 18px;
+        background: rgba(248, 246, 242, 0.94);
+        box-shadow: 0 10px 24px rgba(204, 214, 223, 0.22);
+        backdrop-filter: blur(10px);
+    }
+
     .topbar-actions .btn {
         flex: 0 0 auto;
         min-height: 38px;

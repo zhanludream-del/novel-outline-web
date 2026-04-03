@@ -145,8 +145,10 @@ class NovelOutlineWebApp {
             btnContinueChapters: document.getElementById("btnContinueChapters"),
             btnDetectGaps: document.getElementById("btnDetectGaps"),
             btnExpandChapterContent: document.getElementById("btnExpandChapterContent"),
+            btnExpandChapterContentInline: document.getElementById("btnExpandChapterContentInline"),
             btnCopyChapterSummary: document.getElementById("btnCopyChapterSummary"),
             btnExportCurrentChapter: document.getElementById("btnExportCurrentChapter"),
+            btnExportCurrentChapterInline: document.getElementById("btnExportCurrentChapterInline"),
             btnManualAiFilter: document.getElementById("btnManualAiFilter"),
             btnAnalyzeChapter: document.getElementById("btnAnalyzeChapter"),
             btnRunChapterQc: document.getElementById("btnRunChapterQc"),
@@ -155,6 +157,7 @@ class NovelOutlineWebApp {
             btnCopyChapter: document.getElementById("btnCopyChapter"),
             btnClearChapterContent: document.getElementById("btnClearChapterContent"),
             btnSaveChapter: document.getElementById("btnSaveChapter"),
+            btnSaveChapterInline: document.getElementById("btnSaveChapterInline"),
             btnDeleteChapter: document.getElementById("btnDeleteChapter"),
             btnGenerateCharacters: document.getElementById("btnGenerateCharacters"),
             btnSaveCharacter: document.getElementById("btnSaveCharacter"),
@@ -526,8 +529,14 @@ class NovelOutlineWebApp {
         this.elements.btnContinueChapters.addEventListener("click", () => this.safeAsync(() => this.continueChapters()));
         this.elements.btnDetectGaps.addEventListener("click", () => this.detectGaps());
         this.elements.btnExpandChapterContent.addEventListener("click", () => this.safeAsync(() => this.expandCurrentChapter()));
+        if (this.elements.btnExpandChapterContentInline) {
+            this.elements.btnExpandChapterContentInline.addEventListener("click", () => this.safeAsync(() => this.expandCurrentChapter()));
+        }
         this.elements.btnCopyChapterSummary.addEventListener("click", () => this.copyCurrentChapterSummary());
         this.elements.btnExportCurrentChapter.addEventListener("click", () => this.exportCurrentChapterTxt());
+        if (this.elements.btnExportCurrentChapterInline) {
+            this.elements.btnExportCurrentChapterInline.addEventListener("click", () => this.exportCurrentChapterTxt());
+        }
         this.elements.btnManualAiFilter.addEventListener("click", () => this.safeAsync(() => this.manualFilterCurrentChapter()));
         this.elements.btnAnalyzeChapter.addEventListener("click", () => this.analyzeCurrentChapter());
         this.elements.btnRunChapterQc.addEventListener("click", () => this.runCurrentChapterQc());
@@ -538,6 +547,9 @@ class NovelOutlineWebApp {
             this.elements.btnClearChapterContent.addEventListener("click", () => this.clearCurrentChapterContent());
         }
         this.elements.btnSaveChapter.addEventListener("click", () => this.saveChapterEditor());
+        if (this.elements.btnSaveChapterInline) {
+            this.elements.btnSaveChapterInline.addEventListener("click", () => this.saveChapterEditor());
+        }
         this.elements.btnDeleteChapter.addEventListener("click", () => this.deleteCurrentChapter());
 
         this.elements.btnGenerateCharacters.addEventListener("click", () => this.safeAsync(() => this.generateCharactersFromOutlines()));
@@ -2932,6 +2944,7 @@ ${(detailedOutline || concept || "未填写").slice(0, 2200)}`;
         this.elements.chapterContentInput.value = chapter.content || "";
         this.renderChapterContextPreview(chapter);
         this.renderChapterList();
+        this.scrollChapterEditorIntoView();
     }
 
     clearChapterEditor() {
@@ -2942,6 +2955,24 @@ ${(detailedOutline || concept || "未填写").slice(0, 2200)}`;
         this.elements.chapterSettingNoteInput.value = "";
         this.elements.chapterContentInput.value = "";
         this.renderChapterContextPreview(null);
+    }
+
+    scrollChapterEditorIntoView() {
+        if (!window.matchMedia("(max-width: 960px)").matches) {
+            return;
+        }
+
+        const editorPanel = document.querySelector(".chapter-editor-panel");
+        if (!editorPanel) {
+            return;
+        }
+
+        window.requestAnimationFrame(() => {
+            editorPanel.scrollIntoView({
+                behavior: "smooth",
+                block: "start"
+            });
+        });
     }
 
     renderChapterContextPreview(chapter) {

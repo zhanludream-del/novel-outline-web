@@ -761,6 +761,10 @@ button {
     margin-bottom: 14px;
 }
 
+.chapter-primary-row {
+    margin-bottom: 16px;
+}
+
 .toggle-chip {
     display: inline-flex;
     align-items: center;
@@ -864,6 +868,10 @@ button {
 .chapter-textarea {
     min-height: 360px;
     line-height: 1.9;
+}
+
+.chapter-editor-panel {
+    scroll-margin-top: 94px;
 }
 
 .empty-state {

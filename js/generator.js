@@ -2743,13 +2743,17 @@
             title: project.outline.title || "",
             genre: project.outline.subgenre || project.outline.genre || "",
             theme: project.outline.theme || "",
+            worldbuilding: project.outline.worldbuilding || "",
             world_and_plan_context: worldAndPlanContext || "【世界观核心设定】暂无\n\n【详细大纲参考】暂无",
             current_volume_outline_context: currentVolumeOutlineContext ? this.limitContext(currentVolumeOutlineContext, 1800) : "暂无明确当前卷细纲切片",
             relevant_characters: characterDigest || "暂无明确角色设定",
             outline: chapter.summary || "",
+            chapter_number: chapter.number || "",
+            chapter_title: chapter.title || "",
             previous_outline_context: previousOutlineContext || "暂无前文大纲",
             story_state_summary: storyStateSummary || "暂无明确前文状态摘要",
             prev_content: prevContent || "暂无前文",
+            next_outline: nextOutline || "暂无下一章章纲",
             global_setting_note: project.global_setting_note || "暂无",
             chapter_setting_note: chapter.chapter_setting_note || "暂无",
             transition_guide: transitionGuide || "【开章衔接指导】请直接承接上一章最后一个有效场景与状态展开，不要平地重开。",
@@ -2769,7 +2773,45 @@
             output = output.replace(pattern, value || "");
         });
 
-        return output;
+        const hardPinnedFrontMatter = [
+            "【最高优先级：当前章执行任务】",
+            `当前只允许扩写第${chapter.number || "?"}章《${chapter.title || "未命名章节"}》的正文。`,
+            "世界观、详细大纲、卷细纲、前文状态都只能辅助当前章，绝不能覆盖当前章的大纲要求。",
+            "如果任一辅助信息与本章大纲看似冲突，以【本章大纲】和上一章结尾的直接衔接为准。",
+            "",
+            "【本章大纲（必须逐条落实）】",
+            chapter.summary || "暂无本章大纲",
+            "",
+            "【前文五章（重点看最后一章结尾）】",
+            prevContent || "暂无前文",
+            "",
+            "【开章衔接指导】",
+            transitionGuide || "请直接承接上一章最后一个有效场景与状态展开，不要平地重开。"
+        ].join("\n");
+
+        const desktopInvariantBundle = [
+            storyStateSummary ? `【当前故事状态（必须延续）】\n${storyStateSummary}` : "",
+            previousOutlineContext ? `【前文大纲摘要】\n${previousOutlineContext}` : "",
+            currentVolumeOutlineContext ? `【当前卷细纲参考】\n${this.limitContext(currentVolumeOutlineContext, 1800)}` : "",
+            worldAndPlanContext ? worldAndPlanContext : "",
+            characterDigest ? `【本章出场/相关角色设定（防崩坏参考）】\n${characterDigest}` : "",
+            project.global_setting_note ? `【全局设定提醒】\n${project.global_setting_note}` : "",
+            chapter.chapter_setting_note ? `【本章设定提醒】\n${chapter.chapter_setting_note}` : "",
+            setupContinuityGuard || "",
+            expansionHint || "",
+            nextChapterSetupInstruction || "",
+            nextChapterForbiddenPreview || "",
+            stateOutputProtocol || "",
+            extraOutputProtocol || ""
+        ].filter(Boolean).join("\n\n");
+
+        return [
+            hardPinnedFrontMatter,
+            desktopInvariantBundle,
+            "【补充写作模板】",
+            "以下内容是补充写作要求，优先级低于前面的刚性约束，不得覆盖本章大纲与状态衔接规则。",
+            output
+        ].filter(Boolean).join("\n\n");
     }
 
     buildStateOutputProtocol(project, chapter, relevantCharacters) {
