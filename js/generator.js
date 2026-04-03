@@ -1288,6 +1288,11 @@ class NovelGenerator {
             .map(([name]) => name);
     }
 
+    normalizeSynopsisReferenceText(project, text) {
+        const synopsisData = this.restoreSynopsisMainCharacters(project);
+        return this.applyKnownSynopsisMappings(text, synopsisData.vague_to_name_mapping || {});
+    }
+
     mergeSynopsisStateFromGeneratedChapters(project, chapters, volumeNumber, inputs = {}) {
         const synopsisData = this.restoreSynopsisMainCharacters(project);
         synopsisData.vague_to_name_mapping = synopsisData.vague_to_name_mapping && typeof synopsisData.vague_to_name_mapping === "object"
@@ -1773,10 +1778,12 @@ class NovelGenerator {
                 return "";
             }
             const prefix = index + 1 === currentVolumeNumber ? "【当前卷】" : "【参考卷】";
+            const normalizedSummary = this.normalizeSynopsisReferenceText(project, volume.summary || "");
+            const normalizedCliffhanger = this.normalizeSynopsisReferenceText(project, volume.cliffhanger || "");
             return [
                 `${prefix} 第${index + 1}卷 ${volume.title || ""}`,
-                volume.summary || "",
-                volume.cliffhanger ? `卷末钩子：${volume.cliffhanger}` : ""
+                normalizedSummary,
+                normalizedCliffhanger ? `卷末钩子：${normalizedCliffhanger}` : ""
             ].filter(Boolean).join("\n");
         }).filter(Boolean).join("\n\n");
     }
@@ -1804,7 +1811,10 @@ class NovelGenerator {
         return project.outline.volumes
             .slice(0, currentVolumeNumber - 1)
             .map((volume, index) => {
-                const synopsis = volume.chapterSynopsis || volume.chapter_synopsis || "";
+                const synopsis = this.normalizeSynopsisReferenceText(
+                    project,
+                    volume.chapterSynopsis || volume.chapter_synopsis || ""
+                );
                 return synopsis ? `【第${index + 1}卷细纲】\n${this.limitContext(synopsis, 2400)}` : "";
             })
             .filter(Boolean)
@@ -1937,7 +1947,10 @@ class NovelGenerator {
         return project.outline.volumes
             .filter((_, index) => index + 1 <= upToVolumeNumber)
             .map((volume, index) => {
-                const synopsis = volume.chapterSynopsis || volume.chapter_synopsis || "";
+                const synopsis = this.normalizeSynopsisReferenceText(
+                    project,
+                    volume.chapterSynopsis || volume.chapter_synopsis || ""
+                );
                 return synopsis ? `【第${index + 1}卷细纲】\n${this.limitContext(synopsis, 2400)}` : "";
             })
             .filter(Boolean)
