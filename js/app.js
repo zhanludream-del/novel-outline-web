@@ -129,7 +129,9 @@ class NovelOutlineWebApp {
             btnExportData: document.getElementById("btnExportData"),
             btnImportData: document.getElementById("btnImportData"),
             btnGenerateWorldbuilding: document.getElementById("btnGenerateWorldbuilding"),
+            btnClearWorldbuilding: document.getElementById("btnClearWorldbuilding"),
             btnGenerateVolumes: document.getElementById("btnGenerateVolumes"),
+            btnClearVolumeSynopsis: document.getElementById("btnClearVolumeSynopsis"),
             btnGenerateChapterSynopsis: document.getElementById("btnGenerateChapterSynopsis"),
             btnGenerateAllSynopsis: document.getElementById("btnGenerateAllSynopsis"),
             btnClearCurrentSynopsis: document.getElementById("btnClearCurrentSynopsis"),
@@ -497,7 +499,13 @@ class NovelOutlineWebApp {
         this.elements.importFileInput.addEventListener("change", (event) => this.importData(event));
 
         this.elements.btnGenerateWorldbuilding.addEventListener("click", () => this.safeAsync(() => this.generateWorldbuilding()));
+        if (this.elements.btnClearWorldbuilding) {
+            this.elements.btnClearWorldbuilding.addEventListener("click", () => this.clearWorldbuilding());
+        }
         this.elements.btnGenerateVolumes.addEventListener("click", () => this.safeAsync(() => this.generateVolumeSynopsis()));
+        if (this.elements.btnClearVolumeSynopsis) {
+            this.elements.btnClearVolumeSynopsis.addEventListener("click", () => this.clearVolumeSynopsis());
+        }
         this.elements.btnGenerateChapterSynopsis.addEventListener("click", () => this.safeAsync(() => this.generateCurrentVolumeSynopsis()));
         this.elements.btnGenerateAllSynopsis.addEventListener("click", () => this.safeAsync(() => this.generateAllVolumeSynopsis()));
         if (this.elements.btnClearCurrentSynopsis) {
@@ -2081,6 +2089,60 @@ ${(detailedOutline || concept || "未填写").slice(0, 2200)}`;
         this.persist(true);
         this.renderAll();
         Utils.showMessage("卷结构已清空。", "success");
+    }
+
+    clearWorldbuilding() {
+        const currentText = String(this.elements.worldbuildingText?.value || this.novelData.outline.worldbuilding || "").trim();
+        if (!currentText) {
+            Utils.showMessage("世界观本来就是空的。", "info");
+            return;
+        }
+
+        const ok = window.confirm("确定清空当前世界观吗？");
+        if (!ok) {
+            return;
+        }
+
+        this.novelData.outline.worldbuilding = "";
+        this.novelData.synopsisData.worldbuilding = "";
+        if (this.elements.worldbuildingText) {
+            this.elements.worldbuildingText.value = "";
+        }
+        this.persist(true);
+        this.renderDashboard();
+        Utils.showMessage("世界观已清空。", "success");
+    }
+
+    clearVolumeSynopsis() {
+        const hasVolumeSummary = String(this.elements.volumeSynopsisText?.value || this.novelData.synopsisData.volumeSynopsis || "").trim();
+        const volumeCount = (this.novelData.outline.volumes || []).length;
+        if (!hasVolumeSummary && !volumeCount) {
+            Utils.showMessage("卷纲本来就是空的。", "info");
+            return;
+        }
+
+        const ok = window.confirm("确定清空卷纲吗？这会删除当前卷结构、卷摘要和卷内章纲。");
+        if (!ok) {
+            return;
+        }
+
+        this.novelData.outline.volumes = [];
+        this.novelData.synopsisData.volumeSynopsis = "";
+        this.novelData.synopsisData.volume_synopsis = "";
+        this.novelData.synopsisData.synopsis_volumes = {};
+        this.novelData.synopsisData.volumeCount = 1;
+        if (this.elements.projectVolumeCount) {
+            this.elements.projectVolumeCount.value = 1;
+        }
+        if (this.elements.volumeSynopsisText) {
+            this.elements.volumeSynopsisText.value = "";
+        }
+        this.state.selectedChapterId = null;
+        this.clearChapterEditor();
+        this.ensureVolumeCount(1, false);
+        this.persist(true);
+        this.renderAll();
+        Utils.showMessage("卷纲已清空。", "success");
     }
 
     async runWithLoading(message, task) {
