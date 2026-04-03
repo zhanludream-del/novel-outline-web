@@ -760,7 +760,7 @@
         return allCharacters;
     }
 
-    async expandChapterContent({ project, volume, chapter }) {
+    async expandChapterContent({ project, volume, chapter, onDebugInfo = null }) {
         const chapterOutlineCharacterNames = this.extractChapterOutlineCharacterNames(chapter.summary || "");
         const relevantCharacters = this.collectRelevantCharacters(
             project,
@@ -835,6 +835,97 @@
             stateOutputProtocol,
             extraOutputProtocol
         });
+
+        if (typeof onDebugInfo === "function") {
+            onDebugInfo({
+                title: project?.outline?.title || "",
+                theme: project?.outline?.theme || "",
+                genre: project?.outline?.subgenre || project?.outline?.genre || "",
+                currentVolume: volume?.title || "",
+                currentChapter: `第${chapter.number || "?"}章`,
+                outlineLength: String(chapter.summary || "").trim().length,
+                templateLength: String(promptTemplate || "").trim().length,
+                finalUserPromptLength: String(userPrompt || "").length,
+                finalSystemPromptLength: String(systemPrompt || "").length,
+                injectedBlocks: [
+                    {
+                        label: "本章大纲",
+                        length: String(chapter.summary || "").trim().length,
+                        preview: this.limitContext(chapter.summary || "", 160)
+                    },
+                    {
+                        label: "前文五章",
+                        length: String(prevContent || "").trim().length,
+                        preview: this.limitContext(prevContent || "", 160)
+                    },
+                    {
+                        label: "前文大纲摘要",
+                        length: String(previousOutlineContext || "").trim().length,
+                        preview: this.limitContext(previousOutlineContext || "", 160)
+                    },
+                    {
+                        label: "当前卷细纲参考",
+                        length: String(currentVolumeOutlineContext || "").trim().length,
+                        preview: this.limitContext(currentVolumeOutlineContext || "", 160)
+                    },
+                    {
+                        label: "世界观与详细大纲",
+                        length: String(worldAndPlanContext || "").trim().length,
+                        preview: this.limitContext(worldAndPlanContext || "", 160)
+                    },
+                    {
+                        label: "相关角色设定",
+                        length: String(characterDigest || "").trim().length,
+                        preview: this.limitContext(characterDigest || "", 160)
+                    },
+                    {
+                        label: "全局设定提醒",
+                        length: String(project?.global_setting_note || "").trim().length,
+                        preview: this.limitContext(project?.global_setting_note || "", 120)
+                    },
+                    {
+                        label: "本章设定提醒",
+                        length: String(chapter.chapter_setting_note || "").trim().length,
+                        preview: this.limitContext(chapter.chapter_setting_note || "", 120)
+                    },
+                    {
+                        label: "故事状态摘要",
+                        length: String(storyStateSummary || "").trim().length,
+                        preview: this.limitContext(storyStateSummary || "", 160)
+                    },
+                    {
+                        label: "章末快照衔接指导",
+                        length: String(transitionGuide || "").trim().length,
+                        preview: this.limitContext(transitionGuide || "", 160)
+                    },
+                    {
+                        label: "智能扩充建议",
+                        length: String(expansionHint || "").trim().length,
+                        preview: this.limitContext(expansionHint || "", 160)
+                    },
+                    {
+                        label: "本章结尾铺垫任务",
+                        length: String(nextChapterSetupInstruction || "").trim().length,
+                        preview: this.limitContext(nextChapterSetupInstruction || "", 160)
+                    },
+                    {
+                        label: "下一章禁止预写预警",
+                        length: String(nextChapterForbiddenPreview || "").trim().length,
+                        preview: this.limitContext(nextChapterForbiddenPreview || "", 160)
+                    },
+                    {
+                        label: "状态输出协议",
+                        length: String(stateOutputProtocol || "").trim().length,
+                        preview: this.limitContext(stateOutputProtocol || "", 120)
+                    },
+                    {
+                        label: "附加追踪输出",
+                        length: String(extraOutputProtocol || "").trim().length,
+                        preview: this.limitContext(extraOutputProtocol || "", 120)
+                    }
+                ].filter((item) => item.length > 0)
+            });
+        }
 
         const rawContent = await this.api.callLLM(userPrompt, systemPrompt, {
             temperature: 0.82,

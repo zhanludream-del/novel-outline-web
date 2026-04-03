@@ -3234,7 +3234,8 @@ ${(detailedOutline || concept || "未填写").slice(0, 2200)}`;
             const rawContent = await this.generator.expandChapterContent({
                 project: this.novelData,
                 volume,
-                chapter
+                chapter,
+                onDebugInfo: (debugInfo) => this.logChapterGenerationDebugInfo(debugInfo)
             });
             const processed = this.processGeneratedChapterResponse(rawContent, volume, chapter);
             let finalContent = processed.cleanedContent;
@@ -3249,6 +3250,31 @@ ${(detailedOutline || concept || "未填写").slice(0, 2200)}`;
                 processed.logs.forEach((message) => Utils.log(message, "success"));
             }
             Utils.log(`第 ${chapter.number} 章正文扩写完成。`, "success");
+        });
+    }
+
+    logChapterGenerationDebugInfo(debugInfo = {}) {
+        const lines = [
+            "【章节生成注入清单】",
+            `标题: ${debugInfo.title || "空"}`,
+            `主题: ${debugInfo.theme || "空"}`,
+            `题材: ${debugInfo.genre || "空"}`,
+            `当前卷: ${debugInfo.currentVolume || "空"}`,
+            `当前章节: ${debugInfo.currentChapter || "空"}`,
+            `本章大纲长度: ${Number(debugInfo.outlineLength || 0)}字`,
+            `自定义提示词模板长度: ${Number(debugInfo.templateLength || 0)}字`,
+            `最终用户提示词长度: ${Number(debugInfo.finalUserPromptLength || 0)}字`,
+            `最终系统提示词长度: ${Number(debugInfo.finalSystemPromptLength || 0)}字`
+        ];
+
+        Utils.log(lines.join("\n"), "info");
+
+        const blocks = Array.isArray(debugInfo.injectedBlocks) ? debugInfo.injectedBlocks : [];
+        blocks.forEach((block) => {
+            Utils.log(`  → ${block.label}（${Number(block.length || 0)}字）`, "info");
+            if (block.preview) {
+                Utils.log(`     预览：${block.preview}`, "info");
+            }
         });
     }
 
