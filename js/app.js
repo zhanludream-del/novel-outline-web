@@ -148,6 +148,7 @@ class NovelOutlineWebApp {
             btnRefreshChapterList: document.getElementById("btnRefreshChapterList"),
             btnBatchDeleteChapters: document.getElementById("btnBatchDeleteChapters"),
             btnCopyChapter: document.getElementById("btnCopyChapter"),
+            btnClearChapterContent: document.getElementById("btnClearChapterContent"),
             btnSaveChapter: document.getElementById("btnSaveChapter"),
             btnDeleteChapter: document.getElementById("btnDeleteChapter"),
             btnGenerateCharacters: document.getElementById("btnGenerateCharacters"),
@@ -196,6 +197,7 @@ class NovelOutlineWebApp {
         this.populateGenreOptions();
         this.loadSettingsToForm();
         this.ensurePromptAiFilterInputs();
+        this.ensureChapterClearButton();
         this.syncFormFromData();
         this.bindEvents();
         this.renderAll();
@@ -249,6 +251,21 @@ class NovelOutlineWebApp {
 
         this.elements.aiFilterWhitelistInput = document.getElementById("aiFilterWhitelistInput");
         this.elements.aiFilterBlacklistInput = document.getElementById("aiFilterBlacklistInput");
+    }
+
+    ensureChapterClearButton() {
+        if (this.elements.btnClearChapterContent) {
+            return;
+        }
+        if (!this.elements.btnDeleteChapter) {
+            return;
+        }
+
+        this.elements.btnDeleteChapter.insertAdjacentHTML(
+            "beforebegin",
+            '<button class="btn btn-ghost" id="btnClearChapterContent" type="button">清空正文</button>'
+        );
+        this.elements.btnClearChapterContent = document.getElementById("btnClearChapterContent");
     }
 
     ensureBaseData() {
@@ -497,6 +514,9 @@ class NovelOutlineWebApp {
         this.elements.btnRefreshChapterList.addEventListener("click", () => this.refreshChapterWorkspace());
         this.elements.btnBatchDeleteChapters.addEventListener("click", () => this.batchDeleteChapterRange());
         this.elements.btnCopyChapter.addEventListener("click", () => Utils.copyText(this.elements.chapterContentInput.value));
+        if (this.elements.btnClearChapterContent) {
+            this.elements.btnClearChapterContent.addEventListener("click", () => this.clearCurrentChapterContent());
+        }
         this.elements.btnSaveChapter.addEventListener("click", () => this.saveChapterEditor());
         this.elements.btnDeleteChapter.addEventListener("click", () => this.deleteCurrentChapter());
 
@@ -2760,6 +2780,48 @@ ${(detailedOutline || concept || "未填写").slice(0, 2200)}`;
         this.renderAdvancedState();
         Utils.log(`状态系统已回滚到第 ${Math.max(0, deletedChapterNumber - 1)} 章结束时的状态。`, "info");
         Utils.showMessage("章节已删除。", "success");
+    }
+
+    clearCurrentChapterContent() {
+        const volume = this.getCurrentChapterVolume();
+        if (!volume || !this.state.selectedChapterId) {
+            Utils.showMessage("请先选择要清空正文的章节。", "info");
+            return;
+        }
+
+        const chapter = volume.chapters.find((item) => item.id === this.state.selectedChapterId);
+        if (!chapter) {
+            Utils.showMessage("当前章节不存在。", "error");
+            return;
+        }
+
+        const ok = window.confirm("确定要清空当前章节正文吗？\n这会同时把状态系统回滚到上一章。");
+        if (!ok) {
+            return;
+        }
+
+        const chapterNumber = Number(chapter.number || 0);
+        chapter.content = "";
+        chapter.updatedAt = new Date().toISOString();
+
+        if (chapter.uuid && this.novelData.chapters?.[chapter.uuid]) {
+            delete this.novelData.chapters[chapter.uuid];
+        }
+
+        delete this.novelData.chapter_analysis_reports?.[`chapter_${chapterNumber}`];
+        delete this.novelData.chapter_qc_reports?.[`chapter_${chapterNumber}`];
+        delete this.novelData.chapter_rhythms?.[`chapter_${chapterNumber}`];
+        delete this.novelData.chapter_emotions?.[`chapter_${chapterNumber}`];
+
+        this.rollbackStateSystemsToChapter(chapterNumber - 1);
+        this.elements.chapterContentInput.value = "";
+        this.persist(true);
+        this.renderChapterList();
+        this.renderDashboard();
+        this.renderAdvancedState();
+        this.selectChapter(chapter.id);
+        Utils.log(`已清空第 ${chapterNumber} 章正文，状态系统已回滚到第 ${Math.max(0, chapterNumber - 1)} 章。`, "info");
+        Utils.showMessage("当前章节正文已清空。", "success");
     }
 
     async expandCurrentChapter() {
