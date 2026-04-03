@@ -1164,10 +1164,10 @@ ${(detailedOutline || concept || "未填写").slice(0, 2200)}`;
         if (snapshot) {
             badges.push('<span class="tracker-pill">快照</span>');
         }
-        if ((chapter.next_chapter_setup || "").trim()) {
+        if (this.hasContentfulNextChapterSetup(chapter.next_chapter_setup)) {
             badges.push('<span class="tracker-pill">下章铺垫</span>');
         }
-        if ((chapter.plot_unit || "").trim()) {
+        if (this.hasContentfulPlotUnit(chapter.plot_unit)) {
             badges.push('<span class="tracker-pill">剧情单元</span>');
         }
         if (foreshadowCount > 0) {
@@ -1175,6 +1175,32 @@ ${(detailedOutline || concept || "未填写").slice(0, 2200)}`;
         }
 
         return badges.join("") || '<span class="tracker-pill muted">待生成</span>';
+    }
+
+    hasContentfulNextChapterSetup(nextChapterSetup) {
+        if (!nextChapterSetup) {
+            return false;
+        }
+        if (typeof nextChapterSetup === "string") {
+            return nextChapterSetup.trim().length > 0;
+        }
+        if (typeof nextChapterSetup === "object") {
+            return Object.values(nextChapterSetup).some((value) => String(value || "").trim().length > 0);
+        }
+        return false;
+    }
+
+    hasContentfulPlotUnit(plotUnit) {
+        if (!plotUnit) {
+            return false;
+        }
+        if (typeof plotUnit === "string") {
+            return plotUnit.trim().length > 0;
+        }
+        if (typeof plotUnit === "object") {
+            return Object.values(plotUnit).some((value) => String(value || "").trim().length > 0);
+        }
+        return false;
     }
 
     renderCharacterList() {
