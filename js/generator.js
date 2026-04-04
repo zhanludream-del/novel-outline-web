@@ -1879,7 +1879,21 @@
             .forEach(([name, data]) => {
                 const firstAppearance = data["首次出场"] || data["出场章节"] || data.chapter || "?";
                 const identity = data["身份"] || data.identity || "未知";
-                lines.push(`- ${name}：首次出场第${firstAppearance}章，身份=${identity}`);
+                const currentAppearance = data["当前形象"] || data.current_appearance || "";
+                const realAppearance = data["真实形象"] || data.real_appearance || "";
+                const recentChange = Array.isArray(data["变化历史"]) && data["变化历史"].length
+                    ? data["变化历史"][data["变化历史"].length - 1]
+                    : null;
+                const changeText = recentChange?.["类型"] || recentChange?.change_type
+                    ? `，最近变化=${recentChange["类型"] || recentChange.change_type}`
+                    : "";
+                const appearanceText = currentAppearance
+                    ? `，当前形象=${Utils.summarizeText(currentAppearance, 50)}`
+                    : "";
+                const truthText = realAppearance && realAppearance !== currentAppearance
+                    ? `，真实形象=${Utils.summarizeText(realAppearance, 40)}`
+                    : "";
+                lines.push(`- ${name}：首次出场第${firstAppearance}章，身份=${identity}${appearanceText}${truthText}${changeText}`);
             });
 
         Object.entries(relationships)
@@ -1926,7 +1940,7 @@
         const lines = [];
 
         const items = Object.values(tracker.items || {}).slice(0, 6).map((item) =>
-            `${item["名称"] || "物品"}(${item["持有者"] || "未知持有者"}，状态=${item["当前状态"] || "未知"})`
+            `${item["名称"] || "物品"}(${item["持有者"] || "未知持有者"}，状态=${item["当前状态"] || "未知"}${item["类型"] ? `，类型=${item["类型"]}` : ""}${item["描述"] ? `，说明=${Utils.summarizeText(item["描述"], 24)}` : ""})`
         );
         if (items.length) {
             lines.push(`物品状态：${items.join("、")}`);
@@ -2923,6 +2937,17 @@
             '  "timeline": "当前故事时间点",',
             '  "current_location": "本章结束时主角所在位置",',
             '  "important_items": "本章新增或变化的重要物品",',
+            '  "item_updates": [',
+            '    {',
+            '      "name": "物品名",',
+            '      "holder": "当前持有者",',
+            '      "status": "持有/使用中/损坏/丢失/消耗",',
+            '      "type": "物品类型",',
+            '      "description": "本章里它现在是什么样",',
+            '      "source": "获得/转移原因",',
+            '      "temporary": false',
+            "    }",
+            "  ],",
             '  "pending_plots": "本章留下的待推进事项",',
             '  "key_event": "本章最关键的一件事",',
             '  "genre_progress": ["多题材进度（格式：角色名：变化）"],',
@@ -2939,12 +2964,25 @@
             '      "location": "当前位置",',
             '      "identity": "身份变化",',
             '      "status": "身体/精神状态",',
+            '      "appearance": "当前外貌/伪装/受伤/脏污等形象状态",',
+            '      "real_appearance": "若本章出现伪装或变身，写真实形象",',
+            '      "appearance_change": "本章形象变化摘要",',
             '      "possessions": "关键物品变化",',
             '      "relationships": "关系变化",',
             '      "goals": "当前目标",',
             '      "secrets": "知晓或暴露的秘密"',
             "    }",
-            "  }",
+            "  },",
+            '  "appearance_changes": [',
+            '    {',
+            '      "name": "角色名",',
+            '      "current_appearance": "本章结束时角色对外呈现的形象",',
+            '      "real_appearance": "真实外貌（若有伪装/变身）",',
+            '      "change_type": "正常/伪装/受伤/脏污/恢复/变身",',
+            '      "reason": "变化原因",',
+            '      "duration": "持续到何时，可留空"',
+            "    }",
+            "  ]",
             "}"
         ].join("\n");
     }

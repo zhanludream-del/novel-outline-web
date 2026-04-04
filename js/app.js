@@ -3330,6 +3330,7 @@ ${(detailedOutline || concept || "未填写").slice(0, 2200)}`;
         const foreshadowsBlock = this.extractDelimitedBlock(rawContent, "<<<FORESHADOWS>>>", ["<<<END_FORESHADOWS>>>"]);
         const personalityChangeBlock = this.extractDelimitedBlock(rawContent, "<<<PERSONALITY_CHANGE>>>", ["<<<END_PERSONALITY_CHANGE>>>"]);
         const appearanceBlock = this.extractDelimitedBlock(rawContent, "<<<CHARACTER_APPEARANCE>>>", ["<<<END_APPEARANCE>>>"]);
+        const cleanedContent = this.stripGeneratedMarkers(rawContent).trim();
 
         const stateData = this.parseStateJsonBlock(stateBlock);
         if (stateData) {
@@ -3357,7 +3358,13 @@ ${(detailedOutline || concept || "未填写").slice(0, 2200)}`;
             logs.push(`已更新人物出场 ${appearanceStats.appearances} 条、关系 ${appearanceStats.relationships} 条。`);
         }
 
-        const cleanedContent = this.stripGeneratedMarkers(rawContent).trim();
+        const scanStats = this.scanChapterStateSignals(chapterNumber, chapter, cleanedContent, stateData || {});
+        if (scanStats.appearances || scanStats.items) {
+            logs.push(`已补扫正文信号：人物/形象 ${scanStats.appearances} 条、物品 ${scanStats.items} 条。`);
+        }
+        if (stateData || scanStats.appearances || scanStats.items) {
+            this.recordFullStateSnapshot(chapterNumber, chapter.title || `第${chapterNumber}章`);
+        }
         this.recordChapterAnalysisTags(chapterNumber, chapter, cleanedContent, stateData || {});
 
         return {
@@ -3474,9 +3481,10 @@ ${(detailedOutline || concept || "未填写").slice(0, 2200)}`;
 
         this.recordChapterSnapshot(chapterNumber, chapterTitle, stateData, chapter);
         this.recordTimelineUpdate(chapterNumber, stateData);
-        this.recordDynamicStateUpdate(stateData);
+        this.recordDynamicStateUpdateRich(chapterNumber, stateData);
         this.recordWorldTrackerUpdate(chapterNumber, stateData);
         this.recordCharacterCheckerState(chapterNumber, stateData);
+        this.recordAppearanceStateUpdate(chapterNumber, stateData);
         this.recordGenreProgressUpdate(chapterNumber, stateData);
         this.recordPendingSubplots(chapterNumber, stateData);
         this.recordFullStateSnapshot(chapterNumber, chapterTitle);
@@ -3688,6 +3696,438 @@ ${(detailedOutline || concept || "未填写").slice(0, 2200)}`;
                 当前状态: itemText
             };
         });
+    }
+
+    recordDynamicStateUpdateRich(chapterNumber, stateData) {
+        const tracker = this.novelData.dynamic_tracker || (this.novelData.dynamic_tracker = {});
+        tracker.items = tracker.items || {};
+        tracker.appearances = tracker.appearances || {};
+        tracker.character_states = tracker.character_states || {};
+
+        Object.entries(stateData.characters || {}).forEach(([name, state]) => {
+            const resolvedName = this.resolveKnownCharacterName(name);
+            tracker.character_states[resolvedName] = {
+                ...(tracker.character_states[resolvedName] || {}),
+                ...state
+            };
+
+            this.extractStructuredPossessions(state?.possessions, resolvedName).forEach((item) => {
+                this.upsertTrackedItem(chapterNumber, item.name, {
+                    holder: item.holder || resolvedName,
+                    status: item.status || "持有",
+                    type: item.type || "物品",
+                    description: item.description || item.raw || "",
+                    source: item.source || "角色持有物",
+                    temporary: item.temporary
+                });
+            });
+        });
+
+        this.extractStructuredItemUpdates(stateData).forEach((item) => {
+            this.upsertTrackedItem(chapterNumber, item.name, item);
+        });
+    }
+
+    getCharacterProfileForTracking(name) {
+        const resolvedName = this.resolveKnownCharacterName(name);
+        const index = this.findExistingCharacterIndexByAnyName(resolvedName);
+        const character = index >= 0 ? this.novelData.outline.characters[index] : null;
+        return {
+            name: resolvedName,
+            identity: String(character?.identity || character?.["身份"] || "").trim(),
+            appearance: String(character?.appearance || character?.["外貌描述"] || character?.["外貌"] || "").trim(),
+            aliases: character ? Array.from(this.getCharacterAliasSet(character)) : []
+        };
+    }
+
+    ensureCharacterAppearanceEntry(name, chapterNumber = 0, identity = "", initialAppearance = "") {
+        const resolvedName = this.resolveKnownCharacterName(name);
+        if (!resolvedName) {
+            return null;
+        }
+
+        const appearanceTracker = this.novelData.character_appearance_tracker || (this.novelData.character_appearance_tracker = {});
+        appearanceTracker.appearances = appearanceTracker.appearances || {};
+        const dynamicTracker = this.novelData.dynamic_tracker || (this.novelData.dynamic_tracker = {});
+        dynamicTracker.appearances = dynamicTracker.appearances || {};
+        const profile = this.getCharacterProfileForTracking(resolvedName);
+        const baseIdentity = identity || profile.identity || "";
+        const baseAppearance = initialAppearance || profile.appearance || "";
+
+        const appearanceEntry = appearanceTracker.appearances[resolvedName] || {
+            首次出场: chapterNumber || 0,
+            出场章节: chapterNumber ? [chapterNumber] : [],
+            身份: baseIdentity,
+            初始形象: baseAppearance,
+            真实形象: baseAppearance,
+            当前形象: baseAppearance,
+            变化历史: []
+        };
+        appearanceEntry.出场章节 = Array.isArray(appearanceEntry.出场章节) ? appearanceEntry.出场章节 : [];
+        if (chapterNumber && !appearanceEntry.出场章节.includes(chapterNumber)) {
+            appearanceEntry.出场章节.push(chapterNumber);
+        }
+        if (!appearanceEntry.首次出场 && chapterNumber) {
+            appearanceEntry.首次出场 = chapterNumber;
+        }
+        if (baseIdentity && !appearanceEntry.身份) {
+            appearanceEntry.身份 = baseIdentity;
+        }
+        if (baseAppearance && !appearanceEntry.初始形象) {
+            appearanceEntry.初始形象 = baseAppearance;
+        }
+        if (baseAppearance && !appearanceEntry.真实形象) {
+            appearanceEntry.真实形象 = baseAppearance;
+        }
+        if (baseAppearance && !appearanceEntry.当前形象) {
+            appearanceEntry.当前形象 = baseAppearance;
+        }
+        appearanceTracker.appearances[resolvedName] = appearanceEntry;
+
+        const dynamicEntry = dynamicTracker.appearances[resolvedName] || {
+            初始形象: baseAppearance,
+            真实形象: baseAppearance,
+            当前形象: baseAppearance,
+            变化历史: []
+        };
+        if (baseAppearance && !dynamicEntry.初始形象) {
+            dynamicEntry.初始形象 = baseAppearance;
+        }
+        if (baseAppearance && !dynamicEntry.真实形象) {
+            dynamicEntry.真实形象 = baseAppearance;
+        }
+        if (baseAppearance && !dynamicEntry.当前形象) {
+            dynamicEntry.当前形象 = baseAppearance;
+        }
+        dynamicTracker.appearances[resolvedName] = dynamicEntry;
+
+        return {
+            name: resolvedName,
+            appearanceEntry,
+            dynamicEntry,
+            profile
+        };
+    }
+
+    coerceStateArray(value) {
+        if (!value) {
+            return [];
+        }
+        if (Array.isArray(value)) {
+            return value.filter(Boolean);
+        }
+        if (typeof value === "object") {
+            return Object.values(value).filter(Boolean);
+        }
+        return Utils.ensureArrayFromText(value);
+    }
+
+    shouldSkipTrackedItem(itemName, itemType = "", description = "") {
+        const name = String(itemName || "").trim();
+        const type = String(itemType || "").trim();
+        const text = `${name} ${type} ${description || ""}`;
+        if (!name || name.length > 16) {
+            return true;
+        }
+        const tempKeywords = ["发霉", "破旧", "烂", "脏", "旧", "临时", "普通", "一次性", "凡人", "借来"];
+        const tempTypes = ["消耗品", "食物", "丹药", "普通物品", "日用品"];
+        const genericNames = ["鲜血", "空气", "黑暗", "风声", "碎石", "长廊", "地面", "衣角", "衣摆", "石台"];
+        if (genericNames.includes(name)) {
+            return true;
+        }
+        if (tempTypes.includes(type) || tempKeywords.some((keyword) => text.includes(keyword))) {
+            return true;
+        }
+        return !/^[\u4e00-\u9fa5A-Za-z0-9·]{2,16}$/.test(name);
+    }
+
+    parseItemTextEntry(rawItem, fallbackHolder = "") {
+        const text = typeof rawItem === "string"
+            ? rawItem.trim()
+            : String(rawItem?.name || rawItem?.名称 || rawItem?.item || "").trim();
+        if (!text) {
+            return null;
+        }
+
+        let name = text.split(/[（(：:，,；;]/)[0]?.trim() || "";
+        let holder = fallbackHolder;
+        let status = "持有";
+        let type = "";
+        let description = text;
+        let source = "";
+        let temporary = false;
+
+        if (typeof rawItem === "object" && rawItem) {
+            name = String(rawItem.name || rawItem.名称 || rawItem.item || name).trim();
+            holder = String(rawItem.holder || rawItem.持有者 || fallbackHolder || "").trim();
+            status = String(rawItem.status || rawItem.当前状态 || status).trim();
+            type = String(rawItem.type || rawItem.类型 || "").trim();
+            description = String(rawItem.description || rawItem.描述 || text).trim();
+            source = String(rawItem.source || rawItem.获得方式 || "").trim();
+            temporary = Boolean(rawItem.temporary || rawItem.is_temp || rawItem.临时);
+        } else {
+            const holderMatch = text.match(/(?:持有者|持有|由|在)([^，,；;）)]+?)(?:持有|携带|保管|手里|手中|身上|腰间)?(?:[，,；;]|$)/);
+            if (holderMatch?.[1]) {
+                holder = holderMatch[1].trim();
+            }
+            const statusMatch = text.match(/(?:状态|现状)[：:]\s*([^，,；;）]+)/);
+            if (statusMatch?.[1]) {
+                status = statusMatch[1].trim();
+            } else if (/丢失|遗失/.test(text)) {
+                status = "丢失";
+            } else if (/损坏|碎裂|破碎/.test(text)) {
+                status = "损坏";
+            } else if (/消耗|耗尽|用掉/.test(text)) {
+                status = "消耗";
+            } else if (/使用中|发动中/.test(text)) {
+                status = "使用中";
+            }
+            const typeMatch = text.match(/(?:类型|类别)[：:]\s*([^，,；;）]+)/);
+            if (typeMatch?.[1]) {
+                type = typeMatch[1].trim();
+            }
+            temporary = /临时|一次性|普通物品|日用品|食物|丹药/.test(text);
+        }
+
+        if (this.shouldSkipTrackedItem(name, type, description)) {
+            return null;
+        }
+
+        return {
+            name,
+            holder,
+            status,
+            type: type || "物品",
+            description,
+            source: source || "STATE_JSON",
+            temporary
+        };
+    }
+
+    extractStructuredPossessions(possessions, holder = "") {
+        return this.coerceStateArray(possessions)
+            .map((item) => this.parseItemTextEntry(item, holder))
+            .filter(Boolean);
+    }
+
+    extractStructuredItemUpdates(stateData) {
+        const entries = [];
+        this.coerceStateArray(stateData.item_updates).forEach((item) => {
+            const parsed = this.parseItemTextEntry(item, item?.holder || item?.持有者 || "");
+            if (parsed) {
+                entries.push(parsed);
+            }
+        });
+        this.coerceStateArray(stateData.important_items).forEach((item) => {
+            const parsed = this.parseItemTextEntry(item, "");
+            if (parsed) {
+                entries.push(parsed);
+            }
+        });
+        return entries;
+    }
+
+    upsertTrackedItem(chapterNumber, itemName, options = {}) {
+        const name = String(itemName || "").trim();
+        if (!name || this.shouldSkipTrackedItem(name, options.type || "", options.description || "")) {
+            return false;
+        }
+
+        const tracker = this.novelData.dynamic_tracker || (this.novelData.dynamic_tracker = {});
+        tracker.items = tracker.items || {};
+        const entry = tracker.items[name] || {
+            名称: name,
+            类型: options.type || "物品",
+            描述: options.description || "",
+            获得章节: chapterNumber || 0,
+            获得方式: options.source || "记录",
+            持有者: options.holder || "",
+            当前状态: options.status || "持有",
+            is_temp: Boolean(options.temporary),
+            状态历史: []
+        };
+
+        const nextEntry = {
+            ...entry,
+            类型: options.type || entry.类型 || "物品",
+            描述: options.description || entry.描述 || "",
+            获得章节: entry.获得章节 || chapterNumber || 0,
+            获得方式: options.source || entry.获得方式 || "记录",
+            持有者: options.holder || entry.持有者 || "",
+            当前状态: options.status || entry.当前状态 || "持有",
+            最后更新章节: chapterNumber || entry.最后更新章节 || 0,
+            is_temp: Boolean(options.temporary || entry.is_temp)
+        };
+
+        nextEntry.状态历史 = Array.isArray(entry.状态历史) ? entry.状态历史 : [];
+        const lastHistory = nextEntry.状态历史[nextEntry.状态历史.length - 1];
+        const historyRecord = {
+            章节: chapterNumber || 0,
+            动作: options.source || nextEntry.获得方式 || "记录",
+            状态: nextEntry.当前状态,
+            持有者: nextEntry.持有者
+        };
+        if (!lastHistory
+            || Number(lastHistory.章节 || 0) !== Number(historyRecord.章节 || 0)
+            || String(lastHistory.状态 || "") !== String(historyRecord.状态 || "")
+            || String(lastHistory.持有者 || "") !== String(historyRecord.持有者 || "")) {
+            nextEntry.状态历史.push(historyRecord);
+        }
+
+        tracker.items[name] = nextEntry;
+        return true;
+    }
+
+    recordCharacterAppearanceState(chapterNumber, name, options = {}) {
+        const appearanceText = String(options.currentAppearance || options.appearance || "").trim();
+        const identity = String(options.identity || "").trim();
+        const realAppearance = String(options.realAppearance || "").trim();
+        const changeType = String(options.changeType || "").trim() || "正常";
+        const reason = String(options.reason || "").trim();
+        const duration = String(options.duration || "").trim();
+        const seeded = this.ensureCharacterAppearanceEntry(name, chapterNumber, identity, realAppearance || appearanceText);
+        if (!seeded) {
+            return false;
+        }
+
+        const { appearanceEntry, dynamicEntry } = seeded;
+        if (identity && !appearanceEntry.身份) {
+            appearanceEntry.身份 = identity;
+        }
+        if (realAppearance && !appearanceEntry.真实形象) {
+            appearanceEntry.真实形象 = realAppearance;
+        }
+        if (realAppearance && !dynamicEntry.真实形象) {
+            dynamicEntry.真实形象 = realAppearance;
+        }
+
+        let nextAppearance = appearanceText || appearanceEntry.当前形象 || dynamicEntry.当前形象 || appearanceEntry.真实形象 || "";
+        if (changeType === "恢复") {
+            nextAppearance = appearanceEntry.真实形象 || appearanceEntry.初始形象 || nextAppearance;
+        } else if (["受伤", "脏污", "疲惫"].includes(changeType) && appearanceText && appearanceEntry.当前形象 && !appearanceEntry.当前形象.includes(appearanceText)) {
+            nextAppearance = `${appearanceEntry.当前形象}，${appearanceText}`;
+        }
+
+        if (!nextAppearance && !reason) {
+            return false;
+        }
+
+        appearanceEntry.当前形象 = nextAppearance || appearanceEntry.当前形象 || "";
+        dynamicEntry.当前形象 = appearanceEntry.当前形象;
+        if (!appearanceEntry.初始形象 && (realAppearance || nextAppearance)) {
+            appearanceEntry.初始形象 = realAppearance || nextAppearance;
+        }
+        if (!dynamicEntry.初始形象 && (realAppearance || nextAppearance)) {
+            dynamicEntry.初始形象 = realAppearance || nextAppearance;
+        }
+        if (!appearanceEntry.真实形象 && (realAppearance || appearanceEntry.初始形象)) {
+            appearanceEntry.真实形象 = realAppearance || appearanceEntry.初始形象;
+        }
+        if (!dynamicEntry.真实形象 && (realAppearance || dynamicEntry.初始形象)) {
+            dynamicEntry.真实形象 = realAppearance || dynamicEntry.初始形象;
+        }
+
+        const historyRecord = {
+            章节: chapterNumber || 0,
+            形象: appearanceEntry.当前形象,
+            类型: changeType,
+            原因: reason,
+            持续时间: duration || null
+        };
+        appearanceEntry.变化历史 = Array.isArray(appearanceEntry.变化历史) ? appearanceEntry.变化历史 : [];
+        dynamicEntry.变化历史 = Array.isArray(dynamicEntry.变化历史) ? dynamicEntry.变化历史 : [];
+        const lastAppearanceRecord = appearanceEntry.变化历史[appearanceEntry.变化历史.length - 1];
+        if (!lastAppearanceRecord
+            || Number(lastAppearanceRecord.章节 || 0) !== Number(historyRecord.章节 || 0)
+            || String(lastAppearanceRecord.形象 || "") !== String(historyRecord.形象 || "")
+            || String(lastAppearanceRecord.类型 || "") !== String(historyRecord.类型 || "")) {
+            appearanceEntry.变化历史.push(historyRecord);
+            dynamicEntry.变化历史.push(historyRecord);
+        }
+
+        return true;
+    }
+
+    recordAppearanceStateUpdate(chapterNumber, stateData) {
+        Object.entries(stateData.characters || {}).forEach(([name, state]) => {
+            this.recordCharacterAppearanceState(chapterNumber, name, {
+                identity: state?.identity || "",
+                appearance: state?.appearance || state?.current_appearance || "",
+                realAppearance: state?.real_appearance || "",
+                changeType: state?.appearance_change ? "正常" : "",
+                reason: state?.appearance_change || ""
+            });
+        });
+
+        this.coerceStateArray(stateData.appearance_changes).forEach((item) => {
+            if (!item) {
+                return;
+            }
+            if (typeof item === "string") {
+                const text = item.trim();
+                const name = text.split(/[（(：:]/)[0]?.trim();
+                if (!name) {
+                    return;
+                }
+                this.recordCharacterAppearanceState(chapterNumber, name, {
+                    appearance: text,
+                    changeType: /伪装|变身|恢复|受伤|脏污|疲惫/.exec(text)?.[0] || "正常",
+                    reason: text
+                });
+                return;
+            }
+            this.recordCharacterAppearanceState(chapterNumber, item.name || item.角色名, {
+                identity: item.identity || item.身份 || "",
+                currentAppearance: item.current_appearance || item.currentAppearance || item.appearance || item.当前形象 || "",
+                realAppearance: item.real_appearance || item.realAppearance || item.真实形象 || "",
+                changeType: item.change_type || item.changeType || item.变化类型 || "正常",
+                reason: item.reason || item.原因 || "",
+                duration: item.duration || item.持续时间 || ""
+            });
+        });
+    }
+
+    scanChapterStateSignals(chapterNumber, chapter, cleanedContent, stateData = {}) {
+        const stats = { appearances: 0, items: 0 };
+        const content = String(cleanedContent || "");
+        if (!content) {
+            return stats;
+        }
+
+        const relevantNames = new Set([
+            ...Object.keys(stateData.characters || {}).map((name) => this.resolveKnownCharacterName(name)),
+            ...this.extractCharacterSeedsFromSummary(chapter?.summary || "", chapterNumber).map((item) => item.name),
+            ...Utils.ensureArrayFromText(chapter?.characters || "").map((name) => this.resolveKnownCharacterName(name))
+        ].filter(Boolean));
+
+        relevantNames.forEach((name) => {
+            if (!content.includes(name)) {
+                return;
+            }
+            const seeded = this.ensureCharacterAppearanceEntry(name, chapterNumber);
+            if (seeded) {
+                stats.appearances += 1;
+            }
+        });
+
+        const trackedItems = Object.keys(this.novelData.dynamic_tracker?.items || {});
+        trackedItems.forEach((itemName) => {
+            if (!content.includes(itemName)) {
+                return;
+            }
+            const updated = this.upsertTrackedItem(chapterNumber, itemName, {
+                source: "正文扫描",
+                description: this.novelData.dynamic_tracker.items[itemName]?.描述 || "",
+                status: this.novelData.dynamic_tracker.items[itemName]?.当前状态 || "持有",
+                holder: this.novelData.dynamic_tracker.items[itemName]?.持有者 || "",
+                type: this.novelData.dynamic_tracker.items[itemName]?.类型 || "物品"
+            });
+            if (updated) {
+                stats.items += 1;
+            }
+        });
+
+        return stats;
     }
 
     recordWorldTrackerUpdate(chapterNumber, stateData) {
