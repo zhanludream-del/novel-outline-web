@@ -259,14 +259,6 @@ button {
     gap: 10px;
 }
 
-.nav-item[data-tab="dashboard"] { order: 1; }
-.nav-item[data-tab="ideas"] { order: 2; }
-.nav-item[data-tab="planner"] { order: 3; }
-.nav-item[data-tab="outline"] { order: 4; }
-.nav-item[data-tab="characters"] { order: 5; }
-.nav-item[data-tab="chapters"] { order: 6; }
-.nav-item[data-tab="advanced"] { order: 7; }
-
 .nav-item {
     display: grid;
     gap: 4px;
