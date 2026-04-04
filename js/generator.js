@@ -4740,12 +4740,8 @@
         }
         const rawName = this.normalizeOutlineCharacterLabel(character?.name || character?.real_name || character?.realName || "");
         const aliasValues = [
-            ...(Array.isArray(character?.aliases) ? character.aliases : Utils.ensureArrayFromText(character?.aliases || character?.["别名"] || "")),
-            character?.identity || "",
-            character?.relationships || character?.["人物关系"] || "",
-            character?.background || character?.["背景故事"] || ""
+            ...(Array.isArray(character?.aliases) ? character.aliases : Utils.ensureArrayFromText(character?.aliases || character?.["别名"] || ""))
         ]
-            .flatMap((value) => Array.isArray(value) ? value : [value])
             .map((value) => String(value || "").trim())
             .filter(Boolean);
 
@@ -4768,6 +4764,50 @@
         return batchItems.findIndex((_, index) => !usedIndexes.has(index));
     }
 
+    applySafeAliasMappings(text, aliasMap = {}) {
+        let normalized = String(text || "");
+        if (!normalized || !aliasMap || typeof aliasMap !== "object") {
+            return normalized;
+        }
+
+        const protectedNames = new Map();
+        let protectedText = normalized;
+        const realNames = Array.from(new Set(Object.values(aliasMap).map((name) => String(name || "").trim()).filter(Boolean)))
+            .sort((left, right) => right.length - left.length);
+
+        realNames.forEach((realName, index) => {
+            const placeholder = `__REAL_NAME_${index}__`;
+            protectedNames.set(placeholder, realName);
+            protectedText = protectedText.replace(
+                new RegExp(realName.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"), "g"),
+                placeholder
+            );
+        });
+
+        Object.entries(aliasMap)
+            .sort((left, right) => right[0].length - left[0].length)
+            .forEach(([alias, realName]) => {
+                const cleanAlias = String(alias || "").trim();
+                const cleanRealName = String(realName || "").trim();
+                if (!cleanAlias || !cleanRealName || cleanAlias === cleanRealName) {
+                    return;
+                }
+                if (cleanRealName.includes(cleanAlias)) {
+                    return;
+                }
+                protectedText = protectedText.replace(
+                    new RegExp(`(^|[：:、，；;（(\\s])${cleanAlias.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}(?=的|是|与|和|跟|及|、|，|；|。|）|\\)|\\s|$)`, "g"),
+                    (match, prefix) => `${prefix}${cleanRealName}`
+                );
+            });
+
+        protectedNames.forEach((realName, placeholder) => {
+            protectedText = protectedText.replace(new RegExp(placeholder, "g"), realName);
+        });
+
+        return protectedText;
+    }
+
     sanitizeGeneratedRelationshipText(project, currentName, relationships, sourceMeta = {}) {
         const rawText = String(relationships || "").trim();
         const relationKeywords = /父亲|母亲|亲妈|后妈|养母|养父|继母|继父|继姐|继妹|继兄|继弟|哥哥|姐姐|妹妹|弟弟|夫妻|妻子|丈夫|恋人|未婚夫|未婚妻|朋友|敌对|敌人|仇敌|对手|同门|师徒|师兄妹|上下级|上司|下属|同事|盟友|帮凶|旧识|亲属|母女|父女|姐妹|兄妹/;
@@ -4778,21 +4818,15 @@
                 .filter(Boolean)
         );
         const aliasMap = this.buildKnownCharacterAliasMap(project);
-        let normalized = rawText;
-        Object.entries(aliasMap)
-            .sort((left, right) => right[0].length - left[0].length)
-            .forEach(([alias, realName]) => {
-                if (!alias || !realName || alias === realName) {
-                    return;
-                }
-                normalized = normalized.replace(new RegExp(alias.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"), "g"), realName);
-            });
+        let normalized = this.applySafeAliasMappings(rawText, aliasMap);
 
         const cleanClause = (text) => String(text || "")
             .replace(/[\r\n]+/g, " ")
             .replace(/\s+/g, " ")
             .replace(/^[，、；;：:\-•\s]+/, "")
             .replace(/[，、；;：:\-•\s]+$/, "")
+            .replace(/([\u4e00-\u9fa5]{2,4})(?:\1){1,}/g, "$1")
+            .replace(/([\u4e00-\u9fa5]{2,4})的\1的/g, "$1的")
             .trim();
 
         const clauses = normalized
