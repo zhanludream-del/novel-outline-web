@@ -5808,13 +5808,8 @@ ${(detailedOutline || concept || "未填写").slice(0, 2200)}`;
 
             Utils.updateLoading("正在从大纲里提取角色线索...", {
                 progress: 10,
-                detail: "先同步章纲中的出场人物"
+                detail: "按章纲【出场人物】收集原始角色描述"
             });
-            const preseeded = this.syncCharactersFromOutlineSections(outlineChapters, volumeNumber);
-            if (preseeded.added || preseeded.updated) {
-                Utils.log(`已先从章纲【出场人物】同步 ${preseeded.added} 个新角色，补全 ${preseeded.updated} 个角色基础信息。`, "info");
-            }
-
             const roleCandidates = Object.entries(
                 this.generator.extractRoleCandidatesFromChapters(this.novelData, outlineChapters, volumeNumber) || {}
             );

@@ -4428,9 +4428,6 @@
             });
         });
 
-        const mainMappings = project.synopsisData?.main_characters || project.synopsis_data?.main_characters || {};
-        Object.values(mainMappings).forEach((name) => addRole(name, "主角映射角色"));
-
         return roleMap;
     }
 
