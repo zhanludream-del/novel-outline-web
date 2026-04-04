@@ -4578,17 +4578,31 @@
             }
 
             const cleaned = rawLine.replace(/^[•-]\s*/, "");
-            const nameMatch = cleaned.match(/^([\u4e00-\u9fa5]{2,4})/);
-            const name = String(nameMatch?.[1] || "").trim();
-            if (!name) {
-                return;
+            let label = cleaned;
+            let description = "";
+
+            if (cleaned.includes("（")) {
+                const parts = cleaned.split("（", 2);
+                label = parts[0].trim();
+                description = String(parts[1] || "").replace(/）/g, "").trim();
+            } else if (cleaned.includes("(")) {
+                const parts = cleaned.split("(", 2);
+                label = parts[0].trim();
+                description = String(parts[1] || "").replace(/\)/g, "").trim();
+            } else if (cleaned.includes("：")) {
+                const parts = cleaned.split("：", 2);
+                label = parts[0].trim();
+                description = String(parts[1] || "").trim();
+            } else if (cleaned.includes(":")) {
+                const parts = cleaned.split(":", 2);
+                label = parts[0].trim();
+                description = String(parts[1] || "").trim();
             }
 
-            const description = cleaned
-                .replace(new RegExp(`^${name}`), "")
-                .replace(/^[（(：:\s-]+/, "")
-                .replace(/[）)]$/, "")
-                .trim();
+            const name = this.normalizeOutlineCharacterLabel(label);
+            if (!name || !this.isPlausibleOutlineCharacterLabel(name)) {
+                return;
+            }
 
             entries.push({ name, description });
         });
