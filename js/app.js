@@ -1902,9 +1902,42 @@ ${(detailedOutline || concept || "未填写").slice(0, 2200)}`;
         return lines.join("\n");
     }
 
+    buildBodyOnlyChaptersTxtExport() {
+        const volumes = (this.novelData.outline.volumes || []).map((volume, index) => ({
+            ...volume,
+            volumeNumber: Number(volume.volume_number || index + 1),
+            chapters: [...(volume.chapters || [])].sort(Utils.chapterSort)
+        }));
+
+        const lines = [];
+        let exportedChapterCount = 0;
+
+        volumes.forEach((volume) => {
+            volume.chapters.forEach((chapter) => {
+                const content = String(chapter.content || "").trim();
+                if (!content) {
+                    return;
+                }
+                const chapterNumber = Number(chapter.number || chapter.chapter_number || 0);
+                lines.push(`第${chapterNumber}章 ${chapter.title || "未命名章节"}`.trim());
+                lines.push("");
+                lines.push(content);
+                lines.push("");
+                lines.push("");
+                exportedChapterCount += 1;
+            });
+        });
+
+        if (!exportedChapterCount) {
+            throw new Error("当前还没有可导出的正文内容。");
+        }
+
+        return lines.join("\n");
+    }
+
     exportChaptersTxt() {
         const baseName = this.novelData.outline.title || "novel-outline";
-        const text = this.buildChaptersTxtExport();
+        const text = this.buildBodyOnlyChaptersTxtExport();
         Utils.downloadText(text, `${baseName}_chapters_${Date.now()}.txt`);
         Utils.showMessage("已导出章节 TXT 文件。", "success");
         Utils.log("已导出章节 TXT。", "success");
