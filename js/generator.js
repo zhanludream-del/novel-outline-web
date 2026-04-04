@@ -941,7 +941,7 @@
         );
         const characterDigest = this.buildRelevantCharactersInfo(relevantCharacters);
         const volumeNumber = this.getVolumeNumber(project, volume);
-        const guardContext = this.buildGenerationGuards(project, volumeNumber, chapter.number || 0);
+        const guardContext = this.buildGenerationGuards(project, volumeNumber, chapter.number || 0, chapter);
         const characterConsistencyContext = this.buildCharacterConsistencyContext(
             project,
             `${chapter.summary || ""}\n${chapter.content || ""}`,
@@ -962,7 +962,13 @@
         const nextChapterForbiddenPreview = this.buildNextChapterForbiddenPreview(nextOutline);
         const transitionGuide = this.buildChapterTransitionGuide(project, volume, chapter, prevContent);
         const openingAntiRepeatGuard = this.buildOpeningAntiRepeatGuard(project, volume, chapter);
-        const storyStateSummary = this.buildStoryStateSummary(project, volumeNumber, chapter.number || 0);
+        const storyStateSummary = this.buildStoryStateSummary(
+            project,
+            volumeNumber,
+            chapter.number || 0,
+            `${chapter.title || ""}\n${chapter.summary || ""}\n${chapter.content || ""}`
+        );
+        const narrativeBridgePlan = this.buildNarrativeBridgePlan(project, volumeNumber, chapter);
         const setupContinuityGuard = this.buildSetupContinuityGuard(
             project,
             volumeNumber,
@@ -1001,6 +1007,7 @@
             currentVolumeOutlineContext,
             previousOutlineContext,
             storyStateSummary,
+            narrativeBridgePlan,
             expansionHint,
             setupContinuityGuard,
             openingAntiRepeatGuard,
@@ -1069,6 +1076,11 @@
                         preview: this.limitContext(storyStateSummary || "", 160)
                     },
                     {
+                        label: "章节执行骨架",
+                        length: String(narrativeBridgePlan || "").trim().length,
+                        preview: this.limitContext(narrativeBridgePlan || "", 160)
+                    },
+                    {
                         label: "章末快照衔接指导",
                         length: String(transitionGuide || "").trim().length,
                         preview: this.limitContext(transitionGuide || "", 160)
@@ -1132,7 +1144,12 @@
         const characterDigest = this.buildRelevantCharactersInfo(relevantCharacters);
         const previousOutlineContext = this.buildPreviousOutlineSummary(project, volume, chapter);
         const currentVolumeOutlineContext = this.extractCurrentVolumeOutlineContext(project, volumeNumber).currentOutline;
-        const storyStateSummary = this.buildStoryStateSummary(project, volumeNumber, chapter.number || 0);
+        const storyStateSummary = this.buildStoryStateSummary(
+            project,
+            volumeNumber,
+            chapter.number || 0,
+            `${chapter.title || ""}\n${chapter.summary || ""}\n${cleanedContent}`
+        );
         const prevContent = this.getPreviousChapterContents(project, volume, chapter, 3);
         const transitionGuide = this.buildChapterTransitionGuide(project, volume, chapter, prevContent);
         const nextChapterSetupInstruction = this.buildNextChapterSetupInstruction(chapter);
@@ -1347,7 +1364,7 @@
         });
     }
 
-    buildGenerationGuards(project, volumeNumber, chapterNumber) {
+    buildGenerationGuards(project, volumeNumber, chapterNumber, chapter = null) {
         const blocks = [];
         const globalSetting = project.global_setting_note || "";
         if (globalSetting) {
@@ -1368,7 +1385,8 @@
             this.buildAppearanceGuard(project, "", chapterNumber),
             this.buildDialogueGuard(project, chapterNumber),
             this.buildSnapshotGuard(project, chapterNumber),
-            this.buildDynamicStateGuard(project)
+            this.buildDynamicStateGuard(project),
+            this.buildPlotUnitChapterGuide(project, volumeNumber, chapterNumber, chapter)
         ].filter(Boolean).forEach((block) => blocks.push(block));
 
         if (volumeNumber) {
@@ -1683,7 +1701,7 @@
         return lines.join("\n");
     }
 
-    buildStoryStateSummary(project, volumeNumber, chapterNumber) {
+    buildStoryStateSummary(project, volumeNumber, chapterNumber, contextText = "") {
         const lines = [];
         const previousChapter = this.getLatestChapterBefore(project, volumeNumber, chapterNumber);
         if (previousChapter) {
@@ -1736,7 +1754,160 @@
             lines.push(`未回收伏笔：${unresolvedForeshadows.map((item) => Utils.summarizeText(item, 22)).join("、")}`);
         }
 
+        const relevantCharacterStates = this.buildRelevantCharacterStateDigest(project, contextText, chapterNumber);
+        if (relevantCharacterStates) {
+            lines.push(relevantCharacterStates);
+        }
+
         return lines.join("\n");
+    }
+
+    buildRelevantCharacterStateDigest(project, contextText = "", chapterNumber = 0) {
+        const storyStateCharacters = project?.outline?.story_state?.characters && typeof project.outline.story_state.characters === "object"
+            ? project.outline.story_state.characters
+            : {};
+        const compatibilityCharacters = project?.story_state?.characters && typeof project.story_state.characters === "object"
+            ? project.story_state.characters
+            : {};
+        const checkerStates = project?.character_checker?.character_states && typeof project.character_checker.character_states === "object"
+            ? project.character_checker.character_states
+            : {};
+        const dynamicStates = project?.dynamic_tracker?.character_states && typeof project.dynamic_tracker.character_states === "object"
+            ? project.dynamic_tracker.character_states
+            : {};
+        const appearanceStates = project?.character_appearance_tracker?.appearances && typeof project.character_appearance_tracker.appearances === "object"
+            ? project.character_appearance_tracker.appearances
+            : {};
+        const dialogueDeclarations = project?.dialogue_tracker?.declarations && typeof project.dialogue_tracker.declarations === "object"
+            ? project.dialogue_tracker.declarations
+            : {};
+        const characterMap = new Map(
+            (project?.outline?.characters || [])
+                .filter((character) => character?.name)
+                .map((character) => [character.name, character])
+        );
+
+        const relevantNames = this.collectRelevantCharacters(project, contextText)
+            .map((character) => character.name)
+            .filter(Boolean);
+        const fallbackNames = [
+            ...Object.keys(storyStateCharacters || {}),
+            ...Object.keys(checkerStates || {}),
+            ...Object.keys(dynamicStates || {})
+        ];
+        const names = Array.from(new Set(relevantNames.length ? relevantNames : fallbackNames)).slice(0, 6);
+        if (!names.length) {
+            return "";
+        }
+
+        const firstText = (...values) => values
+            .map((value) => String(value || "").trim())
+            .find(Boolean) || "";
+
+        const lines = [
+            "【相关角色即时状态（不要串台）】",
+            "以下角色的位置、伤势、关系和知情范围彼此独立，不能把一个人的状态写到另一个人身上。"
+        ];
+
+        names.forEach((name) => {
+            const outlineCharacter = characterMap.get(name) || {};
+            const storyState = storyStateCharacters[name] || compatibilityCharacters[name] || {};
+            const checkerState = checkerStates[name] || {};
+            const dynamicState = dynamicStates[name] || {};
+            const appearanceState = appearanceStates[name] || {};
+            const declarationItems = Array.isArray(dialogueDeclarations[name]) ? dialogueDeclarations[name] : [];
+            const recentDeclaration = declarationItems
+                .filter((item) => !chapterNumber || Number(item.chapter_num || item.chapter || item["章节"] || 0) < chapterNumber)
+                .slice(-1)
+                .map((item) => item.content || item["内容"] || "")
+                .find(Boolean) || "";
+
+            const parts = [];
+            const identity = firstText(
+                outlineCharacter.identity,
+                outlineCharacter["身份"],
+                appearanceState.identity,
+                appearanceState["身份"]
+            );
+            const location = firstText(
+                storyState.location,
+                storyState.current_location,
+                storyState["当前位置"],
+                checkerState.location,
+                checkerState.current_location,
+                checkerState["当前位置"],
+                dynamicState.location,
+                dynamicState.current_location,
+                dynamicState["当前位置"]
+            );
+            const status = firstText(
+                storyState.status,
+                storyState.current_status,
+                storyState["状态"],
+                checkerState.status,
+                checkerState.current_status,
+                checkerState["当前状态"],
+                dynamicState.status,
+                dynamicState.current_status,
+                dynamicState["当前状态"]
+            );
+            const cultivation = firstText(
+                storyState.cultivation,
+                storyState["修为"],
+                checkerState.cultivation,
+                checkerState["修为"],
+                dynamicState.cultivation,
+                dynamicState["修为"]
+            );
+            const goal = firstText(
+                storyState.goals,
+                storyState.goal,
+                storyState["目标"],
+                dynamicState.goals,
+                dynamicState.goal,
+                outlineCharacter.goals,
+                outlineCharacter["目标动机"]
+            );
+            const relationships = firstText(
+                storyState.relationships,
+                storyState["关系变化"],
+                dynamicState.relationships,
+                dynamicState["关系变化"],
+                outlineCharacter.relationships,
+                outlineCharacter["人物关系"]
+            );
+            const secrets = firstText(
+                storyState.secrets,
+                storyState["知晓的秘密"],
+                dynamicState.secrets,
+                dynamicState["知晓的秘密"]
+            );
+            const appearance = firstText(
+                appearanceState.current_appearance,
+                appearanceState["当前形象"],
+                appearanceState["外貌形象/伪装当前状态"],
+                storyState.appearance_changes,
+                storyState["外貌形象/伪装当前状态"],
+                dynamicState.appearance,
+                dynamicState["当前形象"]
+            );
+
+            if (identity) parts.push(`身份=${Utils.summarizeText(identity, 18)}`);
+            if (location) parts.push(`位置=${Utils.summarizeText(location, 24)}`);
+            if (status) parts.push(`状态=${Utils.summarizeText(status, 24)}`);
+            if (cultivation) parts.push(`实力=${Utils.summarizeText(cultivation, 18)}`);
+            if (goal) parts.push(`目标=${Utils.summarizeText(goal, 24)}`);
+            if (relationships) parts.push(`关系=${Utils.summarizeText(relationships, 22)}`);
+            if (secrets) parts.push(`知情=${Utils.summarizeText(secrets, 20)}`);
+            if (appearance) parts.push(`形象=${Utils.summarizeText(appearance, 18)}`);
+            if (recentDeclaration) parts.push(`近期表态=${Utils.summarizeText(recentDeclaration, 18)}`);
+
+            if (parts.length) {
+                lines.push(`- ${name}：${parts.join("；")}`);
+            }
+        });
+
+        return lines.length > 2 ? lines.join("\n") : "";
     }
 
     buildSetupContinuityGuard(project, volumeNumber, chapterNumber, currentText = "") {
@@ -2443,6 +2614,91 @@
         if (prevContent) {
             lines.push("开头前几段必须紧接前文结尾的动作、情绪或对话，不要无故跳天、跳地点、跳关系状态。");
         }
+
+        return lines.join("\n");
+    }
+
+    buildPlotUnitChapterGuide(project, volumeNumber, chapterNumber, chapter = null) {
+        if (!chapterNumber) {
+            return "";
+        }
+
+        const { phase, position } = this.getPlotUnitPhase(chapterNumber);
+        const { unitNumber, unit } = this.getPlotUnitForChapter(project, volumeNumber, chapterNumber);
+        const lines = [
+            "【剧情单元阶段约束】",
+            `当前章节位于第 ${unitNumber} 个剧情单元的${phase}阶段（单元内第 ${position} 章）。`
+        ];
+
+        const chapterPlotUnit = chapter?.plot_unit && typeof chapter.plot_unit === "object" ? chapter.plot_unit : {};
+        if (unit?.core_conflict) {
+            lines.push(`本单元核心冲突：${Utils.summarizeText(unit.core_conflict, 100)}`);
+        }
+        if (chapterPlotUnit.connects_to_previous) {
+            lines.push(`本章承接重点：${Utils.summarizeText(chapterPlotUnit.connects_to_previous, 90)}`);
+        }
+        if (chapterPlotUnit.sets_up_next) {
+            lines.push(`本章铺垫重点：${Utils.summarizeText(chapterPlotUnit.sets_up_next, 90)}`);
+        }
+
+        const suggestionText = this.buildPlotUnitSuggestionText(project, volumeNumber, chapterNumber);
+        if (suggestionText) {
+            lines.push(suggestionText);
+        }
+
+        return lines.join("\n");
+    }
+
+    buildNarrativeBridgePlan(project, volumeNumber, chapter) {
+        const chapterNumber = Number(chapter?.number || chapter?.chapter_number || 0);
+        if (!chapterNumber) {
+            return "";
+        }
+
+        const previousChapter = this.getLatestChapterBefore(project, volumeNumber, chapterNumber);
+        const previousSnapshot = this.getSnapshotBeforeChapter(project, chapterNumber).snapshot || {};
+        const { phase, position } = this.getPlotUnitPhase(chapterNumber);
+        const goal = this.extractSummarySection(chapter?.summary || "", "章节目标")
+            || chapter?.key_event
+            || chapter?.keyEvent
+            || chapter?.title
+            || "";
+        const coreEvent = this.extractSummarySection(chapter?.summary || "", "核心事件")
+            || chapter?.key_event
+            || chapter?.keyEvent
+            || chapter?.title
+            || "";
+        const scene = this.extractSummarySection(chapter?.summary || "", "场景");
+        const emotion = this.extractSummarySection(chapter?.summary || "", "情绪曲线")
+            || chapter?.emotion_curve
+            || chapter?.emotionCurve
+            || "";
+        const previousSetup = this.describeNextChapterSetup(previousChapter?.nextChapterSetup || previousChapter?.next_chapter_setup || {});
+        const currentSetup = this.describeNextChapterSetup(chapter?.next_chapter_setup || {});
+        const openingAnchor = previousSetup
+            || previousSnapshot.transition_focus
+            || previousSnapshot["下一章预期"]
+            || previousSnapshot.pending_plots
+            || previousChapter?.keyEvent
+            || previousChapter?.title
+            || "";
+
+        const lines = [
+            "【本章节奏执行骨架】",
+            `当前位于第 ${Math.floor((chapterNumber - 1) / 8) + 1} 单元的${phase}阶段（第 ${position} 章），不要写成散点拼贴。`,
+            `1. 开场承接：先接住${Utils.summarizeText(openingAnchor || "上一章留下的动作、状态或情绪尾音", 90)}，用动作或对白把读者带回现场。`,
+            `2. 本章目标：${Utils.summarizeText(goal || "围绕当前章纲主线继续推进", 100)}。`,
+            `3. 主推进：围绕${Utils.summarizeText(coreEvent || "当前核心事件", 110)}展开，中段必须出现阻力、误判、代价或局势变化。`,
+            "4. 实质变化：至少让人物关系、信息认知、资源状态、场上局势中的一项发生看得见的变化。"
+        ];
+
+        if (scene) {
+            lines.push(`场景抓手：优先从「${Utils.summarizeText(scene, 40)}」或与它直接相连的场景起笔，转场必须写清过桥动作。`);
+        }
+        if (emotion) {
+            lines.push(`情绪节奏：${Utils.summarizeText(emotion, 40)}，不要整章一个情绪平推到底。`);
+        }
+        lines.push(`5. 结尾收束：停在${Utils.summarizeText(currentSetup || "下一步压力、余波或未解悬念", 90)}对应的张力点上，只埋因，不写果。`);
 
         return lines.join("\n");
     }
@@ -3182,6 +3438,7 @@
         currentVolumeOutlineContext,
         previousOutlineContext,
         storyStateSummary,
+        narrativeBridgePlan,
         expansionHint,
         setupContinuityGuard,
         openingAntiRepeatGuard,
@@ -3221,6 +3478,8 @@
                 "",
                 "【前文状态摘要】",
                 "{{story_state_summary}}",
+                "",
+                "{{narrative_bridge_plan}}",
                 "",
                 "【相关人物设定】",
                 "{{relevant_characters}}",
@@ -3284,6 +3543,7 @@
             chapter_title: chapter.title || "",
             previous_outline_context: previousOutlineContext || "暂无前文大纲",
             story_state_summary: storyStateSummary || "暂无明确前文状态摘要",
+            narrative_bridge_plan: narrativeBridgePlan || "【本章节奏执行骨架】\n先接上章结果，再推进本章主事件，中段形成波折，结尾停在下一步张力点。",
             prev_content: prevContent || "暂无前文",
             next_outline: nextOutline || "暂无下一章章纲",
             global_setting_note: project.global_setting_note || "暂无",
@@ -3323,6 +3583,7 @@
 
         const desktopInvariantBundle = [
             storyStateSummary ? `【当前故事状态（必须延续）】\n${storyStateSummary}` : "",
+            narrativeBridgePlan || "",
             previousOutlineContext ? `【前文大纲摘要】\n${previousOutlineContext}` : "",
             currentVolumeOutlineContext ? `【当前卷细纲参考】\n${this.limitContext(currentVolumeOutlineContext, 1800)}` : "",
             worldAndPlanContext ? worldAndPlanContext : "",
