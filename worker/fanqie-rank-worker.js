@@ -133,34 +133,38 @@ function parseCategoryLinks(html) {
 }
 
 function pickBestCategories(categories, context) {
-    const keywordText = [context.keyword, context.subgenre, context.genre].filter(Boolean).join(" ");
+    const exactTerms = [context.keyword, context.subgenre, context.genre]
+        .map((item) => cleanText(item))
+        .filter(Boolean);
+
+    const exactMatches = uniqueBy(
+        categories.filter((item) => exactTerms.some((term) => item.name === term)),
+        (item) => item.name
+    );
+    if (exactMatches.length) {
+        return exactMatches;
+    }
+
+    const fuzzyMatches = uniqueBy(
+        categories.filter((item) => exactTerms.some((term) => item.name.includes(term) || term.includes(item.name))),
+        (item) => item.name
+    );
+    if (fuzzyMatches.length) {
+        return fuzzyMatches.slice(0, 3);
+    }
+
+    const keywordText = exactTerms.join(" ");
     const aliasGroups = buildAliasGroups(keywordText);
 
     const scored = categories.map((item) => {
         let score = 0;
         const haystack = `${item.name} ${item.href}`;
-        if (context.keyword && item.name === context.keyword) {
-            score += 40;
-        }
-        if (context.subgenre && item.name === context.subgenre) {
-            score += 36;
-        }
-        if (context.genre && item.name === context.genre) {
-            score += 32;
-        }
-        if (context.keyword && item.name.includes(context.keyword)) {
-            score += 18;
-        }
         aliasGroups.forEach((aliases) => {
-            if (aliases.some((alias) => alias && haystack.includes(alias))) {
-                score += 8;
-            }
+            const hits = aliases.filter((alias) => alias && haystack.includes(alias)).length;
+            score += hits * 6;
         });
         if (keywordText && haystack.includes(keywordText)) {
-            score += 12;
-        }
-        if (/女频|现言|古言|年代|悬疑|玄幻|都市|科幻|同人/.test(item.name)) {
-            score += 1;
+            score += 10;
         }
         return { ...item, score };
     }).sort((a, b) => b.score - a.score);
@@ -169,7 +173,7 @@ function pickBestCategories(categories, context) {
         scored.filter((item) => item.score > 0),
         (item) => item.name
     );
-    return picked.length ? picked : uniqueBy(scored.slice(0, 3), (item) => item.name);
+    return picked.length ? picked.slice(0, 3) : uniqueBy(scored.slice(0, 3), (item) => item.name);
 }
 
 function buildAliasGroups(text) {
@@ -394,6 +398,7 @@ function normalizeBook(book) {
         title: cleanText(book.title || ""),
         author: cleanText(book.author || ""),
         intro: cleanText(book.intro || ""),
+        analysisIntro: sanitizeIntroForAnalysis(book.intro || ""),
         status: cleanText(book.status || ""),
         readingCount: cleanText(book.readingCount || ""),
         category: cleanText(book.category || ""),
@@ -403,7 +408,7 @@ function normalizeBook(book) {
 }
 
 function buildTrendSummary({ keyword, genre, subgenre, categories, items, diagnostics }) {
-    const cleanItems = items.filter((item) => isUsableIntro(item.intro));
+    const cleanItems = items.filter((item) => isUsableIntro(item.analysisIntro || item.intro));
     const categoriesText = categories.map((item) => item.name).filter(Boolean).join("、") || "总榜";
     const hotTags = collectHotTags(cleanItems);
     const protagonistSignals = collectFrequentSignals(cleanItems, [
@@ -426,16 +431,21 @@ function buildTrendSummary({ keyword, genre, subgenre, categories, items, diagno
         protagonistSignals,
         conflictSignals
     });
+    const introSamples = cleanItems
+        .map((item) => limitText(item.analysisIntro || item.intro || "", 56))
+        .filter(Boolean)
+        .slice(0, 3);
 
     return [
         `本次对标关键词：${keyword || "未指定"}。`,
         `参考榜单分类：${categoriesText}。`,
-        diagnostics ? `本次共抓到 ${diagnostics.totalItems} 本样本，可直接用于趋势提炼的简介有 ${diagnostics.usableIntroCount} 本，书名混淆 ${diagnostics.obfuscatedTitleCount} 本。` : "",
+        diagnostics ? `本次共抓到 ${diagnostics.totalItems} 本样本，可直接用于趋势提炼的简介有 ${diagnostics.usableIntroCount} 本，可抢救片段的简介有 ${diagnostics.salvagedIntroCount || 0} 本，书名混淆 ${diagnostics.obfuscatedTitleCount} 本。` : "",
         hotTags.length ? `当前高位常见卖点：${hotTags.join("、")}。` : "当前榜单文本里可稳定提取到的标签不多，建议结合分类趋势理解赛道方向。",
         protagonistSignals.length ? `高频主角模板信号：${protagonistSignals.join("、")}。` : "",
         conflictSignals.length ? `高频冲突发动机：${conflictSignals.join("、")}。` : "",
         emotionSignals.length ? `高频情绪抓手：${emotionSignals.join("、")}。` : "",
         openingPatterns.length ? `常见高点击开局方式：${openingPatterns.join("；")}。` : "",
+        introSamples.length ? `可用简介片段样本：${introSamples.join("；")}。` : "",
         diffSuggestions.length ? `建议优先做的差异化切口：${diffSuggestions.join("；")}。` : "",
         `不要照搬榜单书名和现成剧情，更适合提炼“赛道共性 + 读者情绪需求 + 缺口打法”。`,
         (subgenre || genre) ? `当前项目题材参考：${subgenre || genre}。请在同赛道内做升级或反差切入。` : ""
@@ -446,6 +456,7 @@ function buildTrendDiagnostics(items) {
     const diagnostics = {
         totalItems: items.length,
         usableIntroCount: 0,
+        salvagedIntroCount: 0,
         obfuscatedTitleCount: 0,
         obfuscatedIntroCount: 0
     };
@@ -457,8 +468,10 @@ function buildTrendDiagnostics(items) {
         if (containsObfuscatedText(item.intro)) {
             diagnostics.obfuscatedIntroCount += 1;
         }
-        if (isUsableIntro(item.intro)) {
+        if (isUsableIntro(item.analysisIntro || item.intro)) {
             diagnostics.usableIntroCount += 1;
+        } else if (cleanText(item.analysisIntro || "").length >= 18) {
+            diagnostics.salvagedIntroCount += 1;
         }
     });
 
@@ -469,7 +482,7 @@ function collectHotTags(items) {
     const tagCounts = new Map();
     items.forEach((item) => {
         const baseTags = Array.isArray(item.tags) ? item.tags : [];
-        const merged = baseTags.concat(extractKeywordTags(item.intro));
+        const merged = baseTags.concat(extractKeywordTags(item.analysisIntro || item.intro));
         merged.forEach((tag) => {
             const clean = cleanText(tag);
             if (!clean || containsObfuscatedText(clean) || clean.length > 12) {
@@ -487,7 +500,7 @@ function collectHotTags(items) {
 function collectFrequentSignals(items, dictionary, limit = 5) {
     const counts = new Map();
     items.forEach((item) => {
-        const text = `${item.title || ""} ${item.intro || ""} ${item.category || ""}`;
+        const text = `${item.title || ""} ${item.analysisIntro || item.intro || ""} ${item.category || ""}`;
         dictionary.forEach((token) => {
             if (text.includes(token)) {
                 counts.set(token, (counts.get(token) || 0) + 1);
@@ -503,7 +516,7 @@ function collectFrequentSignals(items, dictionary, limit = 5) {
 function inferOpeningPatterns(items) {
     const patterns = new Map();
     items.forEach((item) => {
-        const intro = String(item.intro || "");
+        const intro = String(item.analysisIntro || item.intro || "");
         if (!isUsableIntro(intro)) {
             return;
         }
@@ -552,7 +565,7 @@ function buildDiffSuggestions({ keyword, genre, subgenre, hotTags, protagonistSi
 }
 
 function extractKeywordTags(text) {
-    const source = String(text || "");
+    const source = sanitizeIntroForAnalysis(text || "");
     const tokens = [
         "年代", "七零", "八零", "九零", "知青", "大院", "军婚", "养娃", "带崽", "重生",
         "穿书", "穿越", "创业", "致富", "种田", "美食", "真假千金", "恶毒女配", "团宠",
@@ -595,14 +608,36 @@ function normalizeKey(value) {
 }
 
 function isUsableIntro(value) {
-    const text = cleanText(value);
-    if (!text || text.length < 12) {
+    const text = sanitizeIntroForAnalysis(value);
+    if (!text || text.length < 18) {
         return false;
     }
-    if (containsObfuscatedText(text)) {
+    if (countReadableCodepoints(text) < 12) {
         return false;
     }
     return true;
+}
+
+function sanitizeIntroForAnalysis(value) {
+    return cleanText(value)
+        .replace(/[\uE000-\uF8FF]/g, " ")
+        .replace(/[^\u4E00-\u9FFFa-zA-Z0-9，。！？、；：“”‘’《》【】（）()\-—\s]/g, " ")
+        .replace(/\s+/g, " ")
+        .trim();
+}
+
+function countReadableCodepoints(value) {
+    const text = String(value || "");
+    const matches = text.match(/[\u4E00-\u9FFFa-zA-Z0-9]/g) || [];
+    return matches.length;
+}
+
+function limitText(value, maxLength = 60) {
+    const text = cleanText(value);
+    if (text.length <= maxLength) {
+        return text;
+    }
+    return `${text.slice(0, maxLength)}…`;
 }
 
 function containsObfuscatedText(value) {

@@ -90,7 +90,8 @@
             Array.isArray(marketTrendItems) && marketTrendItems.length
                 ? `榜单样本：\n${marketTrendItems.slice(0, 12).map((item, index) => {
                     const safeTitle = this.containsObfuscatedText(item.title || "") ? "书名已混淆" : (item.title || "未命名");
-                    const safeIntro = this.containsObfuscatedText(item.intro || "") ? "" : this.limitContext(item.intro, 100);
+                    const cleanedIntro = String(item.analysisIntro || item.intro || "").trim();
+                    const safeIntro = this.containsObfuscatedText(cleanedIntro) ? "" : this.limitContext(cleanedIntro, 100);
                     const tags = Array.isArray(item.tags)
                         ? item.tags.filter((tag) => !this.containsObfuscatedText(tag || "")).join("、")
                         : "";

@@ -2864,7 +2864,7 @@ ${(detailedOutline || concept || "未填写").slice(0, 2200)}`;
 
         this.elements.ideaMarketSummary.className = "market-summary";
         const prefix = diagnostics.totalItems
-            ? `样本 ${diagnostics.totalItems} 本，可用简介 ${diagnostics.usableIntroCount || 0} 本，混淆书名 ${diagnostics.obfuscatedTitleCount || 0} 本，混淆简介 ${diagnostics.obfuscatedIntroCount || 0} 本。\n\n`
+            ? `样本 ${diagnostics.totalItems} 本，可用简介 ${diagnostics.usableIntroCount || 0} 本，可抢救片段 ${diagnostics.salvagedIntroCount || 0} 本，混淆书名 ${diagnostics.obfuscatedTitleCount || 0} 本，混淆简介 ${diagnostics.obfuscatedIntroCount || 0} 本。\n\n`
             : "";
         this.elements.ideaMarketSummary.textContent = `${prefix}${summary}`;
     }
