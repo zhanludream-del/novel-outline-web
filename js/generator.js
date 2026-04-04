@@ -1116,6 +1116,60 @@
         return this.sanitizeGeneratedChapterContent(rawContent, nextOutline).trim();
     }
 
+    async recoverChapterStateJson({ project, volume, chapter, content, rawStateBlock = "" }) {
+        const cleanedContent = String(content || "").trim();
+        if (!cleanedContent) {
+            return "";
+        }
+
+        const volumeNumber = this.getVolumeNumber(project, volume);
+        const chapterOutlineCharacterNames = this.extractChapterOutlineCharacterNames(chapter.summary || "");
+        const relevantCharacters = this.collectRelevantCharacters(
+            project,
+            `${chapter.summary || ""}\n${cleanedContent}`,
+            chapterOutlineCharacterNames
+        );
+        const characterDigest = this.buildRelevantCharactersInfo(relevantCharacters);
+        const previousOutlineContext = this.buildPreviousOutlineSummary(project, volume, chapter);
+        const currentVolumeOutlineContext = this.extractCurrentVolumeOutlineContext(project, volumeNumber).currentOutline;
+        const storyStateSummary = this.buildStoryStateSummary(project, volumeNumber, chapter.number || 0);
+        const prevContent = this.getPreviousChapterContents(project, volume, chapter, 3);
+        const transitionGuide = this.buildChapterTransitionGuide(project, volume, chapter, prevContent);
+        const nextChapterSetupInstruction = this.buildNextChapterSetupInstruction(chapter);
+        const stateOutputProtocol = this.buildStateOutputProtocol(project, chapter, relevantCharacters);
+
+        const systemPrompt = [
+            "你是一个严格的中文小说状态抽取器。",
+            "你的任务是根据章节正文和上下文，输出本章结束时的状态 JSON。",
+            "你只能输出一个合法 JSON 对象。",
+            "禁止输出解释、禁止输出 markdown 代码块、禁止输出 <<<STATE_JSON>>> 分隔符、禁止复述正文。",
+            "如果正文里没有明确给出的信息，请使用空字符串、空数组或空对象，不要编造。"
+        ].join("\n");
+
+        const userPrompt = [
+            `【当前章节】第${chapter.number || "?"}章《${chapter.title || "未命名章节"}》`,
+            chapter.summary ? `【本章大纲】\n${chapter.summary}` : "",
+            previousOutlineContext ? `【前文大纲摘要】\n${this.limitContext(previousOutlineContext, 1400)}` : "",
+            storyStateSummary ? `【前文状态摘要】\n${storyStateSummary}` : "",
+            currentVolumeOutlineContext ? `【当前卷细纲参考】\n${this.limitContext(currentVolumeOutlineContext, 1600)}` : "",
+            characterDigest ? `【相关人物设定】\n${characterDigest}` : "",
+            transitionGuide ? `【衔接提醒】\n${transitionGuide}` : "",
+            nextChapterSetupInstruction ? `【本章结尾铺垫任务】\n${nextChapterSetupInstruction}` : "",
+            rawStateBlock ? `【上次失败的状态输出残片】\n${this.limitContext(rawStateBlock, 1800)}` : "",
+            `【章节正文】\n${this.limitContext(cleanedContent, 12000)}`,
+            stateOutputProtocol,
+            "现在只输出 JSON 对象本身，不要输出任何额外文字。"
+        ].filter(Boolean).join("\n\n");
+
+        const raw = await this.api.callLLM(userPrompt, systemPrompt, {
+            temperature: 0.1,
+            maxTokens: Math.min(this.getConfiguredMaxTokens(4000), 4000),
+            timeout: this.getTaskTimeoutMs(120000)
+        });
+
+        return String(raw || "").trim();
+    }
+
     async filterAiFlavorText(text, project = {}) {
         const sourceText = String(text || "").trim();
         if (!sourceText) {

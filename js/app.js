@@ -3871,7 +3871,7 @@ ${(detailedOutline || concept || "未填写").slice(0, 2200)}`;
                 chapter,
                 onDebugInfo: (debugInfo) => this.logChapterGenerationDebugInfo(debugInfo)
             });
-            const processed = this.processGeneratedChapterResponse(rawContent, volume, chapter);
+            const processed = await this.processGeneratedChapterResponse(rawContent, volume, chapter);
             let finalContent = processed.cleanedContent;
             if (this.novelData.prompt_state?.ai_filter_enabled !== false) {
                 Utils.log("🔍 正在进行AI深度去味（LLM润色）...", "info");
@@ -3916,7 +3916,7 @@ ${(detailedOutline || concept || "未填写").slice(0, 2200)}`;
         });
     }
 
-    processGeneratedChapterResponse(rawContent, volume, chapter) {
+    async processGeneratedChapterResponse(rawContent, volume, chapter) {
         const chapterNumber = Number(chapter.number || chapter.chapter_number || 0);
         const logs = [];
         const stateBlock = this.extractDelimitedBlock(rawContent, "<<<STATE_JSON>>>", [
@@ -3933,7 +3933,17 @@ ${(detailedOutline || concept || "未填写").slice(0, 2200)}`;
         const appearanceBlock = this.extractDelimitedBlock(rawContent, "<<<CHARACTER_APPEARANCE>>>", ["<<<END_APPEARANCE>>>"]);
         const cleanedContent = this.stripGeneratedMarkers(rawContent).trim();
 
-        const stateData = this.parseStateJsonBlock(stateBlock);
+        let stateData = this.parseStateJsonBlock(stateBlock);
+        if (!stateData && cleanedContent) {
+            Utils.log(`第 ${chapterNumber} 章 STATE_JSON 提取失败，正在分离补提取状态...`, "info");
+            const recovered = await this.recoverMissingChapterStateData(volume, chapter, cleanedContent, stateBlock);
+            stateData = recovered.stateData;
+            if (stateData) {
+                logs.push("原始 STATE_JSON 提取失败，已自动分离补提取并回写状态。");
+            } else {
+                logs.push("原始 STATE_JSON 提取失败，分离补提取也未成功。");
+            }
+        }
         if (stateData) {
             this.applyStateUpdate(chapterNumber, chapter.title || `第${chapterNumber}章`, stateData, chapter);
             logs.push("已回写状态 JSON 到故事状态/动态追踪/时间线/章末快照。");
@@ -3972,6 +3982,32 @@ ${(detailedOutline || concept || "未填写").slice(0, 2200)}`;
             cleanedContent,
             logs
         };
+    }
+
+    async recoverMissingChapterStateData(volume, chapter, cleanedContent, stateBlock = "") {
+        const chapterNumber = Number(chapter?.number || chapter?.chapter_number || 0);
+        if (!cleanedContent || !this.generator?.recoverChapterStateJson) {
+            return { stateData: null, raw: "" };
+        }
+
+        try {
+            const raw = await this.generator.recoverChapterStateJson({
+                project: this.novelData,
+                volume,
+                chapter,
+                content: cleanedContent,
+                rawStateBlock: stateBlock
+            });
+            const stateData = this.parseStateJsonBlock(raw);
+            if (stateData) {
+                return { stateData, raw };
+            }
+            Utils.log(`第 ${chapterNumber} 章分离状态提取返回了内容，但仍未解析出有效 JSON。`, "error");
+        } catch (error) {
+            Utils.log(`第 ${chapterNumber} 章分离状态提取失败：${error.message}`, "error");
+        }
+
+        return { stateData: null, raw: "" };
     }
 
     extractDelimitedBlock(content, startMarker, endMarkers) {
