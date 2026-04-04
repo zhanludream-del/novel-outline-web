@@ -131,6 +131,7 @@ class NovelOutlineWebApp {
             btnExportTxt: document.getElementById("btnExportTxt"),
             btnExportData: document.getElementById("btnExportData"),
             btnImportData: document.getElementById("btnImportData"),
+            btnClearProject: document.getElementById("btnClearProject"),
             btnGenerateWorldbuilding: document.getElementById("btnGenerateWorldbuilding"),
             btnClearWorldbuilding: document.getElementById("btnClearWorldbuilding"),
             btnGenerateVolumes: document.getElementById("btnGenerateVolumes"),
@@ -513,6 +514,9 @@ class NovelOutlineWebApp {
         this.elements.btnExportTxt.addEventListener("click", () => this.exportChaptersTxt());
         this.elements.btnExportData.addEventListener("click", () => this.exportData());
         this.elements.btnImportData.addEventListener("click", () => this.elements.importFileInput.click());
+        if (this.elements.btnClearProject) {
+            this.elements.btnClearProject.addEventListener("click", () => this.clearCurrentProject());
+        }
         this.elements.importFileInput.addEventListener("change", (event) => this.importData(event));
 
         this.elements.btnGenerateWorldbuilding.addEventListener("click", () => this.safeAsync(() => this.generateWorldbuilding()));
@@ -1842,6 +1846,90 @@ ${(detailedOutline || concept || "未填写").slice(0, 2200)}`;
         this.storage.export(fileName, this.novelData);
         Utils.showMessage("已导出 JSON 文件。", "success");
         Utils.log("已导出当前项目。", "success");
+    }
+
+    hasProjectDataToClear() {
+        const outline = this.novelData.outline || {};
+        const synopsis = this.novelData.synopsisData || this.novelData.synopsis_data || {};
+        const volumes = Array.isArray(outline.volumes) ? outline.volumes : [];
+        const characters = Array.isArray(outline.characters) ? outline.characters : [];
+        const chapters = volumes.reduce((total, volume) => total + (volume.chapters || []).length, 0);
+
+        const textFields = [
+            outline.title,
+            outline.theme,
+            outline.storyConcept,
+            outline.worldbuilding,
+            outline.detailed_outline,
+            this.novelData.global_setting_note,
+            synopsis.volumeSynopsis,
+            synopsis.volume_synopsis,
+            synopsis.synopsisOutput,
+            synopsis.synopsis_output
+        ];
+
+        if (textFields.some((value) => String(value || "").trim())) {
+            return true;
+        }
+
+        if (chapters > 0 || characters.length > 0 || volumes.some((volume) => String(volume.summary || volume.title || "").trim())) {
+            return true;
+        }
+
+        return false;
+    }
+
+    clearCurrentProject() {
+        if (!this.hasProjectDataToClear()) {
+            Utils.showMessage("当前项目已经是空的。", "info");
+            return;
+        }
+
+        const shouldExport = window.confirm(
+            "清空当前项目之前，必须先保存当前项目 JSON 备份。\n\n点击“确定”后，系统会先自动导出一份完整 JSON，然后再进入清空确认。"
+        );
+        if (!shouldExport) {
+            return;
+        }
+
+        this.exportData();
+
+        const confirmText = window.prompt(
+            "JSON 备份已经开始导出。\n\n确认你已经保存好这份 JSON 后，请输入：已保存JSON"
+        );
+        if ((confirmText || "").trim() !== "已保存JSON") {
+            Utils.showMessage("未完成 JSON 备份确认，已取消清空。", "info");
+            Utils.log("清空当前项目已取消：未完成 JSON 备份确认。", "info");
+            return;
+        }
+
+        const finalConfirm = window.confirm(
+            "最后确认：这会清空当前项目中的设定、世界观、卷纲、细纲、章纲、人物和正文内容。\n\n已导出的 JSON 不会受影响。确定继续吗？"
+        );
+        if (!finalConfirm) {
+            return;
+        }
+
+        this.novelData = this.storage.getDefaultData();
+        this.api = new AIAPIClient();
+        this.generator = new NovelGenerator(this.api);
+        this.state.selectedChapterId = null;
+        this.state.editingCharacterId = null;
+
+        if (this.elements.importFileInput) {
+            this.elements.importFileInput.value = "";
+        }
+
+        this.ensureBaseData();
+        this.syncFormFromData();
+        this.clearChapterEditor();
+        this.resetCharacterForm();
+        this.persist(true);
+        this.renderAll();
+        this.switchTab("dashboard");
+
+        Utils.showMessage("当前项目已清空。建议后续通过 JSON 重新导入旧项目。", "success");
+        Utils.log("已清空当前项目，JSON 备份请妥善保存。", "success");
     }
 
     buildChaptersTxtExport() {
