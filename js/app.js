@@ -3331,9 +3331,25 @@ ${(detailedOutline || concept || "未填写").slice(0, 2200)}`;
                                 this.upsertChapter(volume, chapter);
                                 generatedAll.push(chapter);
                             });
+                            const outlineSyncResult = this.generator.mergeSynopsisStateFromGeneratedChapters(
+                                this.novelData,
+                                generated,
+                                volumeNumber,
+                                {
+                                    concept: this.novelData.outline?.concept || "",
+                                    volumeSummary: volume.summary || ""
+                                }
+                            );
+                            this.applyOutlineMappingsToChapters(volume.chapters);
                             volume.chapters.sort(Utils.chapterSort);
                             this.persist(true);
                             this.renderChapterList();
+                            if (outlineSyncResult.mainMappings?.length || outlineSyncResult.supportingMappings?.length) {
+                                Utils.log(
+                                    `第 ${segmentStart}-${segmentEnd} 章已同步角色映射：主角 ${outlineSyncResult.mainMappings.length} 条，配角 ${outlineSyncResult.supportingMappings.length} 条。`,
+                                    "info"
+                                );
+                            }
                             completedGapSegments += 1;
                             Utils.updateLoading(`已完成第 ${segmentStart}-${segmentEnd} 章`, {
                                 progress: Math.round((completedGapSegments / totalGapSegments) * 92),
@@ -5744,6 +5760,23 @@ ${(detailedOutline || concept || "未填写").slice(0, 2200)}`;
         }
 
         const task = async () => {
+            const outlineSyncResult = this.generator.mergeSynopsisStateFromGeneratedChapters(
+                this.novelData,
+                outlineChapters,
+                volumeNumber,
+                {
+                    concept: this.novelData.outline?.concept || "",
+                    volumeSummary: currentVolume?.summary || ""
+                }
+            );
+            this.applyOutlineMappingsToChapters(outlineChapters);
+            if (outlineSyncResult.mainMappings?.length || outlineSyncResult.supportingMappings?.length) {
+                Utils.log(
+                    `已从当前大纲同步角色映射：主角 ${outlineSyncResult.mainMappings.length} 条，配角 ${outlineSyncResult.supportingMappings.length} 条。`,
+                    "info"
+                );
+            }
+
             Utils.updateLoading("正在从大纲里提取角色线索...", {
                 progress: 10,
                 detail: "先同步章纲中的出场人物"
@@ -6435,8 +6468,44 @@ ${(detailedOutline || concept || "未填写").slice(0, 2200)}`;
         });
     }
 
+    normalizeCharacterReferenceLabel(name) {
+        return String(name || "")
+            .trim()
+            .replace(/^[•\-]\s*/, "")
+            .replace(/\s+/g, " ")
+            .replace(/^(她的|他的|我的|你的|其|这个|那个|这位|那位)/, "")
+            .replace(/[（(][^）)]*[）)]$/u, "")
+            .trim();
+    }
+
+    applyOutlineMappingsToChapters(chapters = []) {
+        (chapters || []).forEach((chapter) => {
+            if (!chapter || typeof chapter !== "object") {
+                return;
+            }
+
+            if (chapter.summary) {
+                chapter.summary = this.generator.normalizeSynopsisReferenceText(this.novelData, chapter.summary);
+            }
+
+            if (chapter.characters) {
+                const seen = new Set();
+                chapter.characters = Utils.ensureArrayFromText(chapter.characters)
+                    .map((name) => this.resolveKnownCharacterName(name))
+                    .filter(Boolean)
+                    .filter((name) => {
+                        if (seen.has(name)) {
+                            return false;
+                        }
+                        seen.add(name);
+                        return true;
+                    });
+            }
+        });
+    }
+
     resolveKnownCharacterName(name) {
-        const cleanName = String(name || "").trim();
+        const cleanName = this.normalizeCharacterReferenceLabel(name);
         if (!cleanName) {
             return "";
         }
@@ -6445,6 +6514,13 @@ ${(detailedOutline || concept || "未填写").slice(0, 2200)}`;
         const mapping = synopsisData.vague_to_name_mapping || {};
         if (mapping[cleanName]) {
             return String(mapping[cleanName] || "").trim();
+        }
+
+        const fuzzyMapped = Object.entries(mapping)
+            .sort((left, right) => right[0].length - left[0].length)
+            .find(([alias]) => alias && cleanName.includes(alias));
+        if (fuzzyMapped?.[1]) {
+            return String(fuzzyMapped[1] || "").trim();
         }
 
         const roleAliases = {
@@ -6463,12 +6539,15 @@ ${(detailedOutline || concept || "未填写").slice(0, 2200)}`;
 
         for (const [realName, info] of Object.entries(synopsisData.locked_character_names || {})) {
             const aliases = Utils.ensureArrayFromText(info?.aliases || []);
-            if (realName === cleanName || aliases.includes(cleanName)) {
+            if (realName === cleanName || aliases.includes(cleanName) || aliases.some((alias) => cleanName.includes(alias))) {
                 return String(realName || "").trim();
             }
         }
 
-        const matchedCharacter = this.novelData.outline.characters.find((item) => this.getCharacterAliasSet(item).has(cleanName));
+        const matchedCharacter = this.novelData.outline.characters.find((item) => {
+            const aliasSet = this.getCharacterAliasSet(item);
+            return aliasSet.has(cleanName) || Array.from(aliasSet).some((alias) => cleanName.includes(alias));
+        });
         if (matchedCharacter?.name) {
             return String(matchedCharacter.name || "").trim();
         }
