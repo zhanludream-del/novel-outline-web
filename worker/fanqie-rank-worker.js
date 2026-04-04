@@ -136,6 +136,18 @@ function pickBestCategories(categories, context) {
     const scored = categories.map((item) => {
         let score = 0;
         const haystack = `${item.name} ${item.href}`;
+        if (context.keyword && item.name === context.keyword) {
+            score += 40;
+        }
+        if (context.subgenre && item.name === context.subgenre) {
+            score += 36;
+        }
+        if (context.genre && item.name === context.genre) {
+            score += 32;
+        }
+        if (context.keyword && item.name.includes(context.keyword)) {
+            score += 18;
+        }
         aliasGroups.forEach((aliases) => {
             if (aliases.some((alias) => alias && haystack.includes(alias))) {
                 score += 8;
@@ -150,8 +162,11 @@ function pickBestCategories(categories, context) {
         return { ...item, score };
     }).sort((a, b) => b.score - a.score);
 
-    const picked = scored.filter((item) => item.score > 0);
-    return picked.length ? picked : scored.slice(0, 3);
+    const picked = uniqueBy(
+        scored.filter((item) => item.score > 0),
+        (item) => item.name
+    );
+    return picked.length ? picked : uniqueBy(scored.slice(0, 3), (item) => item.name);
 }
 
 function buildAliasGroups(text) {
@@ -385,11 +400,15 @@ function normalizeBook(book) {
 }
 
 function buildTrendSummary({ keyword, genre, subgenre, categories, items }) {
-    const titles = items.slice(0, 8).map((item) => item.title).filter(Boolean);
+    const cleanItems = items.filter((item) => !containsObfuscatedText(item.title) && !containsObfuscatedText(item.intro));
+    const titles = cleanItems.slice(0, 8).map((item) => item.title).filter(Boolean);
     const categoriesText = categories.map((item) => item.name).filter(Boolean).join("、") || "总榜";
     const tagCounts = new Map();
-    items.forEach((item) => {
+    cleanItems.forEach((item) => {
         (item.tags || []).forEach((tag) => {
+            if (containsObfuscatedText(tag)) {
+                return;
+            }
             tagCounts.set(tag, (tagCounts.get(tag) || 0) + 1);
         });
     });
@@ -401,7 +420,7 @@ function buildTrendSummary({ keyword, genre, subgenre, categories, items }) {
     return [
         `本次对标关键词：${keyword || "未指定"}。`,
         `参考榜单分类：${categoriesText}。`,
-        titles.length ? `高位样本书名：${titles.join("、")}。` : "本次没有抓到足够多的样本书名。",
+        titles.length ? `高位样本书名：${titles.join("、")}。` : "番茄榜单页的书名文本存在字体混淆，本次不直接展示书名样本，只提炼趋势信息。",
         hotTags.length ? `高频标签/卖点：${hotTags.join("、")}。` : "",
         `请提炼这些高位作品的共同钩子、冲突发动机和读者情绪抓手，但不要直接照搬书名、设定或剧情。`,
         (subgenre || genre) ? `当前项目题材参考：${subgenre || genre}。脑洞需要结合这个方向做对标和差异化。` : ""
@@ -439,4 +458,17 @@ function cleanText(value) {
 
 function normalizeKey(value) {
     return cleanText(value).toLowerCase();
+}
+
+function containsObfuscatedText(value) {
+    const text = String(value || "");
+    if (!text) {
+        return false;
+    }
+    const privateUseChars = text.match(/[\uE000-\uF8FF]/g) || [];
+    if (privateUseChars.length >= 2) {
+        return true;
+    }
+    const weirdGlyphs = text.match(/[-]/g) || [];
+    return weirdGlyphs.length >= 2;
 }
