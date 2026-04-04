@@ -5968,7 +5968,6 @@ ${(detailedOutline || concept || "未填写").slice(0, 2200)}`;
         let added = 0;
         let updated = 0;
         const appearanceTracker = this.novelData.character_appearance_tracker || {};
-        appearanceTracker.appearances = appearanceTracker.appearances || {};
         this.novelData.character_appearance_tracker = appearanceTracker;
 
         (chapters || []).forEach((chapter) => {
@@ -6010,23 +6009,6 @@ ${(detailedOutline || concept || "未填写").slice(0, 2200)}`;
                     added += 1;
                 }
 
-                if (chapterNumber) {
-                    if (!appearanceTracker.appearances[seed.name]) {
-                        appearanceTracker.appearances[seed.name] = {
-                            身份: seed.identity || "",
-                            出场章节: [chapterNumber],
-                            出场卷号: volumeNumber ? [volumeNumber] : []
-                        };
-                    } else if (!appearanceTracker.appearances[seed.name].出场章节.includes(chapterNumber)) {
-                        appearanceTracker.appearances[seed.name].出场章节.push(chapterNumber);
-                    }
-                    appearanceTracker.appearances[seed.name].出场卷号 = Array.isArray(appearanceTracker.appearances[seed.name].出场卷号)
-                        ? appearanceTracker.appearances[seed.name].出场卷号
-                        : [];
-                    if (volumeNumber && !appearanceTracker.appearances[seed.name].出场卷号.includes(volumeNumber)) {
-                        appearanceTracker.appearances[seed.name].出场卷号.push(volumeNumber);
-                    }
-                }
             });
         });
 
@@ -6257,7 +6239,6 @@ ${(detailedOutline || concept || "未填写").slice(0, 2200)}`;
         let added = 0;
         let updated = 0;
         const appearanceTracker = this.novelData.character_appearance_tracker || {};
-        appearanceTracker.appearances = appearanceTracker.appearances || {};
         appearanceTracker.relationships = appearanceTracker.relationships || {};
         this.novelData.character_appearance_tracker = appearanceTracker;
 
@@ -6311,24 +6292,6 @@ ${(detailedOutline || concept || "未填写").slice(0, 2200)}`;
                 }
 
                 this.recordOutlineRelationshipPairs(seed.relationPairs || [], chapterNumber);
-
-                if (chapterNumber) {
-                    if (!appearanceTracker.appearances[seed.name]) {
-                        appearanceTracker.appearances[seed.name] = {
-                            身份: seed.identity || "",
-                            出场章节: [chapterNumber],
-                            出场卷号: volumeNumber ? [volumeNumber] : []
-                        };
-                    } else if (!appearanceTracker.appearances[seed.name].出场章节.includes(chapterNumber)) {
-                        appearanceTracker.appearances[seed.name].出场章节.push(chapterNumber);
-                    }
-                    appearanceTracker.appearances[seed.name].出场卷号 = Array.isArray(appearanceTracker.appearances[seed.name].出场卷号)
-                        ? appearanceTracker.appearances[seed.name].出场卷号
-                        : [];
-                    if (volumeNumber && !appearanceTracker.appearances[seed.name].出场卷号.includes(volumeNumber)) {
-                        appearanceTracker.appearances[seed.name].出场卷号.push(volumeNumber);
-                    }
-                }
             });
         });
 
