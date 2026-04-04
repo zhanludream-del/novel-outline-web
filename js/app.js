@@ -6469,13 +6469,16 @@ ${(detailedOutline || concept || "未填写").slice(0, 2200)}`;
     }
 
     normalizeCharacterReferenceLabel(name) {
-        return String(name || "")
+        let normalized = String(name || "")
             .trim()
             .replace(/^[•\-]\s*/, "")
             .replace(/\s+/g, " ")
             .replace(/^(她的|他的|我的|你的|其|这个|那个|这位|那位)/, "")
             .replace(/[（(][^）)]*[）)]$/u, "")
             .trim();
+
+        normalized = normalized.replace(/^(给|对|向|跟|和|把|被)(?=[\u4e00-\u9fa5]{2,8}$)/u, "");
+        return normalized.trim();
     }
 
     applyOutlineMappingsToChapters(chapters = []) {

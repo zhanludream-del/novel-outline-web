@@ -4271,12 +4271,15 @@
     }
 
     normalizeOutlineCharacterLabel(value) {
-        return String(value || "")
+        let normalized = String(value || "")
             .replace(/^[•\-]\s*/, "")
             .replace(/\s+/g, " ")
             .replace(/^(她的|他的|我的|你的|其|这个|那个|这位|那位)/, "")
             .split(/[（(：:]/)[0]
             .trim();
+
+        normalized = normalized.replace(/^(给|对|向|跟|和|把|被)(?=[\u4e00-\u9fa5]{2,8}$)/u, "");
+        return normalized.trim();
     }
 
     sanitizeOutlineCharacterArray(value) {
