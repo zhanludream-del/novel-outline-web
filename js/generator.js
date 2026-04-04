@@ -837,9 +837,10 @@
                 "10. 必须保留角色原名字，不得擅自改名；如果已有别名或常见称呼，请写入 aliases / 别名 字段。",
                 "11. 如果新角色和已有角色存在亲属、师门、敌对、上下级、旧识关系，必须在 relationships 字段中写清楚。",
                 "12. 不要让新角色无故顶替已有角色的重要身份，也不要把已有角色的别名重复发给其他人。",
-                "13. 如果输入项是“主角、女主、男主、龙神、审判官”等模糊称呼，且尚未锁定实名，你必须先给这个角色起一个具体中文名字，原称呼写入 aliases / 别名；绝对不能把 name 仍然写成模糊称呼。",
-                "14. 如果某个模糊称呼其实已经对应已有角色，必须沿用已有名字，不能重复造一个新角色。",
-                "15. 不要包含任何 markdown 标记，直接返回纯 JSON 数组。",
+                "13. 如果输入项是“主角、女主、男主、龙神、审判官、同事A、某助理”这类模糊称呼或占位称呼，且尚未锁定实名，你必须在本次输出里直接起一个具体中文名字。",
+                "14. 对这类待命名角色，name 字段绝对不能继续写成原称呼、代称、占位符、编号后缀或模糊身份词；原称呼只能放进 aliases / 别名。",
+                "15. 如果某个模糊称呼其实已经对应已有角色，必须沿用已有名字，不能重复造一个新角色。",
+                "16. 不要包含任何 markdown 标记，直接返回纯 JSON 数组。",
                 "",
                 "【输出格式示例】",
                 `[${JSON.stringify(exampleChar, null, 2)}]`
@@ -861,9 +862,9 @@
                 const returnedAliases = Array.isArray(character.aliases)
                     ? character.aliases
                     : Utils.ensureArrayFromText(character.aliases || character["别名"]);
-                const chosenName = (!sourceMeta.needsNaming && candidateName) ||
-                    (this.isGenericCharacterCandidateName(rawReturnedName) ? "" : rawReturnedName) ||
-                    candidateName;
+                const chosenName = sourceMeta.needsNaming
+                    ? (this.isGenericCharacterCandidateName(rawReturnedName) ? "" : rawReturnedName)
+                    : (candidateName || (this.isGenericCharacterCandidateName(rawReturnedName) ? "" : rawReturnedName));
                 const mergedAliases = Array.from(new Set([
                     ...returnedAliases,
                     ...inputAliases,
@@ -890,7 +891,7 @@
                     别名: mergedAliases.join("、")
                 };
 
-                if (normalized.name) {
+                if (normalized.name && (!sourceMeta.needsNaming || !this.isGenericCharacterCandidateName(normalized.name))) {
                     allCharacters.push(normalized);
                 }
             });
@@ -4150,6 +4151,7 @@
     extractRoleCandidatesFromChapters(project, chapters, volumeNumber) {
         const existingAllNames = new Set();
         (project.outline.characters || []).forEach((character) => {
+            const primaryName = String(character.name || "").trim();
             const substantiveFieldCount = [
                 character.personality,
                 character.appearance,
@@ -4161,11 +4163,11 @@
             const hasGeneratedBackground = background
                 && !background.includes("提及角色")
                 && !background.includes("后续可补充背景");
-            const shouldExclude = substantiveFieldCount >= 2 || hasGeneratedBackground;
+            const shouldExclude = !this.isGenericCharacterCandidateName(primaryName)
+                && (substantiveFieldCount >= 2 || hasGeneratedBackground);
             if (!shouldExclude) {
                 return;
             }
-            const primaryName = String(character.name || "").trim();
             if (primaryName) {
                 existingAllNames.add(primaryName);
             }
@@ -4396,7 +4398,7 @@
         if (aliasToRole[cleanName]) {
             return true;
         }
-        return /^(龙神|神胎|审判官|骑士|圣骑士|主教|祭司|侍女|丫鬟|婢女|护卫|下属|手下|师兄|师姐|师弟|师妹|师父|师母|父亲|母亲|哥哥|姐姐|妹妹|弟弟|同门|同伴|邻居|室友|同事|上司|老板|老师|学生)$/.test(cleanName);
+        return /^(龙神|神胎|审判官|骑士|圣骑士|主教|祭司|侍女|丫鬟|婢女|护卫|下属|手下|师兄|师姐|师弟|师妹|师父|师母|父亲|母亲|哥哥|姐姐|妹妹|弟弟|同门|同伴|邻居|室友|同事|上司|老板|老师|学生|某人|某助理|某同事|某老师|某医生|某护士|某警官|某秘书|同事[A-Za-z甲乙丙丁戊己庚辛壬癸一二三四五六七八九十0-9]+|室友[A-Za-z甲乙丙丁戊己庚辛壬癸一二三四五六七八九十0-9]+|助理[A-Za-z甲乙丙丁戊己庚辛壬癸一二三四五六七八九十0-9]+|秘书[A-Za-z甲乙丙丁戊己庚辛壬癸一二三四五六七八九十0-9]+|医生[A-Za-z甲乙丙丁戊己庚辛壬癸一二三四五六七八九十0-9]+|护士[A-Za-z甲乙丙丁戊己庚辛壬癸一二三四五六七八九十0-9]+|警官[A-Za-z甲乙丙丁戊己庚辛壬癸一二三四五六七八九十0-9]+|路人[A-Za-z甲乙丙丁戊己庚辛壬癸一二三四五六七八九十0-9]+)$/.test(cleanName);
     }
 
     resolveOutlineCandidateName(project, label, description = "") {
