@@ -49,6 +49,10 @@
                         <span class="nav-label">工作台</span>
                         <span class="nav-desc">查看全局概况</span>
                     </button>
+                    <button class="nav-item" data-tab="ideas" type="button">
+                        <span class="nav-label">脑洞生成器</span>
+                        <span class="nav-desc">先做选题，再挑一个继续写</span>
+                    </button>
                     <button class="nav-item" data-tab="planner" type="button">
                         <span class="nav-label">细纲生成</span>
                         <span class="nav-desc">概念到卷纲</span>
@@ -147,6 +151,64 @@
                             </div>
                             <div class="milestone-list" id="dashboardMilestones"></div>
                         </section>
+                    </div>
+                </section>
+
+                <section class="tab-panel" id="tab-ideas">
+                    <div class="hero-card">
+                        <div>
+                            <p class="section-kicker">测试版</p>
+                            <h2>脑洞生成器</h2>
+                            <p class="hero-copy">这里单独用来做选题发散，不和细纲生成器混在一起。先围绕关键词生成多个差异化版本，再由你手动挑一个写回“故事概念”。</p>
+                        </div>
+                        <div class="quick-actions">
+                            <button class="btn btn-primary" id="btnGenerateIdeaLab" type="button">生成脑洞方案</button>
+                            <button class="btn btn-ghost" id="btnClearIdeaLab" type="button">清空结果</button>
+                        </div>
+                    </div>
+
+                    <div class="panel">
+                        <div class="panel-head">
+                            <div>
+                                <p class="section-kicker">输入区</p>
+                                <h3>给一个关键词，先出多个版本</h3>
+                            </div>
+                        </div>
+                        <div class="form-grid two-column">
+                            <label class="field">
+                                <span>主题关键词</span>
+                                <input class="input" id="ideaKeywordInput" type="text" placeholder="例如：年代、赛博修仙、甄嬛传、深渊生子">
+                            </label>
+                            <label class="field">
+                                <span>生成版本数</span>
+                                <select class="input" id="ideaVersionCount">
+                                    <option value="3">3个版本</option>
+                                    <option value="4" selected>4个版本</option>
+                                    <option value="5">5个版本</option>
+                                </select>
+                            </label>
+                            <label class="field field-full">
+                                <span>补充要求</span>
+                                <textarea class="input textarea" id="ideaExtraNoteInput" rows="5" placeholder="可选。比如：更偏男频、更偏群像、不要纯恋爱、希望有影视化感、不要太套路。"></textarea>
+                            </label>
+                        </div>
+                        <p class="panel-note">生成结果不会自动覆盖细纲，只会放在下面让你挑。选中后才会写回“故事概念”输入框。</p>
+                    </div>
+
+                    <div class="panel">
+                        <div class="panel-head">
+                            <div>
+                                <p class="section-kicker">结果区</p>
+                                <h3>脑洞候选版本</h3>
+                            </div>
+                            <div class="toolbar">
+                                <button class="btn btn-ghost" id="btnCopySelectedIdea" type="button">复制已选摘要</button>
+                                <button class="btn btn-secondary" id="btnApplySelectedIdea" type="button">写入故事概念</button>
+                            </div>
+                        </div>
+                        <div id="ideaResults" class="idea-results">
+                            <div class="empty-state">这里会展示 3 到 5 个差异化脑洞版本。你选中一个后，再继续去做世界观、卷纲和细纲。</div>
+                        </div>
                     </div>
                 </section>
 

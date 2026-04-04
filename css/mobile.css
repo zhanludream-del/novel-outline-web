@@ -65,6 +65,7 @@
     .chapter-report-grid,
     .chapter-batch-preview,
     .chapter-selector-bar,
+    .idea-card-grid,
     .form-grid,
     .form-grid.three-column,
     .form-grid.narrow-grid,
@@ -90,6 +91,15 @@
     .stat-card,
     .sidebar {
         box-shadow: 0 14px 28px rgba(204, 214, 223, 0.2);
+    }
+
+    .idea-card {
+        padding: 18px;
+    }
+
+    .idea-card-head {
+        flex-direction: column;
+        align-items: stretch;
     }
 
     .log-drawer {

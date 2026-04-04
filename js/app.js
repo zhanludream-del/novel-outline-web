@@ -57,6 +57,10 @@ class NovelOutlineWebApp {
             projectVolumeCount: document.getElementById("projectVolumeCount"),
             projectChaptersPerVolume: document.getElementById("projectChaptersPerVolume"),
             projectConcept: document.getElementById("projectConcept"),
+            ideaKeywordInput: document.getElementById("ideaKeywordInput"),
+            ideaVersionCount: document.getElementById("ideaVersionCount"),
+            ideaExtraNoteInput: document.getElementById("ideaExtraNoteInput"),
+            ideaResults: document.getElementById("ideaResults"),
             worldbuildingText: document.getElementById("worldbuildingText"),
             volumeSynopsisText: document.getElementById("volumeSynopsisText"),
             synopsisCurrentVolume: document.getElementById("synopsisCurrentVolume"),
@@ -133,6 +137,10 @@ class NovelOutlineWebApp {
             btnImportData: document.getElementById("btnImportData"),
             btnClearProject: document.getElementById("btnClearProject"),
             btnGenerateWorldbuilding: document.getElementById("btnGenerateWorldbuilding"),
+            btnGenerateIdeaLab: document.getElementById("btnGenerateIdeaLab"),
+            btnClearIdeaLab: document.getElementById("btnClearIdeaLab"),
+            btnCopySelectedIdea: document.getElementById("btnCopySelectedIdea"),
+            btnApplySelectedIdea: document.getElementById("btnApplySelectedIdea"),
             btnClearWorldbuilding: document.getElementById("btnClearWorldbuilding"),
             btnGenerateVolumes: document.getElementById("btnGenerateVolumes"),
             btnClearVolumeSynopsis: document.getElementById("btnClearVolumeSynopsis"),
@@ -290,6 +298,14 @@ class NovelOutlineWebApp {
         if (!Array.isArray(this.novelData.outline.characters)) {
             this.novelData.outline.characters = [];
         }
+        if (!this.novelData.idea_lab || typeof this.novelData.idea_lab !== "object") {
+            this.novelData.idea_lab = JSON.parse(JSON.stringify(DEFAULT_NOVEL_DATA.idea_lab));
+        }
+        this.novelData.idea_lab.keyword = this.novelData.idea_lab.keyword || "";
+        this.novelData.idea_lab.extra_note = this.novelData.idea_lab.extra_note || "";
+        this.novelData.idea_lab.version_count = Math.min(5, Math.max(3, Number(this.novelData.idea_lab.version_count || 4) || 4));
+        this.novelData.idea_lab.selected_id = this.novelData.idea_lab.selected_id || "";
+        this.novelData.idea_lab.results = Array.isArray(this.novelData.idea_lab.results) ? this.novelData.idea_lab.results : [];
         if (!this.novelData.prompt_state) {
             this.novelData.prompt_state = JSON.parse(JSON.stringify(DEFAULT_NOVEL_DATA.prompt_state));
         }
@@ -376,6 +392,8 @@ class NovelOutlineWebApp {
         this.bindProjectField("projectTitle", ["outline", "title"]);
         this.bindProjectField("projectTheme", ["outline", "theme"]);
         this.bindProjectField("projectConcept", ["outline", "storyConcept"]);
+        this.bindProjectField("ideaKeywordInput", ["idea_lab", "keyword"]);
+        this.bindProjectField("ideaExtraNoteInput", ["idea_lab", "extra_note"]);
         this.bindProjectField("worldbuildingText", ["outline", "worldbuilding"]);
         this.bindProjectField("volumeSynopsisText", ["synopsisData", "volumeSynopsis"]);
         this.bindProjectField("synopsisOutput", ["synopsisData", "synopsisOutput"]);
@@ -398,6 +416,12 @@ class NovelOutlineWebApp {
             this.persist(true);
             this.renderDashboard();
         });
+        if (this.elements.ideaVersionCount) {
+            this.elements.ideaVersionCount.addEventListener("change", () => {
+                this.novelData.idea_lab.version_count = Math.min(5, Math.max(3, Number(this.elements.ideaVersionCount.value || 4) || 4));
+                this.persist(true);
+            });
+        }
         this.elements.btnAutoDetectGenre.addEventListener("click", () => this.safeAsync(() => this.autoDetectGenre()));
 
         this.elements.projectVolumeCount.addEventListener("change", () => {
@@ -518,6 +542,22 @@ class NovelOutlineWebApp {
             this.elements.btnClearProject.addEventListener("click", () => this.clearCurrentProject());
         }
         this.elements.importFileInput.addEventListener("change", (event) => this.importData(event));
+
+        if (this.elements.btnGenerateIdeaLab) {
+            this.elements.btnGenerateIdeaLab.addEventListener("click", () => this.safeAsync(() => this.generateIdeaLab()));
+        }
+        if (this.elements.btnClearIdeaLab) {
+            this.elements.btnClearIdeaLab.addEventListener("click", () => this.clearIdeaLab());
+        }
+        if (this.elements.btnApplySelectedIdea) {
+            this.elements.btnApplySelectedIdea.addEventListener("click", () => this.applySelectedIdeaToConcept());
+        }
+        if (this.elements.btnCopySelectedIdea) {
+            this.elements.btnCopySelectedIdea.addEventListener("click", () => this.copySelectedIdeaSummary());
+        }
+        if (this.elements.ideaResults) {
+            this.elements.ideaResults.addEventListener("click", (event) => this.handleIdeaResultClick(event));
+        }
 
         this.elements.btnGenerateWorldbuilding.addEventListener("click", () => this.safeAsync(() => this.generateWorldbuilding()));
         if (this.elements.btnClearWorldbuilding) {
@@ -910,6 +950,15 @@ ${(detailedOutline || concept || "未填写").slice(0, 2200)}`;
         this.elements.projectVolumeCount.value = synopsis.volumeCount || synopsis.vol_count || 5;
         this.elements.projectChaptersPerVolume.value = synopsis.chaptersPerVolume || synopsis.chap_count || 20;
         this.elements.projectConcept.value = outline.storyConcept || synopsis.story_concept || "";
+        if (this.elements.ideaKeywordInput) {
+            this.elements.ideaKeywordInput.value = this.novelData.idea_lab?.keyword || "";
+        }
+        if (this.elements.ideaVersionCount) {
+            this.elements.ideaVersionCount.value = String(this.novelData.idea_lab?.version_count || 4);
+        }
+        if (this.elements.ideaExtraNoteInput) {
+            this.elements.ideaExtraNoteInput.value = this.novelData.idea_lab?.extra_note || "";
+        }
         this.elements.worldbuildingText.value = outline.worldbuilding || synopsis.worldbuilding || "";
         this.elements.volumeSynopsisText.value = synopsis.volumeSynopsis || synopsis.volume_synopsis || "";
         this.elements.synopsisOutput.value = synopsis.synopsisOutput || synopsis.synopsis_output || "";
@@ -930,6 +979,7 @@ ${(detailedOutline || concept || "未填写").slice(0, 2200)}`;
             this.elements.aiFilterBlacklistInput.value = (this.novelData.prompt_state.ai_filter_blacklist || []).join("\n");
         }
         this.renderPromptLibrary();
+        this.renderIdeaLabResults();
     }
 
     loadSettingsToForm() {
@@ -950,6 +1000,7 @@ ${(detailedOutline || concept || "未填写").slice(0, 2200)}`;
     renderAll() {
         this.renderDashboard();
         this.renderWorkflowHealthDashboard();
+        this.renderIdeaLabResults();
         this.renderVolumeSelectors();
         this.renderVolumeCards();
         this.renderChapterList();
@@ -1724,6 +1775,14 @@ ${(detailedOutline || concept || "未填写").slice(0, 2200)}`;
         this.novelData.synopsisData = synopsis;
         this.novelData.synopsis_data = JSON.parse(JSON.stringify(synopsis));
         this.novelData.chapters = this.novelData.chapters || {};
+        this.novelData.idea_lab = this.novelData.idea_lab && typeof this.novelData.idea_lab === "object"
+            ? this.novelData.idea_lab
+            : JSON.parse(JSON.stringify(DEFAULT_NOVEL_DATA.idea_lab));
+        this.novelData.idea_lab.keyword = this.novelData.idea_lab.keyword || "";
+        this.novelData.idea_lab.extra_note = this.novelData.idea_lab.extra_note || "";
+        this.novelData.idea_lab.version_count = Math.min(5, Math.max(3, Number(this.novelData.idea_lab.version_count || 4) || 4));
+        this.novelData.idea_lab.selected_id = this.novelData.idea_lab.selected_id || "";
+        this.novelData.idea_lab.results = Array.isArray(this.novelData.idea_lab.results) ? this.novelData.idea_lab.results : [];
         this.novelData.prompt_state = this.novelData.prompt_state || JSON.parse(JSON.stringify(DEFAULT_NOVEL_DATA.prompt_state));
         this.novelData.prompt_state.current_prompt = this.novelData.prompt_state.current_prompt || this.getDesktopAlignedPromptTemplate();
         this.novelData.prompt_state.saved_prompts = this.novelData.prompt_state.saved_prompts || {};
@@ -2704,6 +2763,183 @@ ${(detailedOutline || concept || "未填写").slice(0, 2200)}`;
         this.renderVolumeCards();
         this.switchTab("outline");
         Utils.showMessage("已把章节细纲同步到卷纲管理。", "success");
+    }
+
+    renderIdeaLabResults() {
+        if (!this.elements.ideaResults) {
+            return;
+        }
+
+        const results = this.novelData.idea_lab?.results || [];
+        const selectedId = this.novelData.idea_lab?.selected_id || "";
+        if (!results.length) {
+            this.elements.ideaResults.innerHTML = '<div class="empty-state">这里会展示 3 到 5 个差异化脑洞版本。你选中一个后，再继续去做世界观、卷纲和细纲。</div>';
+            return;
+        }
+
+        this.elements.ideaResults.innerHTML = results.map((item, index) => `
+            <article class="idea-card${item.id === selectedId ? " selected" : ""}" data-idea-id="${Utils.escapeHTML(item.id)}">
+                <div class="idea-card-head">
+                    <div>
+                        <p class="idea-card-index">方案 ${index + 1}</p>
+                        <h3>${Utils.escapeHTML(item.title || `方案${index + 1}`)}</h3>
+                    </div>
+                    <div class="idea-card-actions">
+                        <button class="btn btn-ghost btn-small" data-idea-action="copy-summary" type="button">复制摘要</button>
+                        <button class="btn btn-secondary btn-small" data-idea-action="apply" type="button">写入故事概念</button>
+                    </div>
+                </div>
+                <div class="idea-card-grid">
+                    ${this.renderIdeaSection("题材定位与读者方向", item.positioning)}
+                    ${this.renderIdeaSection("一句话故事钩子", item.hook)}
+                    ${this.renderIdeaSection("核心设定", item.core_setup)}
+                    ${this.renderIdeaSection("核心冲突与剧情发动机", item.conflict_engine)}
+                    ${this.renderIdeaSection("爽点/情绪点设计", item.selling_points)}
+                    ${this.renderIdeaSection("适配世界观与前30章名场面", item.world_highlights)}
+                    ${this.renderIdeaSection("长线展开与升级空间", item.longline)}
+                    ${this.renderIdeaSection("人物关系与感情线建议", item.relationship_notes)}
+                    ${this.renderIdeaSection("可直接用于后续细化的摘要", item.seed_summary, true)}
+                </div>
+            </article>
+        `).join("");
+    }
+
+    renderIdeaSection(title, text, emphasize = false) {
+        return `
+            <section class="idea-section${emphasize ? " emphasize" : ""}">
+                <h4>${Utils.escapeHTML(title)}</h4>
+                <p>${Utils.escapeHTML(text || "暂无内容")}</p>
+            </section>
+        `;
+    }
+
+    handleIdeaResultClick(event) {
+        const card = event.target.closest("[data-idea-id]");
+        if (!card) {
+            return;
+        }
+
+        const ideaId = String(card.dataset.ideaId || "").trim();
+        if (!ideaId) {
+            return;
+        }
+
+        this.novelData.idea_lab.selected_id = ideaId;
+        this.renderIdeaLabResults();
+        this.persist(true);
+
+        const actionButton = event.target.closest("[data-idea-action]");
+        if (!actionButton) {
+            return;
+        }
+
+        if (actionButton.dataset.ideaAction === "apply") {
+            this.applySelectedIdeaToConcept();
+        } else if (actionButton.dataset.ideaAction === "copy-summary") {
+            this.copySelectedIdeaSummary();
+        }
+    }
+
+    getSelectedIdeaResult() {
+        const results = this.novelData.idea_lab?.results || [];
+        const selectedId = this.novelData.idea_lab?.selected_id || "";
+        return results.find((item) => item.id === selectedId) || null;
+    }
+
+    async generateIdeaLab() {
+        const keyword = String(this.elements.ideaKeywordInput?.value || "").trim();
+        if (!keyword) {
+            throw new Error("请先填写主题关键词。");
+        }
+
+        const payload = this.getProjectPayload();
+        const versionCount = Math.min(5, Math.max(3, Number(this.elements.ideaVersionCount?.value || 4) || 4));
+        await this.runWithLoading("正在生成脑洞方案...", async () => {
+            const results = await this.generator.generateStoryIdeas({
+                keyword,
+                title: payload.title,
+                theme: payload.theme,
+                genre: payload.genre,
+                subgenre: payload.subgenre,
+                concept: payload.concept,
+                extraNote: String(this.elements.ideaExtraNoteInput?.value || "").trim(),
+                versionCount
+            });
+
+            this.novelData.idea_lab.keyword = keyword;
+            this.novelData.idea_lab.extra_note = String(this.elements.ideaExtraNoteInput?.value || "").trim();
+            this.novelData.idea_lab.version_count = versionCount;
+            this.novelData.idea_lab.results = results;
+            this.novelData.idea_lab.selected_id = results[0]?.id || "";
+            this.persist(true);
+            this.renderIdeaLabResults();
+            Utils.showMessage("脑洞方案已生成。", "success");
+            Utils.log(`脑洞生成完成，共返回 ${results.length} 个版本。`, "success");
+        });
+    }
+
+    clearIdeaLab() {
+        const hasContent = String(this.novelData.idea_lab?.keyword || "").trim()
+            || String(this.novelData.idea_lab?.extra_note || "").trim()
+            || (this.novelData.idea_lab?.results || []).length;
+        if (!hasContent) {
+            Utils.showMessage("脑洞生成器本来就是空的。", "info");
+            return;
+        }
+
+        const ok = window.confirm("确定清空脑洞生成器里的关键词、补充要求和结果吗？");
+        if (!ok) {
+            return;
+        }
+
+        this.novelData.idea_lab = JSON.parse(JSON.stringify(DEFAULT_NOVEL_DATA.idea_lab));
+        if (this.elements.ideaKeywordInput) {
+            this.elements.ideaKeywordInput.value = "";
+        }
+        if (this.elements.ideaVersionCount) {
+            this.elements.ideaVersionCount.value = "4";
+        }
+        if (this.elements.ideaExtraNoteInput) {
+            this.elements.ideaExtraNoteInput.value = "";
+        }
+        this.renderIdeaLabResults();
+        this.persist(true);
+        Utils.showMessage("脑洞生成器已清空。", "success");
+    }
+
+    applySelectedIdeaToConcept() {
+        const selected = this.getSelectedIdeaResult();
+        if (!selected) {
+            Utils.showMessage("请先选中一个脑洞方案。", "error");
+            return;
+        }
+
+        const summary = String(selected.seed_summary || "").trim();
+        if (!summary) {
+            Utils.showMessage("当前方案还没有可写回的摘要。", "error");
+            return;
+        }
+
+        this.novelData.outline.storyConcept = summary;
+        this.novelData.synopsisData.story_concept = summary;
+        this.novelData.synopsisData.storyConcept = summary;
+        this.novelData.synopsis_data = JSON.parse(JSON.stringify(this.novelData.synopsisData));
+        if (this.elements.projectConcept) {
+            this.elements.projectConcept.value = summary;
+        }
+        this.persist(true);
+        this.renderDashboard();
+        this.renderWorkflowHealthDashboard();
+        Utils.showMessage("已把所选脑洞写入故事概念。", "success");
+    }
+
+    copySelectedIdeaSummary() {
+        const selected = this.getSelectedIdeaResult();
+        if (!selected) {
+            Utils.showMessage("请先选中一个脑洞方案。", "error");
+            return;
+        }
+        Utils.copyText(selected.seed_summary || "");
     }
 
     getCurrentChapterVolume() {

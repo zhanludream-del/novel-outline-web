@@ -33,6 +33,84 @@
         ].filter(Boolean).join("\n");
     }
 
+    async generateStoryIdeas({
+        keyword,
+        title,
+        theme,
+        genre,
+        subgenre,
+        concept,
+        extraNote,
+        versionCount = 4
+    }) {
+        const safeCount = Math.min(5, Math.max(3, Number(versionCount || 4) || 4));
+        const genreConstraint = this.buildGenreConstraint(genre, subgenre || genre);
+        const systemPrompt = [
+            genreConstraint,
+            "你是专业的网络小说选题策划师，擅长为男频、女频、双向受众作品设计可长篇展开的商业化脑洞。",
+            "现在请围绕用户给出的主题关键词，生成多个差异明显的小说脑洞版本，供作者在正式写细纲前筛选。",
+            "",
+            "【硬性要求】",
+            `1. 你必须输出 ${safeCount} 个版本，格式必须是 JSON 数组。`,
+            "2. 每个版本必须是明显不同的书，不允许只是换皮。",
+            "3. 差异至少来自：主角身份、金手指/特殊能力、核心冲突、故事气质、感情线模式、世界规则中的三个以上。",
+            "4. 不能只偏女频，必须根据关键词自动判断适合的赛道，可以出现男频、女频或双向受众版本。",
+            "5. 每个版本都要具备长篇潜力，前30章有爆点，中后期有升级空间。",
+            "6. 不要写正文，不要写细纲，不要写章节列表。",
+            "7. 表达要具体可写，少空话，少行业黑话。",
+            "",
+            "【每个版本必须包含这些字段】",
+            "id: 唯一ID，可用 idea_1 这种格式",
+            "title: 标题，格式必须是【主题词+赛道标签+核心卖点】",
+            "positioning: 题材定位与读者方向",
+            "hook: 一句话故事钩子",
+            "core_setup: 核心设定",
+            "conflict_engine: 核心冲突与剧情发动机",
+            "selling_points: 爽点/情绪点设计",
+            "world_highlights: 适配世界观与前30章名场面",
+            "longline: 长线展开与升级空间",
+            "relationship_notes: 人物关系与感情线建议",
+            "seed_summary: 一段150到250字的浓缩版故事方案，可直接给作者继续做后续细化",
+            "",
+            "【输出要求】",
+            "1. 只能返回 JSON 数组，不要输出 markdown、说明文字或代码块。",
+            "2. 每个字段都必须是中文字符串，内容充实。",
+            "3. seed_summary 必须像创作输入文本，不要写成分析报告口吻。"
+        ].filter(Boolean).join("\n");
+
+        const userPrompt = [
+            `主题关键词：${keyword || "未提供"}`,
+            `小说标题参考：${title || "未命名小说"}`,
+            `核心主题参考：${theme || "未指定"}`,
+            `当前题材参考：${subgenre || genre || "未指定"}`,
+            concept ? `已有故事概念参考：${this.limitContext(concept, 600)}` : "",
+            extraNote ? `用户补充要求：${this.limitContext(extraNote, 800)}` : "",
+            "",
+            "请围绕这个关键词输出多个差异明显的故事脑洞版本。",
+            "至少覆盖两种不同创作方向，例如：不同赛道、不同故事气质、不同冲突发动机。",
+            "每个版本都必须可写、可连载、可持续制造爽点。"
+        ].filter(Boolean).join("\n");
+
+        const parsed = await this.requestJSONArray(systemPrompt, userPrompt, {
+            temperature: 0.9,
+            maxTokens: this.getConfiguredMaxTokens(12000)
+        });
+
+        return parsed.slice(0, safeCount).map((item, index) => ({
+            id: item.id || `idea_${index + 1}`,
+            title: item.title || `【${keyword || "主题"}+方案${index + 1}】`,
+            positioning: item.positioning || "",
+            hook: item.hook || "",
+            core_setup: item.core_setup || "",
+            conflict_engine: item.conflict_engine || "",
+            selling_points: item.selling_points || "",
+            world_highlights: item.world_highlights || "",
+            longline: item.longline || "",
+            relationship_notes: item.relationship_notes || "",
+            seed_summary: item.seed_summary || ""
+        }));
+    }
+
     async generateWorldbuilding({ title, concept, genre, subgenre, theme }) {
         const genreConstraint = this.buildGenreConstraint(genre, subgenre || genre);
         const systemPrompt = [

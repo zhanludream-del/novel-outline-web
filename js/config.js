@@ -205,6 +205,13 @@ const DEFAULT_NOVEL_DATA = {
     genre: "",
     subgenre: "",
     genre_extensions: {},
+    idea_lab: {
+        keyword: "",
+        extra_note: "",
+        version_count: 4,
+        selected_id: "",
+        results: []
+    },
     global_setting_note: "",
     outline: {
         title: "",

@@ -60,6 +60,21 @@ class StorageManager {
         );
         merged.genre = merged.genre || merged.outline.genre || "";
         merged.subgenre = merged.subgenre || merged.outline.subgenre || "";
+        merged.idea_lab = merged.idea_lab && typeof merged.idea_lab === "object"
+            ? {
+                keyword: merged.idea_lab.keyword || "",
+                extra_note: merged.idea_lab.extra_note || "",
+                version_count: Math.min(5, Math.max(3, Number(merged.idea_lab.version_count || 4) || 4)),
+                selected_id: merged.idea_lab.selected_id || "",
+                results: Array.isArray(merged.idea_lab.results) ? merged.idea_lab.results : []
+            }
+            : {
+                keyword: "",
+                extra_note: "",
+                version_count: 4,
+                selected_id: "",
+                results: []
+            };
         merged.genre_extensions = merged.genre_extensions && typeof merged.genre_extensions === "object"
             ? merged.genre_extensions
             : {};
