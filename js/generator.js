@@ -841,7 +841,9 @@
                 "14. 对这类待命名角色，name 字段绝对不能继续写成原称呼、代称、占位符、编号后缀或模糊身份词；原称呼只能放进 aliases / 别名。",
                 "15. 如果某个模糊称呼其实已经对应已有角色，必须沿用已有名字，不能重复造一个新角色。",
                 "16. 诸如“同事A、同事B、秘书甲、助理乙、主角、女主、男主、他、她、这人、那人、黑衣审判官”都不能直接出现在 name 字段。",
-                "17. 不要包含任何 markdown 标记，直接返回纯 JSON 数组。",
+                "17. relationships / 人物关系 只能写与已有实名角色或明确角色的关系，尽量压缩成 1-3 条短句，例如“林书音的继姐（敌对）”“李桂香的女儿（同伙）”。",
+                "18. 禁止把大段背景故事、剧情经过、心理活动塞进 relationships 字段；关系字段不能自相矛盾，也不能同时把一个角色写成两种冲突身份。",
+                "19. 不要包含任何 markdown 标记，直接返回纯 JSON 数组。",
                 "",
                 "【输出格式示例】",
                 `[${JSON.stringify(exampleChar, null, 2)}]`,
@@ -899,14 +901,14 @@
                     appearance: character.appearance || character["外貌描述"] || "",
                     abilities: character.abilities || character["能力特长"] || "",
                     goals: character.goals || character["目标动机"] || "",
-                    relationships: character.relationships || character["人物关系"] || "",
+                    relationships: this.sanitizeGeneratedRelationshipText(project, chosenName || candidateName, character.relationships || character["人物关系"] || "", sourceMeta),
                     aliases: mergedAliases,
                     性格特点: character.personality || character["性格特点"] || "",
                     背景故事: character.background || character["背景故事"] || "",
                     外貌描述: character.appearance || character["外貌描述"] || "",
                     能力特长: character.abilities || character["能力特长"] || "",
                     目标动机: character.goals || character["目标动机"] || "",
-                    人物关系: character.relationships || character["人物关系"] || "",
+                    人物关系: this.sanitizeGeneratedRelationshipText(project, chosenName || candidateName, character.relationships || character["人物关系"] || "", sourceMeta),
                     别名: mergedAliases.join("、")
                 };
 
@@ -4737,6 +4739,60 @@
         }
 
         return batchItems.findIndex((_, index) => !usedIndexes.has(index));
+    }
+
+    sanitizeGeneratedRelationshipText(project, currentName, relationships, sourceMeta = {}) {
+        const rawText = String(relationships || "").trim();
+        const relationKeywords = /父亲|母亲|亲妈|后妈|养母|养父|继母|继父|继姐|继妹|继兄|继弟|哥哥|姐姐|妹妹|弟弟|夫妻|妻子|丈夫|恋人|未婚夫|未婚妻|朋友|敌对|敌人|仇敌|对手|同门|师徒|师兄妹|上下级|上司|下属|同事|盟友|帮凶|旧识|亲属|母女|父女|姐妹|兄妹/;
+        const noiseKeywords = /后续可补充|信息后续补充|提及角色|剧情中|经历了|心理落差|不死心|想要报复|煽风点火|无情粉碎|装作|试图|企图|表面上|实则/;
+        const knownNames = new Set(
+            (project?.outline?.characters || [])
+                .map((character) => String(character?.name || "").trim())
+                .filter(Boolean)
+        );
+        const aliasMap = this.buildKnownCharacterAliasMap(project);
+        let normalized = rawText;
+        Object.entries(aliasMap)
+            .sort((left, right) => right[0].length - left[0].length)
+            .forEach(([alias, realName]) => {
+                if (!alias || !realName || alias === realName) {
+                    return;
+                }
+                normalized = normalized.replace(new RegExp(alias.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"), "g"), realName);
+            });
+
+        const cleanClause = (text) => String(text || "")
+            .replace(/[\r\n]+/g, " ")
+            .replace(/\s+/g, " ")
+            .replace(/^[，、；;：:\-•\s]+/, "")
+            .replace(/[，、；;：:\-•\s]+$/, "")
+            .trim();
+
+        const clauses = normalized
+            .split(/[\r\n]+|[；;。]+/)
+            .map(cleanClause)
+            .filter(Boolean)
+            .filter((clause) => !noiseKeywords.test(clause))
+            .filter((clause) => clause.length <= 40)
+            .filter((clause) => {
+                const containsKnownName = Array.from(knownNames).some((name) => name && clause.includes(name));
+                return containsKnownName || relationKeywords.test(clause);
+            });
+
+        const deduped = Array.from(new Set(clauses))
+            .filter((clause) => !currentName || !clause.startsWith(currentName))
+            .slice(0, 3);
+
+        if (deduped.length) {
+            return deduped.join("；");
+        }
+
+        const fallbackDesc = cleanClause(sourceMeta?.description || "");
+        if (fallbackDesc && relationKeywords.test(fallbackDesc) && fallbackDesc.length <= 28) {
+            return fallbackDesc;
+        }
+
+        return "";
     }
 
     limitContext(text, max = 2000) {
