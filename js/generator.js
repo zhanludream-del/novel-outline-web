@@ -858,24 +858,37 @@
                 timeout: this.getTaskTimeoutMs(240000)
             });
 
-            parsed.forEach((character, index) => {
-                const sourceMeta = batchItems[index]?.[1] && typeof batchItems[index][1] === "object"
-                    ? batchItems[index][1]
-                    : { description: String(batchItems[index]?.[1] || "").trim(), needsNaming: false, aliases: [] };
-                const candidateName = String(batchItems[index]?.[0] || "").trim();
+            const usedIndexes = new Set();
+            parsed.forEach((character) => {
+                const matchedIndex = this.matchGeneratedCharacterToBatchIndex(batchItems, character, usedIndexes);
+                if (matchedIndex < 0) {
+                    return;
+                }
+                usedIndexes.add(matchedIndex);
+
+                const sourceMeta = batchItems[matchedIndex]?.[1] && typeof batchItems[matchedIndex][1] === "object"
+                    ? batchItems[matchedIndex][1]
+                    : { description: String(batchItems[matchedIndex]?.[1] || "").trim(), needsNaming: false, aliases: [] };
+                const candidateName = this.normalizeOutlineCharacterLabel(batchItems[matchedIndex]?.[0] || "");
                 const rawReturnedName = String(character.name || character.real_name || character.realName || "").trim();
                 const inputAliases = Array.isArray(sourceMeta.aliases) ? sourceMeta.aliases : [];
                 const returnedAliases = Array.isArray(character.aliases)
                     ? character.aliases
                     : Utils.ensureArrayFromText(character.aliases || character["别名"]);
-                const chosenName = sourceMeta.needsNaming
-                    ? (this.isGenericCharacterCandidateName(rawReturnedName) ? "" : rawReturnedName)
-                    : (candidateName || (this.isGenericCharacterCandidateName(rawReturnedName) ? "" : rawReturnedName));
+                const returnedConcreteName = this.isLikelySynopsisPersonName(rawReturnedName) && !this.isGenericCharacterCandidateName(rawReturnedName)
+                    ? rawReturnedName
+                    : "";
+                const candidateLooksConcrete = this.isLikelySynopsisPersonName(candidateName) && !this.isGenericCharacterCandidateName(candidateName);
+                const chosenName = (sourceMeta.needsNaming || !candidateLooksConcrete)
+                    ? returnedConcreteName
+                    : (candidateName || returnedConcreteName);
                 const mergedAliases = Array.from(new Set([
-                    ...returnedAliases,
+                    ...(sourceMeta.needsNaming && candidateName ? [candidateName] : []),
                     ...inputAliases,
-                    ...(sourceMeta.needsNaming && candidateName ? [candidateName] : [])
-                ])).filter(Boolean);
+                    ...returnedAliases
+                ]))
+                    .map((alias) => this.normalizeOutlineCharacterLabel(alias))
+                    .filter((alias) => alias && alias !== chosenName);
                 const normalized = {
                     name: chosenName || "",
                     identity: character.identity || "",
@@ -4451,9 +4464,12 @@
             return false;
         }
 
-        const rolePattern = "(?:龙神|神胎|审判官|骑士|圣骑士|主教|祭司|侍女|丫鬟|婢女|护卫|下属|手下|师兄|师姐|师弟|师妹|师父|师母|父亲|母亲|哥哥|姐姐|妹妹|弟弟|同门|同伴|邻居|室友|同事|上司|老板|老师|学生|某人|某助理|某同事|某老师|某医生|某护士|某警官|某秘书|助理|秘书|医生|护士|警官|路人|保镖|司机|管家|校医|同学|学长|学姐|前台|店员|经理|总监|院长|教授|导师|研究员|顾问)";
+        const rolePattern = "(?:龙神|神胎|审判官|骑士|圣骑士|主教|祭司|侍女|丫鬟|婢女|护卫|下属|手下|师兄|师姐|师弟|师妹|师父|师母|父亲|母亲|亲妈|后妈|养母|养父|继母|继父|哥哥|姐姐|妹妹|弟弟|继姐|继妹|继兄|继弟|老婆|老公|前夫|前妻|丈夫|妻子|未婚夫|未婚妻|婆婆|公公|岳母|岳父|嫂子|姐夫|妹夫|小姨|姨妈|婶子|姑妈|舅妈|舅舅|姑父|同门|同伴|邻居|室友|同事|上司|老板|老师|学生|某人|某助理|某同事|某老师|某医生|某护士|某警官|某秘书|助理|秘书|医生|护士|警官|路人|保镖|司机|管家|校医|同学|学长|学姐|前台|店员|经理|总监|院长|教授|导师|研究员|顾问)";
         const suffixIndexPattern = "[A-Za-z甲乙丙丁戊己庚辛壬癸一二三四五六七八九十0-9]*";
-        return new RegExp(`^[\\u4e00-\\u9fa5]{0,4}${rolePattern}${suffixIndexPattern}$`).test(cleanName);
+        if (new RegExp(`^[\\u4e00-\\u9fa5]{0,4}${rolePattern}${suffixIndexPattern}$`).test(cleanName)) {
+            return true;
+        }
+        return /^(?:[\u4e00-\u9fa5]{1,6}的)?(?:亲妈|后妈|养母|养父|继母|继父|继姐|继妹|继兄|继弟|母亲|父亲|姐姐|哥哥|妹妹|弟弟|嫂子|姐夫|前夫|前妻|未婚夫|未婚妻)$/.test(cleanName);
     }
 
     isLikelyActionLikeCharacterCandidate(name) {
@@ -4649,7 +4665,7 @@
 
     resolveOutlineCandidateName(project, label, description = "") {
         const aliasMap = this.buildKnownCharacterAliasMap(project);
-        const cleanLabel = String(label || "").trim();
+        const cleanLabel = this.normalizeOutlineCharacterLabel(label);
         const directMapped = String(aliasMap[cleanLabel] || "").trim();
         if (directMapped) {
             return {
@@ -4687,6 +4703,40 @@
             needsNaming: true,
             aliases: cleanLabel ? [cleanLabel] : []
         };
+    }
+
+    matchGeneratedCharacterToBatchIndex(batchItems, character, usedIndexes = new Set()) {
+        if (!Array.isArray(batchItems) || !batchItems.length) {
+            return -1;
+        }
+        const rawName = this.normalizeOutlineCharacterLabel(character?.name || character?.real_name || character?.realName || "");
+        const aliasValues = [
+            ...(Array.isArray(character?.aliases) ? character.aliases : Utils.ensureArrayFromText(character?.aliases || character?.["别名"] || "")),
+            character?.identity || "",
+            character?.relationships || character?.["人物关系"] || "",
+            character?.background || character?.["背景故事"] || ""
+        ]
+            .flatMap((value) => Array.isArray(value) ? value : [value])
+            .map((value) => String(value || "").trim())
+            .filter(Boolean);
+
+        const normalizedTexts = [rawName, ...aliasValues.map((value) => this.normalizeOutlineCharacterLabel(value))]
+            .filter(Boolean);
+
+        for (let i = 0; i < batchItems.length; i += 1) {
+            if (usedIndexes.has(i)) {
+                continue;
+            }
+            const [label, meta] = batchItems[i];
+            const cleanLabel = this.normalizeOutlineCharacterLabel(label);
+            const aliases = Array.isArray(meta?.aliases) ? meta.aliases.map((alias) => this.normalizeOutlineCharacterLabel(alias)) : [];
+            const targets = [cleanLabel, ...aliases].filter(Boolean);
+            if (targets.some((target) => normalizedTexts.some((text) => text === target || text.includes(target) || target.includes(text)))) {
+                return i;
+            }
+        }
+
+        return batchItems.findIndex((_, index) => !usedIndexes.has(index));
     }
 
     limitContext(text, max = 2000) {
