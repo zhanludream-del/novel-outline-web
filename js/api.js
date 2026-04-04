@@ -57,7 +57,8 @@ class AIAPIClient {
                     signal: controller.signal
                 });
 
-                const data = await response.json().catch(() => ({}));
+                const rawText = await response.text();
+                const data = this.safeParseJSON(rawText) || {};
                 if (!response.ok) {
                     const error = new Error(
                         data?.error?.message || data?.message || `接口请求失败：${response.status}`
@@ -66,7 +67,7 @@ class AIAPIClient {
                     throw error;
                 }
 
-                const content = this.extractContent(data);
+                const content = this.extractContent(data, rawText);
                 if (!content) {
                     const responseKeys = data && typeof data === "object"
                         ? Object.keys(data).slice(0, 12).join(", ")
@@ -74,9 +75,10 @@ class AIAPIClient {
                     const choiceKeys = data?.choices?.[0] && typeof data.choices[0] === "object"
                         ? Object.keys(data.choices[0]).slice(0, 12).join(", ")
                         : "无";
+                    const rawPreview = String(rawText || "").replace(/\s+/g, " ").slice(0, 240);
                     if (typeof Utils !== "undefined" && typeof Utils.log === "function") {
                         Utils.log(
-                            `接口返回为空内容：顶层键=${responseKeys || "无"}；choices[0]键=${choiceKeys || "无"}。`,
+                            `接口返回为空内容：顶层键=${responseKeys || "无"}；choices[0]键=${choiceKeys || "无"}；原始片段=${rawPreview || "空响应"}。`,
                             "error"
                         );
                     }
@@ -136,7 +138,8 @@ class AIAPIClient {
             }
         });
 
-        const data = await response.json().catch(() => ({}));
+        const rawText = await response.text();
+        const data = this.safeParseJSON(rawText) || {};
         if (!response.ok) {
             throw new Error(data?.error || data?.message || `榜单接口请求失败：${response.status}`);
         }
@@ -152,7 +155,7 @@ class AIAPIClient {
         return `${apiBase}/chat/completions`;
     }
 
-    extractContent(data) {
+    extractContent(data, rawText = "") {
         const primary = this.normalizeContentValue(data?.choices?.[0]?.message?.content);
         if (primary) {
             return primary;
@@ -186,6 +189,11 @@ class AIAPIClient {
             }
         }
 
+        const rawCandidate = this.extractContentFromRawText(rawText);
+        if (rawCandidate) {
+            return rawCandidate;
+        }
+
         return "";
     }
 
@@ -216,6 +224,59 @@ class AIAPIClient {
         }
 
         return "";
+    }
+
+    extractContentFromRawText(rawText) {
+        const raw = String(rawText || "").trim();
+        if (!raw) {
+            return "";
+        }
+
+        const maybeJson = this.safeParseJSON(raw);
+        if (maybeJson && maybeJson !== rawText) {
+            const extracted = this.extractContent(maybeJson, "");
+            if (extracted) {
+                return extracted;
+            }
+        }
+
+        if (/^(data:\s*)+/m.test(raw)) {
+            const lines = raw
+                .split(/\r?\n/)
+                .map((line) => line.replace(/^data:\s*/, "").trim())
+                .filter((line) => line && line !== "[DONE]");
+            const merged = lines
+                .map((line) => {
+                    const parsed = this.safeParseJSON(line);
+                    if (parsed) {
+                        return this.extractContent(parsed, "");
+                    }
+                    return line;
+                })
+                .filter(Boolean)
+                .join("");
+            if (merged.trim()) {
+                return merged.trim();
+            }
+        }
+
+        if (!raw.startsWith("<") && raw.length >= 12) {
+            return raw;
+        }
+
+        return "";
+    }
+
+    safeParseJSON(text) {
+        const raw = String(text || "").trim();
+        if (!raw) {
+            return null;
+        }
+        try {
+            return JSON.parse(raw);
+        } catch (_error) {
+            return null;
+        }
     }
 
     normalizeError(error) {
