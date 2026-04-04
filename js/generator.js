@@ -717,7 +717,7 @@
             key_event: item.key_event || "",
             emotionCurve: item.emotion_curve || "",
             emotion_curve: item.emotion_curve || "",
-            characters: Utils.ensureArrayFromText(item.characters),
+            characters: this.sanitizeOutlineCharacterArray(item.characters),
             foreshadows: Utils.ensureArrayFromText(item.foreshadows),
             plot_unit: item.plot_unit || {},
             next_chapter_setup: normalized.next_chapter_setup || {}
@@ -4178,19 +4178,21 @@
         });
 
         const roleMap = {};
-        const normalizeLabel = (value) => String(value || "")
-            .replace(/^[•\-]\s*/, "")
-            .split(/[（(：:]/)[0]
-            .trim();
 
         const addRole = (name, description) => {
-            const cleanLabel = normalizeLabel(name);
+            const cleanLabel = this.normalizeOutlineCharacterLabel(name);
             if (!cleanLabel || cleanLabel.length < 2) {
                 return;
             }
+            if (!this.isPlausibleOutlineCharacterLabel(cleanLabel)) {
+                return;
+            }
             const resolved = this.resolveOutlineCandidateName(project, cleanLabel, description);
-            const cleanName = normalizeLabel(resolved.name);
+            const cleanName = this.normalizeOutlineCharacterLabel(resolved.name);
             if (!cleanName || cleanName.length < 2) {
+                return;
+            }
+            if (!resolved.needsNaming && !this.isPlausibleOutlineCharacterLabel(cleanName)) {
                 return;
             }
             if (!resolved.needsNaming && existingAllNames.has(cleanName)) {
@@ -4266,6 +4268,98 @@
         Object.values(mainMappings).forEach((name) => addRole(name, "主角映射角色"));
 
         return roleMap;
+    }
+
+    normalizeOutlineCharacterLabel(value) {
+        return String(value || "")
+            .replace(/^[•\-]\s*/, "")
+            .replace(/\s+/g, " ")
+            .replace(/^(她的|他的|我的|你的|其|这个|那个|这位|那位)/, "")
+            .split(/[（(：:]/)[0]
+            .trim();
+    }
+
+    sanitizeOutlineCharacterArray(value) {
+        const seen = new Set();
+        return Utils.ensureArrayFromText(value)
+            .map((item) => this.normalizeOutlineCharacterLabel(item))
+            .filter((item) => this.isPlausibleOutlineCharacterLabel(item))
+            .filter((item) => {
+                if (seen.has(item)) {
+                    return false;
+                }
+                seen.add(item);
+                return true;
+            });
+    }
+
+    matchesGenericRolePattern(name) {
+        const cleanName = String(name || "").trim();
+        if (!cleanName) {
+            return false;
+        }
+
+        const rolePattern = "(?:龙神|神胎|审判官|骑士|圣骑士|主教|祭司|侍女|丫鬟|婢女|护卫|下属|手下|师兄|师姐|师弟|师妹|师父|师母|父亲|母亲|哥哥|姐姐|妹妹|弟弟|同门|同伴|邻居|室友|同事|上司|老板|老师|学生|某人|某助理|某同事|某老师|某医生|某护士|某警官|某秘书|助理|秘书|医生|护士|警官|路人|保镖|司机|管家|校医|同学|学长|学姐|前台|店员|经理|总监|院长|教授|导师|研究员|顾问)";
+        const suffixIndexPattern = "[A-Za-z甲乙丙丁戊己庚辛壬癸一二三四五六七八九十0-9]*";
+        return new RegExp(`^[\\u4e00-\\u9fa5]{0,4}${rolePattern}${suffixIndexPattern}$`).test(cleanName);
+    }
+
+    isLikelyActionLikeCharacterCandidate(name) {
+        const cleanName = String(name || "").trim();
+        if (!cleanName) {
+            return true;
+        }
+
+        if (/^(来到|走到|走向|回到|前往|进入|退出|安抚|搀扶|扶住|抱住|推开|拉住|护着|护住|陪着|跟着|看向|盯着|听见|说出|问道|低头|抬头|伸手|抬手|转身|起身|坐在|站在|站到|跑到|冲向|带着|带回|放下|拿起|递给|送到|拖着|抱着|扶着)/.test(cleanName)) {
+            return true;
+        }
+
+        if (/^(护|救|追|找|送|陪|扶|拉|推|抱|背|拖|带|拦|追赶|安抚)[\u4e00-\u9fa5]{2,4}$/.test(cleanName) && !this.matchesGenericRolePattern(cleanName)) {
+            return true;
+        }
+
+        if (/(图书馆|教室|办公室|公司|医院|宿舍|门口|楼下|楼上|会议室|洗手间|病房|大厅|车里|路边|街上|餐厅|书房|厨房)$/.test(cleanName)) {
+            return true;
+        }
+
+        if (/[，。！？、,.!?]/.test(cleanName)) {
+            return true;
+        }
+
+        if ((cleanName.includes("的") || cleanName.includes("了") || cleanName.includes("着") || cleanName.includes("地")) && !this.matchesGenericRolePattern(cleanName)) {
+            return true;
+        }
+
+        return false;
+    }
+
+    isPlausibleOutlineCharacterLabel(name) {
+        const cleanName = this.normalizeOutlineCharacterLabel(name);
+        if (!cleanName || cleanName.length < 2 || cleanName.length > 12) {
+            return false;
+        }
+
+        if (this.matchesGenericRolePattern(cleanName) || this.isGenericCharacterCandidateName(cleanName)) {
+            return true;
+        }
+
+        if (this.isLikelyActionLikeCharacterCandidate(cleanName)) {
+            return false;
+        }
+
+        if (/^[\u4e00-\u9fa5]{2,4}$/.test(cleanName)) {
+            return true;
+        }
+
+        if (/^[A-Za-z][A-Za-z\s\-']{1,24}$/.test(cleanName)) {
+            return true;
+        }
+
+        if (/^[\u4e00-\u9fa5]{2,8}(先生|小姐|女士|老师|医生|护士|主任|教授)$/.test(cleanName)) {
+            return true;
+        }
+
+        return false;
     }
     extractOutlineCharacterEntries(summary) {
         const text = String(summary || "");
@@ -4398,7 +4492,7 @@
         if (aliasToRole[cleanName]) {
             return true;
         }
-        return /^(龙神|神胎|审判官|骑士|圣骑士|主教|祭司|侍女|丫鬟|婢女|护卫|下属|手下|师兄|师姐|师弟|师妹|师父|师母|父亲|母亲|哥哥|姐姐|妹妹|弟弟|同门|同伴|邻居|室友|同事|上司|老板|老师|学生|某人|某助理|某同事|某老师|某医生|某护士|某警官|某秘书|同事[A-Za-z甲乙丙丁戊己庚辛壬癸一二三四五六七八九十0-9]+|室友[A-Za-z甲乙丙丁戊己庚辛壬癸一二三四五六七八九十0-9]+|助理[A-Za-z甲乙丙丁戊己庚辛壬癸一二三四五六七八九十0-9]+|秘书[A-Za-z甲乙丙丁戊己庚辛壬癸一二三四五六七八九十0-9]+|医生[A-Za-z甲乙丙丁戊己庚辛壬癸一二三四五六七八九十0-9]+|护士[A-Za-z甲乙丙丁戊己庚辛壬癸一二三四五六七八九十0-9]+|警官[A-Za-z甲乙丙丁戊己庚辛壬癸一二三四五六七八九十0-9]+|路人[A-Za-z甲乙丙丁戊己庚辛壬癸一二三四五六七八九十0-9]+)$/.test(cleanName);
+        return this.matchesGenericRolePattern(cleanName);
     }
 
     resolveOutlineCandidateName(project, label, description = "") {
