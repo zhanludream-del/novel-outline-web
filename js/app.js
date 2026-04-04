@@ -2814,8 +2814,8 @@ ${(detailedOutline || concept || "未填写").slice(0, 2200)}`;
                         <h3>${Utils.escapeHTML(item.title || `方案${index + 1}`)}</h3>
                     </div>
                     <div class="idea-card-actions">
-                        <button class="btn btn-ghost btn-small" data-idea-action="copy-summary" type="button">复制摘要</button>
-                        <button class="btn btn-secondary btn-small" data-idea-action="apply" type="button">写入故事概念</button>
+                        <button class="btn btn-ghost btn-small" data-idea-action="copy-summary" type="button">复制完整方案</button>
+                        <button class="btn btn-secondary btn-small" data-idea-action="apply" type="button">写入完整方案</button>
                     </div>
                 </div>
                 <div class="idea-card-grid">
@@ -2900,6 +2900,25 @@ ${(detailedOutline || concept || "未填写").slice(0, 2200)}`;
         const results = this.novelData.idea_lab?.results || [];
         const selectedId = this.novelData.idea_lab?.selected_id || "";
         return results.find((item) => item.id === selectedId) || null;
+    }
+
+    formatIdeaForConcept(idea) {
+        if (!idea) {
+            return "";
+        }
+
+        return [
+            idea.title ? `【方案标题】\n${idea.title}` : "",
+            idea.positioning ? `【题材定位与读者方向】\n${idea.positioning}` : "",
+            idea.hook ? `【一句话故事钩子】\n${idea.hook}` : "",
+            idea.core_setup ? `【核心设定】\n${idea.core_setup}` : "",
+            idea.conflict_engine ? `【核心冲突与剧情发动机】\n${idea.conflict_engine}` : "",
+            idea.selling_points ? `【爽点/情绪点设计】\n${idea.selling_points}` : "",
+            idea.world_highlights ? `【适配世界观与前30章名场面】\n${idea.world_highlights}` : "",
+            idea.longline ? `【长线展开与升级空间】\n${idea.longline}` : "",
+            idea.relationship_notes ? `【人物关系与感情线建议】\n${idea.relationship_notes}` : "",
+            idea.seed_summary ? `【浓缩版故事方案】\n${idea.seed_summary}` : ""
+        ].filter(Boolean).join("\n\n");
     }
 
     async generateIdeaLab() {
@@ -3018,7 +3037,7 @@ ${(detailedOutline || concept || "未填写").slice(0, 2200)}`;
             return;
         }
 
-        const summary = String(selected.seed_summary || "").trim();
+        const summary = this.formatIdeaForConcept(selected).trim();
         if (!summary) {
             Utils.showMessage("当前方案还没有可写回的摘要。", "error");
             return;
@@ -3043,7 +3062,7 @@ ${(detailedOutline || concept || "未填写").slice(0, 2200)}`;
             Utils.showMessage("请先选中一个脑洞方案。", "error");
             return;
         }
-        Utils.copyText(selected.seed_summary || "");
+        Utils.copyText(this.formatIdeaForConcept(selected));
     }
 
     getCurrentChapterVolume() {
