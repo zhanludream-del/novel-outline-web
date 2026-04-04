@@ -834,16 +834,22 @@
                 "7. 若已有角色设定了某个地位，新角色不能无故取代，必须在 relationships 字段中明确说明与已有角色的关系。",
                 "8. 角色设定必须符合当前小说的世界观和剧情发展。",
                 "9. 各角色之间要有差异化，避免雷同。",
-                "10. 必须保留角色原名字，不得擅自改名；如果已有别名或常见称呼，请写入 aliases / 别名 字段。",
+                "10. 如果输入项本身已经是明确实名，必须保留原名字，不得擅自改名；如果已有别名或常见称呼，请写入 aliases / 别名 字段。",
                 "11. 如果新角色和已有角色存在亲属、师门、敌对、上下级、旧识关系，必须在 relationships 字段中写清楚。",
                 "12. 不要让新角色无故顶替已有角色的重要身份，也不要把已有角色的别名重复发给其他人。",
                 "13. 如果输入项是“主角、女主、男主、龙神、审判官、同事A、某助理”这类模糊称呼或占位称呼，且尚未锁定实名，你必须在本次输出里直接起一个具体中文名字。",
                 "14. 对这类待命名角色，name 字段绝对不能继续写成原称呼、代称、占位符、编号后缀或模糊身份词；原称呼只能放进 aliases / 别名。",
                 "15. 如果某个模糊称呼其实已经对应已有角色，必须沿用已有名字，不能重复造一个新角色。",
-                "16. 不要包含任何 markdown 标记，直接返回纯 JSON 数组。",
+                "16. 诸如“同事A、同事B、秘书甲、助理乙、主角、女主、男主、他、她、这人、那人、黑衣审判官”都不能直接出现在 name 字段。",
+                "17. 不要包含任何 markdown 标记，直接返回纯 JSON 数组。",
                 "",
                 "【输出格式示例】",
-                `[${JSON.stringify(exampleChar, null, 2)}]`
+                `[${JSON.stringify(exampleChar, null, 2)}]`,
+                "",
+                "【待命名角色示例】",
+                "输入：- 同事A（总针对林书音的办公室同事）",
+                "正确输出：name 必须是具体中文名字，例如“周敏”或“李雅岚”；aliases 里再写“同事A”。",
+                "错误输出：name 写成“同事A”“女同事”“办公室同事”都算不合格。"
             ].join("\n");
 
             const parsed = await this.requestJSONArray(systemPrompt, `请为以上 ${batchItems.length} 个角色批量生成完整的人物设定，确保每个角色都有完整的中英文字段。`, {
@@ -857,7 +863,7 @@
                     ? batchItems[index][1]
                     : { description: String(batchItems[index]?.[1] || "").trim(), needsNaming: false, aliases: [] };
                 const candidateName = String(batchItems[index]?.[0] || "").trim();
-                const rawReturnedName = String(character.name || "").trim();
+                const rawReturnedName = String(character.name || character.real_name || character.realName || "").trim();
                 const inputAliases = Array.isArray(sourceMeta.aliases) ? sourceMeta.aliases : [];
                 const returnedAliases = Array.isArray(character.aliases)
                     ? character.aliases
@@ -2826,25 +2832,71 @@
         return results;
     }
 
-    collectFrequentNamesFromText(text) {
-        const matches = String(text || "").match(/[\u4e00-\u9fa5]{2,4}/g) || [];
-        const excludedWords = new Set([
-            "核心事件", "情绪曲线", "章节目标", "出场人物", "情节推进", "伏笔处理", "下章铺垫",
-            "当前卷", "上一卷", "世界观", "主线剧情", "支线剧情", "故事概念", "章节细纲"
+    isLikelySynopsisPersonName(name) {
+        const cleanName = String(name || "").trim();
+        if (!/^[\u4e00-\u9fa5]{2,4}$/.test(cleanName)) {
+            return false;
+        }
+
+        const badFragments = new Set([
+            "对她", "对他", "对她说", "对他说", "厂长", "副厂长", "食堂", "系统", "震惊", "提供",
+            "发现", "看到", "听到", "受过", "恩惠", "天籁", "众人", "她的", "他的", "给她", "给他",
+            "派副", "派人", "故事", "章节", "细纲", "卷纲", "正文", "面对", "偏心", "说八", "八道",
+            "说八道", "面对偏心", "给林", "到图", "安抚", "护沈", "图书馆"
         ]);
-        const counts = new Map();
+        if (badFragments.has(cleanName)) {
+            return false;
+        }
 
-        matches.forEach((name) => {
-            if (excludedWords.has(name)) {
-                return;
-            }
-            counts.set(name, (counts.get(name) || 0) + 1);
-        });
+        const badSuffixes = ["震惊", "说道", "说着", "提供", "恩惠", "厂长", "主任", "经理", "图书馆", "偏心", "八道"];
+        if (badSuffixes.some((suffix) => cleanName.endsWith(suffix))) {
+            return false;
+        }
 
-        return Array.from(counts.entries())
-            .filter(([, count]) => count >= 2)
-            .sort((left, right) => right[1] - left[1])
-            .map(([name]) => name);
+        const badPrefixes = ["了", "对", "把", "被", "向", "给", "派", "面对", "说", "到", "安抚", "护"];
+        if (badPrefixes.some((prefix) => cleanName.startsWith(prefix))) {
+            return false;
+        }
+
+        const badVerbs = ["面对", "安抚", "派", "给", "到", "去", "来", "说", "看到", "发现", "听到", "告诉", "扶住", "搀住", "拉住"];
+        if (badVerbs.some((verb) => cleanName.startsWith(verb))) {
+            return false;
+        }
+
+        if (this.isGenericCharacterCandidateName(cleanName)) {
+            return false;
+        }
+
+        return true;
+    }
+
+    collectFrequentNamesFromText(text) {
+        const content = String(text || "");
+        const candidates = new Set();
+        const addCandidates = (matches = []) => {
+            matches.forEach((name) => {
+                const cleanName = String(name || "").trim();
+                if (this.isLikelySynopsisPersonName(cleanName)) {
+                    candidates.add(cleanName);
+                }
+            });
+        };
+
+        addCandidates(content.match(/[\u4e00-\u9fa5]{2,4}(?=说|道|笑|问|答|喊|叫|骂|点|看|走|站|坐|跑|想|觉|发现|看到|听到)/g) || []);
+
+        const quotedNames = [];
+        for (const match of content.matchAll(/["“”「」『』]([\u4e00-\u9fa5]{2,4})["“”「」『』]/g)) {
+            quotedNames.push(String(match[1] || "").trim());
+        }
+        addCandidates(quotedNames);
+
+        const relationTargets = [];
+        for (const match of content.matchAll(/(?:与|和|跟|同|向|对)([\u4e00-\u9fa5]{2,4})(?=[，。、！？\s]|$)/g)) {
+            relationTargets.push(String(match[1] || "").trim());
+        }
+        addCandidates(relationTargets);
+
+        return Array.from(candidates);
     }
 
     normalizeSynopsisReferenceText(project, text) {
