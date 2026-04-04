@@ -4438,7 +4438,7 @@
         let normalized = String(value || "")
             .replace(/^[•\-]\s*/, "")
             .replace(/\s+/g, " ")
-            .replace(/^(她的|他的|我的|你的|其|这个|那个|这位|那位)/, "")
+            .replace(/^(她的|他的|我的|你的|其|这个|那个|这位|那位|这名|那名|该|他|她)/, "")
             .split(/[（(：:]/)[0]
             .trim();
 
@@ -4466,7 +4466,7 @@
             return false;
         }
 
-        const rolePattern = "(?:龙神|神胎|审判官|骑士|圣骑士|主教|祭司|侍女|丫鬟|婢女|护卫|下属|手下|师兄|师姐|师弟|师妹|师父|师母|父亲|母亲|亲妈|后妈|养母|养父|继母|继父|哥哥|姐姐|妹妹|弟弟|继姐|继妹|继兄|继弟|老婆|老公|前夫|前妻|丈夫|妻子|未婚夫|未婚妻|婆婆|公公|岳母|岳父|嫂子|姐夫|妹夫|小姨|姨妈|婶子|姑妈|舅妈|舅舅|姑父|同门|同伴|邻居|室友|同事|上司|老板|老师|学生|某人|某助理|某同事|某老师|某医生|某护士|某警官|某秘书|助理|秘书|医生|护士|警官|路人|保镖|司机|管家|校医|同学|学长|学姐|前台|店员|经理|总监|院长|教授|导师|研究员|顾问)";
+        const rolePattern = "(?:龙神|神胎|审判官|骑士|圣骑士|主教|祭司|侍女|丫鬟|婢女|护卫|下属|手下|师兄|师姐|师弟|师妹|师父|师母|父亲|母亲|亲妈|后妈|养母|养父|继母|继父|哥哥|姐姐|妹妹|弟弟|继姐|继妹|继兄|继弟|老婆|老公|前夫|前妻|丈夫|妻子|未婚夫|未婚妻|婆婆|公公|岳母|岳父|嫂子|姐夫|妹夫|小姨|姨妈|婶子|姑妈|舅妈|舅舅|姑父|同门|同伴|邻居|室友|同事|上司|老板|老师|学生|某人|某助理|某同事|某老师|某医生|某护士|某警官|某秘书|助理|秘书|医生|护士|警官|路人|保镖|司机|管家|校医|同学|学长|学姐|前台|店员|经理|总监|院长|教授|导师|研究员|顾问|学徒|工程师|技工|组长|厂长|副厂长|技术员|组员|科员|检查组长|检查组组长)";
         const suffixIndexPattern = "[A-Za-z甲乙丙丁戊己庚辛壬癸一二三四五六七八九十0-9]*";
         if (new RegExp(`^[\\u4e00-\\u9fa5]{0,4}${rolePattern}${suffixIndexPattern}$`).test(cleanName)) {
             return true;
@@ -4503,6 +4503,36 @@
         return false;
     }
 
+    isLikelyChinesePersonName(name) {
+        const cleanName = String(name || "").trim();
+        if (!/^[\u4e00-\u9fa5]{2,4}$/.test(cleanName)) {
+            return false;
+        }
+
+        const compoundSurnames = [
+            "欧阳", "上官", "司马", "慕容", "诸葛", "南宫", "夏侯", "令狐", "皇甫", "轩辕",
+            "宇文", "长孙", "司徒", "司空", "西门", "东方", "独孤", "北冥", "公孙", "尉迟",
+            "澹台", "拓跋", "百里", "钟离", "东郭", "呼延"
+        ];
+        if (compoundSurnames.some((surname) => cleanName.startsWith(surname) && cleanName.length >= surname.length + 1)) {
+            return true;
+        }
+
+        const commonSurnames = new Set("赵钱孙李周吴郑王冯陈褚卫蒋沈韩杨朱秦尤许何吕施张孔曹严华金魏陶姜戚谢邹喻柏水窦章云苏潘葛奚范彭郎鲁韦昌马苗凤花方俞任袁柳鲍史唐费廉岑薛雷贺倪汤滕殷罗毕郝邬安常乐于时傅皮卞齐康伍余元卜顾孟平黄和穆萧尹姚邵湛汪祁毛禹狄米贝明臧计伏成戴谈宋茅庞熊纪舒屈项祝董梁杜阮蓝闵席季麻强贾路娄危江童颜郭梅盛林刁钟徐邱骆高夏蔡田樊胡凌霍虞万支柯昝管卢莫经房裘缪干解应宗丁宣贲邓郁单杭洪包左石崔吉钮龚程嵇邢裴陆荣翁荀羊於惠甄曲封储靳焦牧山蔡田樊胡霍司黎乔苍双闻莘党翟谭贡劳逄姬申扶堵冉宰郦雍璩桑桂濮牛寿通边扈燕冀郏浦尚农温别庄晏柴瞿阎充慕连茹习宦艾鱼容向古易慎戈廖庾终暨居衡步都耿满弘匡国文寇广禄阙东殴殳沃利蔚越夔隆师巩厍聂晁勾敖融冷辛阚那简饶空曾沙乜养鞠须丰巢关蒯相查后荆红游竺权逯盖益桓公仉督岳帅缑亢况郈有琴归海梁丘左丘东门南门商牟佘佟墨哈谯笪年爱阳佴伯赏南荣楚晋".split(""));
+        if (commonSurnames.has(cleanName.charAt(0))) {
+            return true;
+        }
+
+        if (/^[老小阿][\u4e00-\u9fa5]{1,3}$/.test(cleanName)) {
+            const rest = cleanName.slice(1);
+            if (compoundSurnames.some((surname) => rest.startsWith(surname)) || commonSurnames.has(rest.charAt(0))) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
     isPlausibleOutlineCharacterLabel(name) {
         const cleanName = this.normalizeOutlineCharacterLabel(name);
         if (!cleanName || cleanName.length < 2 || cleanName.length > 12) {
@@ -4517,7 +4547,7 @@
             return false;
         }
 
-        if (/^[\u4e00-\u9fa5]{2,4}$/.test(cleanName)) {
+        if (this.isLikelyChinesePersonName(cleanName)) {
             return true;
         }
 
