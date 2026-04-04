@@ -400,31 +400,138 @@ function normalizeBook(book) {
 }
 
 function buildTrendSummary({ keyword, genre, subgenre, categories, items }) {
-    const cleanItems = items.filter((item) => !containsObfuscatedText(item.title) && !containsObfuscatedText(item.intro));
-    const titles = cleanItems.slice(0, 8).map((item) => item.title).filter(Boolean);
+    const cleanItems = items.filter((item) => !containsObfuscatedText(item.intro));
     const categoriesText = categories.map((item) => item.name).filter(Boolean).join("、") || "总榜";
-    const tagCounts = new Map();
-    cleanItems.forEach((item) => {
-        (item.tags || []).forEach((tag) => {
-            if (containsObfuscatedText(tag)) {
-                return;
-            }
-            tagCounts.set(tag, (tagCounts.get(tag) || 0) + 1);
-        });
+    const hotTags = collectHotTags(cleanItems);
+    const protagonistSignals = collectFrequentSignals(cleanItems, [
+        "重生", "穿书", "穿越", "下乡", "知青", "大院", "军婚", "养娃", "带崽", "打脸",
+        "创业", "种田", "返城", "离婚", "追妻", "团宠", "恶毒女配", "真假千金", "系统"
+    ], 5);
+    const conflictSignals = collectFrequentSignals(cleanItems, [
+        "逆袭", "翻身", "报仇", "复仇", "救赎", "对照组", "退婚", "断亲", "分家",
+        "致富", "守护", "上位", "破局", "反杀", "生存", "高考", "婚约", "身世"
+    ], 5);
+    const emotionSignals = collectFrequentSignals(cleanItems, [
+        "爽", "甜", "宠", "虐", "燃", "温情", "治愈", "压抑", "拉扯", "悬疑"
+    ], 4);
+    const openingPatterns = inferOpeningPatterns(cleanItems);
+    const diffSuggestions = buildDiffSuggestions({
+        keyword,
+        genre,
+        subgenre,
+        hotTags,
+        protagonistSignals,
+        conflictSignals
     });
-    const hotTags = Array.from(tagCounts.entries())
-        .sort((a, b) => b[1] - a[1])
-        .slice(0, 6)
-        .map(([tag]) => tag);
 
     return [
         `本次对标关键词：${keyword || "未指定"}。`,
         `参考榜单分类：${categoriesText}。`,
-        titles.length ? `高位样本书名：${titles.join("、")}。` : "番茄榜单页的书名文本存在字体混淆，本次不直接展示书名样本，只提炼趋势信息。",
-        hotTags.length ? `高频标签/卖点：${hotTags.join("、")}。` : "",
-        `请提炼这些高位作品的共同钩子、冲突发动机和读者情绪抓手，但不要直接照搬书名、设定或剧情。`,
-        (subgenre || genre) ? `当前项目题材参考：${subgenre || genre}。脑洞需要结合这个方向做对标和差异化。` : ""
+        hotTags.length ? `当前高位常见卖点：${hotTags.join("、")}。` : "当前榜单文本里可稳定提取到的标签不多，建议结合分类趋势理解赛道方向。",
+        protagonistSignals.length ? `高频主角模板信号：${protagonistSignals.join("、")}。` : "",
+        conflictSignals.length ? `高频冲突发动机：${conflictSignals.join("、")}。` : "",
+        emotionSignals.length ? `高频情绪抓手：${emotionSignals.join("、")}。` : "",
+        openingPatterns.length ? `常见高点击开局方式：${openingPatterns.join("；")}。` : "",
+        diffSuggestions.length ? `建议优先做的差异化切口：${diffSuggestions.join("；")}。` : "",
+        `不要照搬榜单书名和现成剧情，更适合提炼“赛道共性 + 读者情绪需求 + 缺口打法”。`,
+        (subgenre || genre) ? `当前项目题材参考：${subgenre || genre}。请在同赛道内做升级或反差切入。` : ""
     ].filter(Boolean).join("\n");
+}
+
+function collectHotTags(items) {
+    const tagCounts = new Map();
+    items.forEach((item) => {
+        const baseTags = Array.isArray(item.tags) ? item.tags : [];
+        const merged = baseTags.concat(extractKeywordTags(item.intro));
+        merged.forEach((tag) => {
+            const clean = cleanText(tag);
+            if (!clean || containsObfuscatedText(clean) || clean.length > 12) {
+                return;
+            }
+            tagCounts.set(clean, (tagCounts.get(clean) || 0) + 1);
+        });
+    });
+    return Array.from(tagCounts.entries())
+        .sort((a, b) => b[1] - a[1])
+        .slice(0, 8)
+        .map(([tag]) => tag);
+}
+
+function collectFrequentSignals(items, dictionary, limit = 5) {
+    const counts = new Map();
+    items.forEach((item) => {
+        const text = `${item.title || ""} ${item.intro || ""} ${item.category || ""}`;
+        dictionary.forEach((token) => {
+            if (text.includes(token)) {
+                counts.set(token, (counts.get(token) || 0) + 1);
+            }
+        });
+    });
+    return Array.from(counts.entries())
+        .sort((a, b) => b[1] - a[1])
+        .slice(0, limit)
+        .map(([token]) => token);
+}
+
+function inferOpeningPatterns(items) {
+    const patterns = new Map();
+    items.forEach((item) => {
+        const intro = String(item.intro || "");
+        if (!intro || containsObfuscatedText(intro)) {
+            return;
+        }
+        if (/穿越|重生|穿书/.test(intro)) {
+            patterns.set("开篇即身份切换/命运重启", (patterns.get("开篇即身份切换/命运重启") || 0) + 1);
+        }
+        if (/退婚|离婚|断亲|分家/.test(intro)) {
+            patterns.set("开篇即关系决裂，迅速制造情绪落差", (patterns.get("开篇即关系决裂，迅速制造情绪落差") || 0) + 1);
+        }
+        if (/下乡|返城|大院|知青|军婚/.test(intro)) {
+            patterns.set("开篇即强年代场景，让题材识别度拉满", (patterns.get("开篇即强年代场景，让题材识别度拉满") || 0) + 1);
+        }
+        if (/致富|创业|摆摊|美食|养娃/.test(intro)) {
+            patterns.set("开篇即明确长期经营线或养成线", (patterns.get("开篇即明确长期经营线或养成线") || 0) + 1);
+        }
+        if (/身世|真假|秘密/.test(intro)) {
+            patterns.set("开篇即抛身份悬念或秘密钩子", (patterns.get("开篇即抛身份悬念或秘密钩子") || 0) + 1);
+        }
+    });
+    return Array.from(patterns.entries())
+        .sort((a, b) => b[1] - a[1])
+        .slice(0, 4)
+        .map(([label]) => label);
+}
+
+function buildDiffSuggestions({ keyword, genre, subgenre, hotTags, protagonistSignals, conflictSignals }) {
+    const suggestions = [];
+    if ((subgenre || genre || keyword).includes("年代")) {
+        suggestions.push("别只做家长里短，可以把事业升级和家庭拉扯双线并行");
+        suggestions.push("在年代氛围外，再加一个更强的个人秘密或身份钩子");
+    }
+    if (hotTags.includes("重生") || protagonistSignals.includes("重生")) {
+        suggestions.push("如果继续做重生，最好换成更明确的代价机制或信息差玩法");
+    }
+    if (hotTags.includes("养娃") || protagonistSignals.includes("带崽")) {
+        suggestions.push("亲情线可以保留，但最好叠加事业、权谋或生存压力，不要只剩温馨日常");
+    }
+    if (conflictSignals.includes("逆袭") || conflictSignals.includes("打脸")) {
+        suggestions.push("避免纯重复打脸，改成阶段性目标升级和更强对手盘");
+    }
+    if (!suggestions.length) {
+        suggestions.push("优先做强钩子开局，再在主角身份和长期主线里加一个明显反差点");
+        suggestions.push("同赛道对标时，不要只换背景，最好换故事发动机和情绪路线");
+    }
+    return suggestions.slice(0, 4);
+}
+
+function extractKeywordTags(text) {
+    const source = String(text || "");
+    const tokens = [
+        "年代", "七零", "八零", "九零", "知青", "大院", "军婚", "养娃", "带崽", "重生",
+        "穿书", "穿越", "创业", "致富", "种田", "美食", "真假千金", "恶毒女配", "团宠",
+        "打脸", "逆袭", "退婚", "离婚", "复仇", "身世", "甜宠", "爽文", "悬疑", "治愈"
+    ];
+    return tokens.filter((token) => source.includes(token));
 }
 
 function safeJsonParse(text) {

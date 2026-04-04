@@ -89,12 +89,16 @@
             marketTrendSummary ? `当前番茄榜摘要：\n${this.limitContext(marketTrendSummary, 2200)}` : "",
             Array.isArray(marketTrendItems) && marketTrendItems.length
                 ? `榜单样本：\n${marketTrendItems.slice(0, 12).map((item, index) => {
-                    const tags = Array.isArray(item.tags) ? item.tags.join("、") : "";
+                    const safeTitle = this.containsObfuscatedText(item.title || "") ? "书名已混淆" : (item.title || "未命名");
+                    const safeIntro = this.containsObfuscatedText(item.intro || "") ? "" : this.limitContext(item.intro, 100);
+                    const tags = Array.isArray(item.tags)
+                        ? item.tags.filter((tag) => !this.containsObfuscatedText(tag || "")).join("、")
+                        : "";
                     return [
-                        `${index + 1}. ${item.title || "未命名"} / ${item.author || "未知作者"}`,
+                        `${index + 1}. ${safeTitle} / ${item.author || "未知作者"}`,
                         item.category ? `分类：${item.category}` : "",
                         tags ? `标签：${tags}` : "",
-                        item.intro ? `简介：${this.limitContext(item.intro, 100)}` : "",
+                        safeIntro ? `简介：${safeIntro}` : "",
                         item.readingCount ? `在读：${item.readingCount}` : ""
                     ].filter(Boolean).join(" | ");
                 }).join("\n")}`
@@ -125,6 +129,19 @@
             relationship_notes: item.relationship_notes || "",
             seed_summary: item.seed_summary || ""
         }));
+    }
+
+    containsObfuscatedText(value) {
+        const text = String(value || "");
+        if (!text) {
+            return false;
+        }
+        const privateUseChars = text.match(/[\uE000-\uF8FF]/g) || [];
+        if (privateUseChars.length >= 2) {
+            return true;
+        }
+        const weirdGlyphs = text.match(/[-]/g) || [];
+        return weirdGlyphs.length >= 2;
     }
 
     async generateWorldbuilding({ title, concept, genre, subgenre, theme }) {
