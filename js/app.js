@@ -5919,7 +5919,7 @@ ${(detailedOutline || concept || "未填写").slice(0, 2200)}`;
             const seeds = [...directNames, ...sectionSeeds];
 
             seeds.forEach((seed) => {
-                const existingIndex = this.findExistingCharacterIndexByAnyName(seed.name);
+                const existingIndex = this.findExistingCharacterIndexByAnyName(seed);
                 if (existingIndex >= 0) {
                     const existing = this.novelData.outline.characters[existingIndex];
                     const nextCharacter = {
@@ -6267,7 +6267,7 @@ ${(detailedOutline || concept || "未填写").slice(0, 2200)}`;
                 ...character,
                 id: character.id || Utils.uid("character")
             });
-            const existingIndex = this.findExistingCharacterIndexByAnyName(normalized.name);
+            const existingIndex = this.findExistingCharacterIndexByAnyName(normalized);
 
             if (existingIndex >= 0) {
                 const existing = this.novelData.outline.characters[existingIndex];
@@ -6391,6 +6391,89 @@ ${(detailedOutline || concept || "未填写").slice(0, 2200)}`;
         this.elements.characterBackground.value = "";
         this.elements.characterAppearance.value = "";
         this.elements.characterRelationships.value = "";
+    }
+
+    getOutlineCharacterExcludedNames() {
+        return new Set([
+            "主角", "男主", "女主", "反派", "路人", "众人", "少年", "少女", "男人", "女人",
+            "师尊", "掌门", "长老", "弟子", "同门", "敌人", "对手", "黑影", "来人", "医者",
+            "龙神", "神胎", "审判官", "骑士", "圣骑士", "主教", "祭司", "侍女", "丫鬟", "婢女",
+            "护卫", "下属", "手下", "师兄", "师姐", "师弟", "师妹", "师父", "师母", "父亲", "母亲",
+            "哥哥", "姐姐", "妹妹", "弟弟", "同伴", "邻居", "室友", "同事", "上司", "老板", "老师", "学生"
+        ]);
+    }
+
+    findExistingCharacterIndexByAnyName(candidate) {
+        const targets = new Set();
+        const addTarget = (value) => {
+            const cleanValue = String(value || "").trim();
+            if (!cleanValue) {
+                return;
+            }
+            targets.add(cleanValue);
+            const resolved = this.resolveKnownCharacterName(cleanValue);
+            if (resolved) {
+                targets.add(resolved);
+            }
+        };
+
+        if (candidate && typeof candidate === "object") {
+            addTarget(candidate.name);
+            Utils.ensureArrayFromText(candidate.aliases || candidate["别名"] || "")
+                .forEach((alias) => addTarget(alias));
+        } else {
+            addTarget(candidate);
+        }
+
+        if (!targets.size) {
+            return -1;
+        }
+
+        return this.novelData.outline.characters.findIndex((item) => {
+            const aliasSet = this.getCharacterAliasSet(item);
+            return Array.from(targets).some((target) => aliasSet.has(target));
+        });
+    }
+
+    resolveKnownCharacterName(name) {
+        const cleanName = String(name || "").trim();
+        if (!cleanName) {
+            return "";
+        }
+
+        const synopsisData = this.novelData.synopsisData || this.novelData.synopsis_data || {};
+        const mapping = synopsisData.vague_to_name_mapping || {};
+        if (mapping[cleanName]) {
+            return String(mapping[cleanName] || "").trim();
+        }
+
+        const roleAliases = {
+            男主: ["男主", "男主角", "男主人公", "男一", "男一号", "男角"],
+            女主: ["女主", "女主角", "女主人公", "女一", "女一号", "女角"],
+            主角: ["主角", "主人公"],
+            师尊: ["师尊"],
+            反派: ["反派", "大反派", "反派boss"],
+            男二: ["男二", "男二号"],
+            女二: ["女二", "女二号"]
+        };
+        const matchedRole = Object.entries(roleAliases).find(([, aliases]) => aliases.includes(cleanName))?.[0];
+        if (matchedRole && synopsisData.main_characters?.[matchedRole]) {
+            return String(synopsisData.main_characters[matchedRole] || "").trim();
+        }
+
+        for (const [realName, info] of Object.entries(synopsisData.locked_character_names || {})) {
+            const aliases = Utils.ensureArrayFromText(info?.aliases || []);
+            if (realName === cleanName || aliases.includes(cleanName)) {
+                return String(realName || "").trim();
+            }
+        }
+
+        const matchedCharacter = this.novelData.outline.characters.find((item) => this.getCharacterAliasSet(item).has(cleanName));
+        if (matchedCharacter?.name) {
+            return String(matchedCharacter.name || "").trim();
+        }
+
+        return cleanName;
     }
 
     getDefaultPromptTemplate() {
