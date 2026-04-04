@@ -223,6 +223,7 @@ class NovelOutlineWebApp {
 
     init() {
         this.ensureBaseData();
+        this.rehydrateDerivedChapterArtifacts();
         this.renderAppVersion();
         this.applyStoredGenreExtensions();
         this.populateGenreOptions();
@@ -1300,13 +1301,13 @@ ${(detailedOutline || concept || "未填写").slice(0, 2200)}`;
     buildChapterBadgeHTML(chapter) {
         const badges = [];
         const chapterKey = `chapter_${Number(chapter.number || 0)}`;
-        const snapshot = this.novelData.chapter_snapshot?.snapshots?.[chapterKey];
+        const snapshot = this.getChapterSnapshotRecord(Number(chapter.number || 0));
         const foreshadowCount = this.countForeshadowsForChapter(Number(chapter.number || 0));
 
         if ((chapter.content || "").trim()) {
             badges.push('<span class="tracker-pill success">正文</span>');
         }
-        if (snapshot) {
+        if (this.hasMeaningfulChapterSnapshot(snapshot)) {
             badges.push('<span class="tracker-pill">快照</span>');
         }
         if (this.hasContentfulNextChapterSetup(chapter.next_chapter_setup)) {
@@ -1409,6 +1410,8 @@ ${(detailedOutline || concept || "未填写").slice(0, 2200)}`;
 
     renderTrackerInsights() {
         const snapshotEntries = Object.entries(this.novelData.chapter_snapshot?.snapshots || {})
+            .map(([key, snapshot]) => [key, this.normalizeChapterSnapshotRecord(snapshot)])
+            .filter(([, snapshot]) => this.hasMeaningfulChapterSnapshot(snapshot))
             .sort((left, right) => this.extractChapterNumber(right[0]) - this.extractChapterNumber(left[0]))
             .slice(0, 5);
         const foreshadows = this.flattenForeshadows();
@@ -2412,6 +2415,8 @@ ${(detailedOutline || concept || "未填写").slice(0, 2200)}`;
             this.novelData = this.storage.normalize(data);
             this.api = new AIAPIClient();
             this.generator = new NovelGenerator(this.api);
+            this.ensureBaseData();
+            this.rehydrateDerivedChapterArtifacts();
             this.syncFormFromData();
             this.renderAll();
             this.clearChapterEditor();
@@ -3679,7 +3684,7 @@ ${(detailedOutline || concept || "未填写").slice(0, 2200)}`;
         this.elements.chapterNextSetupPreview.textContent = this.formatNextChapterSetupPreview(chapter.next_chapter_setup);
 
         const chapterNumber = Number(chapter.number || 0);
-        const snapshot = this.novelData.chapter_snapshot?.snapshots?.[`chapter_${chapterNumber}`];
+        const snapshot = this.getChapterSnapshotRecord(chapterNumber);
         this.elements.chapterSnapshotPreview.textContent = this.formatChapterSnapshotPreview(snapshot);
         this.elements.chapterAnalysisPreview.textContent = this.formatChapterAnalysisPreview(chapterNumber, chapter);
         this.elements.chapterAnalysisReportPreview.textContent = this.getStoredChapterAnalysisReport(chapterNumber);
@@ -3703,15 +3708,16 @@ ${(detailedOutline || concept || "未填写").slice(0, 2200)}`;
     }
 
     formatChapterSnapshotPreview(snapshot) {
-        if (!snapshot || typeof snapshot !== "object") {
+        const normalized = this.normalizeChapterSnapshotRecord(snapshot);
+        if (!this.hasMeaningfulChapterSnapshot(normalized)) {
             return "还没有章末快照。";
         }
 
         const lines = [
-            snapshot["时间"] ? `时间：${snapshot["时间"]}` : "",
-            snapshot["位置"] ? `位置：${snapshot["位置"]}` : "",
-            snapshot.pending_plots ? `待推进：${snapshot.pending_plots}` : "",
-            snapshot["下一章预期"] ? `预期：${snapshot["下一章预期"]}` : ""
+            normalized["时间"] ? `时间：${normalized["时间"]}` : "",
+            normalized["位置"] ? `位置：${normalized["位置"]}` : "",
+            normalized.pending_plots ? `待推进：${normalized.pending_plots}` : "",
+            normalized["下一章预期"] ? `预期：${normalized["下一章预期"]}` : ""
         ].filter(Boolean);
 
         return lines.length ? lines.join("\n") : "还没有章末快照。";
@@ -4038,12 +4044,796 @@ ${(detailedOutline || concept || "未填写").slice(0, 2200)}`;
     }
 
     parseStateJsonBlock(block) {
-        if (!block) {
+        const rawText = String(block || "").trim();
+        if (!rawText) {
             return null;
         }
 
-        const parsed = Utils.parseJsonResponse(block);
-        return parsed && typeof parsed === "object" && !Array.isArray(parsed) ? parsed : null;
+        const parsed = this.pickFirstNonEmptyValue(
+            Utils.parseJsonResponse(rawText),
+            Utils.parseJsonResponse(Utils.extractBalancedJson(rawText, "{", "}")),
+            Utils.parseJsonResponse(Utils.extractBalancedJson(rawText, "[", "]"))
+        );
+        const normalized = this.normalizeStateData(parsed, rawText);
+        return this.hasMeaningfulStateData(normalized) ? normalized : null;
+    }
+
+    pickFirstNonEmptyValue(...candidates) {
+        for (const candidate of candidates) {
+            if (candidate == null) {
+                continue;
+            }
+            if (typeof candidate === "string" && !candidate.trim()) {
+                continue;
+            }
+            if (Array.isArray(candidate) && !candidate.length) {
+                continue;
+            }
+            if (candidate && typeof candidate === "object" && !Array.isArray(candidate) && !Object.keys(candidate).length) {
+                continue;
+            }
+            return candidate;
+        }
+        return null;
+    }
+
+    escapeRegExp(value) {
+        return String(value || "").replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    }
+
+    normalizeStateScalar(value) {
+        const text = String(value || "").replace(/\r\n?/g, "\n").trim();
+        if (!text) {
+            return "";
+        }
+        if (/^(?:\u65e0|\u65e0\u53d8\u5316|\u6682\u65e0|\u5f85\u5b9a|\u672a\u5b9a|\u672a\u77e5|\u672a\u8bb0\u5f55|null|none)$/iu.test(text)) {
+            return "";
+        }
+        if (/^(?:\u5f53\u524d\u6545\u4e8b\u65f6\u95f4\u70b9|\u672c\u7ae0\u7ed3\u675f\u65f6\u4e3b\u89d2\u6240\u5728\u4f4d\u7f6e|\u672c\u7ae0\u7559\u4e0b\u7684\u5f85\u63a8\u8fdb\u4e8b\u9879|\u672c\u7ae0\u6700\u5173\u952e\u7684\u4e00\u4ef6\u4e8b|\u672c\u7ae0\u65b0\u589e\u6216\u53d8\u5316\u7684\u91cd\u8981\u7269\u54c1|\u8be5\u89d2\u8272\u5f53\u524d\u4f4d\u7f6e|\u5f53\u524d\u4f4d\u7f6e|\u89d2\u8272\u540d|\u5f53\u524d\u72b6\u6001|\u5f53\u524d\u5916\u8c8c)$/u.test(text)) {
+            return "";
+        }
+        return text;
+    }
+
+    stringifyStateField(value) {
+        if (value == null) {
+            return "";
+        }
+        if (typeof value === "string" || typeof value === "number" || typeof value === "boolean") {
+            return this.normalizeStateScalar(value);
+        }
+        if (Array.isArray(value)) {
+            return value
+                .map((item) => this.stringifyStateField(item))
+                .filter(Boolean)
+                .join("\uff1b");
+        }
+        if (typeof value === "object") {
+            return Object.entries(value)
+                .map(([key, item]) => {
+                    const text = this.stringifyStateField(item);
+                    if (!text) {
+                        return "";
+                    }
+                    return key ? `${key}\uff1a${text}` : text;
+                })
+                .filter(Boolean)
+                .join("\uff1b");
+        }
+        return "";
+    }
+
+    readQuotedStateValue(source, startIndex, quoteChar = "\"") {
+        const text = String(source || "");
+        const parts = [];
+        let escaped = false;
+
+        for (let index = startIndex; index < text.length; index += 1) {
+            const char = text[index];
+            if (escaped) {
+                parts.push(char);
+                escaped = false;
+                continue;
+            }
+            if (char === "\\") {
+                escaped = true;
+                continue;
+            }
+            if (char === quoteChar) {
+                break;
+            }
+            parts.push(char);
+        }
+
+        return this.normalizeStateScalar(
+            parts.join("")
+                .replace(/\\n/g, "\n")
+                .replace(/\\r/g, "")
+                .replace(/\\t/g, "\t")
+                .replace(/\\"/g, "\"")
+                .replace(/\\'/g, "'")
+                .replace(/\\\\/g, "\\")
+        );
+    }
+
+    extractStateStringField(text, aliases = []) {
+        const source = String(text || "");
+        if (!source) {
+            return "";
+        }
+
+        for (const alias of aliases) {
+            const keyPattern = `(?:["']${this.escapeRegExp(alias)}["']|${this.escapeRegExp(alias)})\\s*[:\uff1a]\\s*`;
+            const quotedPattern = new RegExp(`${keyPattern}(["'])`, "u");
+            const quotedMatch = quotedPattern.exec(source);
+            if (quotedMatch) {
+                const value = this.readQuotedStateValue(source, quotedMatch.index + quotedMatch[0].length, quotedMatch[1]);
+                if (value) {
+                    return value;
+                }
+            }
+
+            const rawPattern = new RegExp(`${keyPattern}([^,\uff0c\\n}]+)`, "u");
+            const rawMatch = rawPattern.exec(source);
+            if (rawMatch?.[1]) {
+                const value = this.normalizeStateScalar(rawMatch[1].replace(/^['"]|['"]$/g, ""));
+                if (value) {
+                    return value;
+                }
+            }
+        }
+
+        return "";
+    }
+
+    extractStateJsonField(text, aliases = [], openChar = "{", closeChar = "}") {
+        const source = String(text || "");
+        if (!source) {
+            return null;
+        }
+
+        const openPattern = openChar === "{" ? "\\{" : "\\[";
+        for (const alias of aliases) {
+            const keyPattern = `(?:["']${this.escapeRegExp(alias)}["']|${this.escapeRegExp(alias)})\\s*[:\uff1a]\\s*`;
+            const pattern = new RegExp(`${keyPattern}${openPattern}`, "u");
+            const match = pattern.exec(source);
+            if (!match) {
+                continue;
+            }
+            const startIndex = source.indexOf(openChar, match.index);
+            if (startIndex < 0) {
+                continue;
+            }
+            const chunk = Utils.extractBalancedJson(source.slice(startIndex), openChar, closeChar);
+            if (!chunk) {
+                continue;
+            }
+            const parsed = Utils.parseJsonResponse(chunk);
+            if (parsed != null) {
+                return parsed;
+            }
+        }
+
+        return null;
+    }
+
+    extractStateStructuredField(text, aliases = []) {
+        return this.pickFirstNonEmptyValue(
+            this.extractStateJsonField(text, aliases, "{", "}"),
+            this.extractStateJsonField(text, aliases, "[", "]")
+        );
+    }
+
+    pickFirstStateString(candidates = [], rawText = "", aliases = []) {
+        for (const candidate of candidates) {
+            const text = this.stringifyStateField(candidate);
+            if (text) {
+                return text;
+            }
+        }
+        return aliases.length ? this.extractStateStringField(rawText, aliases) : "";
+    }
+
+    normalizeStateCharacterEntry(value) {
+        const source = value && typeof value === "object" && !Array.isArray(value) ? value : {};
+        const appearanceSource = this.pickFirstNonEmptyValue(
+            source.appearance,
+            source.current_appearance,
+            source.currentAppearance,
+            source.appearance_profile,
+            source["\u5916\u8c8c"],
+            source["\u5f53\u524d\u5916\u8c8c"],
+            source["\u5f53\u524d\u5f62\u8c61"],
+            source["\u5916\u8c8c\u63cf\u8ff0"]
+        );
+        const appearanceObject = appearanceSource && typeof appearanceSource === "object" && !Array.isArray(appearanceSource)
+            ? appearanceSource
+            : {};
+
+        const normalized = {
+            ...source,
+            cultivation: this.pickFirstStateString([
+                source.cultivation,
+                source.power,
+                source.realm,
+                source.level,
+                source["\u4fee\u4e3a"],
+                source["\u5883\u754c"],
+                source["\u5b9e\u529b"]
+            ]),
+            location: this.pickFirstStateString([
+                source.location,
+                source.current_location,
+                source.currentLocation,
+                source["\u4f4d\u7f6e"],
+                source["\u5f53\u524d\u4f4d\u7f6e"],
+                source["\u5f53\u524d\u5730\u70b9"],
+                source["\u6240\u5728\u4f4d\u7f6e"],
+                source["\u5f53\u524d\u6240\u5728\u5730"]
+            ]),
+            identity: this.pickFirstStateString([
+                source.identity,
+                source.role,
+                source["\u8eab\u4efd"],
+                source["\u8eab\u4efd\u53d8\u5316"],
+                source["\u89d2\u8272\u8eab\u4efd"]
+            ]),
+            status: this.pickFirstStateString([
+                source.status,
+                source.current_status,
+                source.currentStatus,
+                source["\u72b6\u6001"],
+                source["\u5f53\u524d\u72b6\u6001"],
+                source["\u73b0\u72b6"]
+            ]),
+            appearance: this.pickFirstStateString([
+                appearanceObject.current,
+                appearanceObject.current_appearance,
+                appearanceObject["\u5f53\u524d"],
+                appearanceObject["\u5f53\u524d\u5916\u8c8c"],
+                appearanceObject["\u5f53\u524d\u5f62\u8c61"],
+                appearanceObject.description,
+                appearanceSource
+            ]),
+            real_appearance: this.pickFirstStateString([
+                appearanceObject.original,
+                appearanceObject.real,
+                appearanceObject.real_appearance,
+                appearanceObject["\u539f\u59cb"],
+                appearanceObject["\u771f\u5b9e\u5916\u8c8c"],
+                appearanceObject["\u539f\u8c8c"],
+                appearanceObject["\u672c\u8c8c"],
+                source.real_appearance,
+                source.realAppearance,
+                source["\u771f\u5b9e\u5916\u8c8c"]
+            ]),
+            appearance_change: this.pickFirstStateString([
+                source.appearance_change,
+                source.appearanceChange,
+                appearanceObject.reason,
+                appearanceObject.change_type,
+                appearanceObject["\u53d8\u5316\u539f\u56e0"],
+                appearanceObject["\u53d8\u5316\u7c7b\u578b"],
+                source["\u5916\u8c8c\u53d8\u5316"],
+                source["\u5f62\u8c61\u53d8\u5316"]
+            ]),
+            possessions: this.pickFirstStateString([
+                source.possessions,
+                source.items,
+                source["\u6301\u6709\u7269\u54c1"],
+                source["\u7269\u54c1"],
+                source["\u643a\u5e26\u7269\u54c1"]
+            ]),
+            relationships: this.pickFirstStateString([
+                source.relationships,
+                source["\u5173\u7cfb\u53d8\u5316"],
+                source["\u5173\u7cfb"],
+                source["\u4eba\u9645\u5173\u7cfb"]
+            ]),
+            goals: this.pickFirstStateString([
+                source.goals,
+                source.goal,
+                source["\u76ee\u6807"],
+                source["\u5f53\u524d\u76ee\u6807"],
+                source["\u5f53\u524d\u8bc9\u6c42"]
+            ]),
+            secrets: this.pickFirstStateString([
+                source.secrets,
+                source.secret,
+                source["\u79d8\u5bc6"],
+                source["\u77e5\u6653\u79d8\u5bc6"],
+                source["\u9690\u85cf\u79d8\u5bc6"]
+            ]),
+            organization: this.pickFirstStateString([
+                source.organization,
+                source.org,
+                source["\u7ec4\u7ec7"],
+                source["\u6240\u5c5e\u7ec4\u7ec7"],
+                source["\u9635\u8425"]
+            ])
+        };
+
+        return normalized;
+    }
+
+    hasMeaningfulCharacterState(value) {
+        if (!value || typeof value !== "object") {
+            return false;
+        }
+        return [
+            value.cultivation,
+            value.location,
+            value.identity,
+            value.status,
+            value.appearance,
+            value.real_appearance,
+            value.appearance_change,
+            value.possessions,
+            value.relationships,
+            value.goals,
+            value.secrets,
+            value.organization
+        ].some(Boolean);
+    }
+
+    normalizeStateCharacters(value) {
+        const source = value && typeof value === "object" ? value : {};
+        const entries = {};
+
+        if (Array.isArray(source)) {
+            source.forEach((item) => {
+                const name = this.normalizeStateScalar(
+                    item?.name
+                    || item?.character
+                    || item?.character_name
+                    || item?.characterName
+                    || item?.["\u89d2\u8272\u540d"]
+                    || item?.["\u89d2\u8272"]
+                    || item?.["\u59d3\u540d"]
+                    || item?.["\u540d\u5b57"]
+                    || item?.["\u4eba\u7269"]
+                    || ""
+                );
+                if (!name) {
+                    return;
+                }
+                const normalized = this.normalizeStateCharacterEntry(item);
+                if (this.hasMeaningfulCharacterState(normalized)) {
+                    entries[name] = normalized;
+                }
+            });
+            return entries;
+        }
+
+        Object.entries(source).forEach(([rawName, state]) => {
+            const fallbackName = state && typeof state === "object"
+                ? state.name
+                    || state.character
+                    || state.character_name
+                    || state.characterName
+                    || state["\u89d2\u8272\u540d"]
+                    || state["\u89d2\u8272"]
+                    || state["\u59d3\u540d"]
+                    || state["\u540d\u5b57"]
+                    || state["\u4eba\u7269"]
+                    || ""
+                : "";
+            const name = this.normalizeStateScalar(rawName) || this.normalizeStateScalar(fallbackName);
+            if (!name) {
+                return;
+            }
+            const normalized = this.normalizeStateCharacterEntry(state);
+            if (this.hasMeaningfulCharacterState(normalized)) {
+                entries[name] = normalized;
+            }
+        });
+
+        return entries;
+    }
+
+    normalizeStateData(source, rawText = "") {
+        const base = source && typeof source === "object" && !Array.isArray(source) ? source : {};
+        const storyStateSource = this.pickFirstNonEmptyValue(
+            base.story_state,
+            base.storyState,
+            base.state,
+            base["\u6545\u4e8b\u72b6\u6001"],
+            base["\u72b6\u6001"],
+            this.extractStateJsonField(rawText, ["story_state", "storyState", "state", "\u6545\u4e8b\u72b6\u6001", "\u72b6\u6001"], "{", "}")
+        );
+        const storyState = storyStateSource && typeof storyStateSource === "object" && !Array.isArray(storyStateSource)
+            ? storyStateSource
+            : {};
+        const rawCharacters = this.pickFirstNonEmptyValue(
+            base.characters,
+            base.character_states,
+            base.characterStates,
+            base["\u89d2\u8272\u72b6\u6001"],
+            base["\u4eba\u7269\u72b6\u6001"],
+            storyState.characters,
+            storyState.character_states,
+            storyState.characterStates,
+            storyState["\u89d2\u8272\u72b6\u6001"],
+            storyState["\u4eba\u7269\u72b6\u6001"],
+            this.extractStateStructuredField(rawText, ["characters", "character_states", "characterStates", "\u89d2\u8272\u72b6\u6001", "\u4eba\u7269\u72b6\u6001"])
+        );
+        const rawTimeConstraints = this.pickFirstNonEmptyValue(
+            base.time_constraints,
+            base.timeConstraints,
+            base["\u65f6\u95f4\u7ea6\u675f"],
+            base["\u5012\u8ba1\u65f6"],
+            storyState.time_constraints,
+            storyState.timeConstraints,
+            storyState["\u65f6\u95f4\u7ea6\u675f"],
+            storyState["\u5012\u8ba1\u65f6"],
+            this.extractStateStructuredField(rawText, ["time_constraints", "timeConstraints", "\u65f6\u95f4\u7ea6\u675f", "\u5012\u8ba1\u65f6"])
+        );
+        const rawWorldChanges = this.pickFirstNonEmptyValue(
+            base.world_changes,
+            base.worldChanges,
+            base["\u4e16\u754c\u53d8\u5316"],
+            base["\u4e16\u754c\u72b6\u6001"],
+            storyState.world_changes,
+            storyState.worldChanges,
+            storyState["\u4e16\u754c\u53d8\u5316"],
+            storyState["\u4e16\u754c\u72b6\u6001"],
+            this.extractStateStructuredField(rawText, ["world_changes", "worldChanges", "\u4e16\u754c\u53d8\u5316", "\u4e16\u754c\u72b6\u6001"])
+        );
+
+        return {
+            timeline: this.pickFirstStateString([
+                base.timeline,
+                base.current_time,
+                base.currentTime,
+                base.time,
+                base["\u65f6\u95f4"],
+                base["\u5f53\u524d\u65f6\u95f4"],
+                base["\u5f53\u524d\u65f6\u95f4\u70b9"],
+                base["\u65f6\u95f4\u70b9"],
+                storyState.timeline,
+                storyState.current_time,
+                storyState.currentTime,
+                storyState.time,
+                storyState["\u65f6\u95f4"],
+                storyState["\u5f53\u524d\u65f6\u95f4"],
+                storyState["\u5f53\u524d\u65f6\u95f4\u70b9"],
+                storyState["\u65f6\u95f4\u70b9"]
+            ], rawText, ["timeline", "current_time", "currentTime", "time", "\u65f6\u95f4", "\u5f53\u524d\u65f6\u95f4", "\u5f53\u524d\u65f6\u95f4\u70b9", "\u65f6\u95f4\u70b9"]),
+            current_location: this.pickFirstStateString([
+                base.current_location,
+                base.currentLocation,
+                base.location,
+                base.current_place,
+                base["\u4f4d\u7f6e"],
+                base["\u5f53\u524d\u4f4d\u7f6e"],
+                base["\u5f53\u524d\u5730\u70b9"],
+                base["\u5730\u70b9"],
+                base["\u6240\u5728\u4f4d\u7f6e"],
+                base["\u5f53\u524d\u6240\u5728\u5730"],
+                storyState.current_location,
+                storyState.currentLocation,
+                storyState.location,
+                storyState["\u4f4d\u7f6e"],
+                storyState["\u5f53\u524d\u4f4d\u7f6e"],
+                storyState["\u5f53\u524d\u5730\u70b9"],
+                storyState["\u5730\u70b9"],
+                storyState["\u6240\u5728\u4f4d\u7f6e"],
+                storyState["\u5f53\u524d\u6240\u5728\u5730"]
+            ], rawText, ["current_location", "currentLocation", "location", "current_place", "\u4f4d\u7f6e", "\u5f53\u524d\u4f4d\u7f6e", "\u5f53\u524d\u5730\u70b9", "\u5730\u70b9", "\u6240\u5728\u4f4d\u7f6e", "\u5f53\u524d\u6240\u5728\u5730"]),
+            important_items: this.pickFirstStateString([
+                base.important_items,
+                base.importantItems,
+                base.items,
+                base["\u91cd\u8981\u7269\u54c1"],
+                base["\u5173\u952e\u7269\u54c1"],
+                base["\u7269\u54c1\u53d8\u5316"],
+                storyState.important_items,
+                storyState.importantItems,
+                storyState.items,
+                storyState["\u91cd\u8981\u7269\u54c1"],
+                storyState["\u5173\u952e\u7269\u54c1"],
+                storyState["\u7269\u54c1\u53d8\u5316"]
+            ], rawText, ["important_items", "importantItems", "items", "\u91cd\u8981\u7269\u54c1", "\u5173\u952e\u7269\u54c1", "\u7269\u54c1\u53d8\u5316"]),
+            pending_plots: this.pickFirstStateString([
+                base.pending_plots,
+                base.pendingPlot,
+                base.pending_plot,
+                base.next_tasks,
+                base.todo,
+                base["\u5f85\u63a8\u8fdb\u4e8b\u9879"],
+                base["\u672a\u5b8c\u4e8b\u9879"],
+                base["\u5f85\u5904\u7406\u4e8b\u9879"],
+                base["\u540e\u7eed\u4efb\u52a1"],
+                base["\u5f85\u529e"],
+                base["\u540e\u7eed\u5b89\u6392"],
+                storyState.pending_plots,
+                storyState.pendingPlot,
+                storyState.pending_plot,
+                storyState.next_tasks,
+                storyState.todo,
+                storyState["\u5f85\u63a8\u8fdb\u4e8b\u9879"],
+                storyState["\u672a\u5b8c\u4e8b\u9879"],
+                storyState["\u5f85\u5904\u7406\u4e8b\u9879"],
+                storyState["\u540e\u7eed\u4efb\u52a1"],
+                storyState["\u5f85\u529e"],
+                storyState["\u540e\u7eed\u5b89\u6392"]
+            ], rawText, ["pending_plots", "pendingPlot", "pending_plot", "next_tasks", "todo", "\u5f85\u63a8\u8fdb\u4e8b\u9879", "\u672a\u5b8c\u4e8b\u9879", "\u5f85\u5904\u7406\u4e8b\u9879", "\u540e\u7eed\u4efb\u52a1", "\u5f85\u529e", "\u540e\u7eed\u5b89\u6392"]),
+            key_event: this.pickFirstStateString([
+                base.key_event,
+                base.keyEvent,
+                base.core_event,
+                base.main_event,
+                base["\u5173\u952e\u4e8b\u4ef6"],
+                base["\u6838\u5fc3\u4e8b\u4ef6"],
+                base["\u5173\u952e\u4fe1\u606f"],
+                storyState.key_event,
+                storyState.keyEvent,
+                storyState.core_event,
+                storyState.main_event,
+                storyState["\u5173\u952e\u4e8b\u4ef6"],
+                storyState["\u6838\u5fc3\u4e8b\u4ef6"],
+                storyState["\u5173\u952e\u4fe1\u606f"],
+                storyState["\u672c\u7ae0\u5173\u952e\u4e8b\u4ef6"]
+            ], rawText, ["key_event", "keyEvent", "core_event", "main_event", "\u5173\u952e\u4e8b\u4ef6", "\u6838\u5fc3\u4e8b\u4ef6", "\u5173\u952e\u4fe1\u606f", "\u672c\u7ae0\u5173\u952e\u4e8b\u4ef6"]),
+            genre_progress: this.coerceStateArray(
+                this.pickFirstNonEmptyValue(
+                    base.genre_progress,
+                    base.genreProgress,
+                    base["\u9898\u6750\u8fdb\u5ea6"],
+                    base["\u8fdb\u5ea6\u53d8\u5316"],
+                    storyState.genre_progress,
+                    storyState.genreProgress,
+                    storyState["\u9898\u6750\u8fdb\u5ea6"],
+                    storyState["\u8fdb\u5ea6\u53d8\u5316"]
+                )
+            ),
+            world_changes: rawWorldChanges && typeof rawWorldChanges === "object" && !Array.isArray(rawWorldChanges)
+                ? rawWorldChanges
+                : {},
+            time_constraints: this.coerceStateArray(rawTimeConstraints),
+            item_updates: this.coerceStateArray(
+                this.pickFirstNonEmptyValue(
+                    base.item_updates,
+                    base.itemUpdates,
+                    base["\u7269\u54c1\u66f4\u65b0"],
+                    storyState.item_updates,
+                    storyState.itemUpdates,
+                    storyState["\u7269\u54c1\u66f4\u65b0"]
+                )
+            ),
+            appearance_changes: this.coerceStateArray(
+                this.pickFirstNonEmptyValue(
+                    base.appearance_changes,
+                    base.appearanceChanges,
+                    base["\u5916\u8c8c\u53d8\u5316"],
+                    storyState.appearance_changes,
+                    storyState.appearanceChanges,
+                    storyState["\u5916\u8c8c\u53d8\u5316"],
+                    storyState["\u5f62\u8c61\u53d8\u5316"]
+                )
+            ),
+            characters: this.normalizeStateCharacters(rawCharacters)
+        };
+    }
+
+    hasMeaningfulStateData(stateData) {
+        if (!stateData || typeof stateData !== "object") {
+            return false;
+        }
+        return Boolean(
+            stateData.timeline
+            || stateData.current_location
+            || stateData.important_items
+            || stateData.pending_plots
+            || stateData.key_event
+            || (stateData.genre_progress || []).length
+            || (stateData.time_constraints || []).length
+            || (stateData.item_updates || []).length
+            || (stateData.appearance_changes || []).length
+            || Object.keys(stateData.characters || {}).length
+            || Object.keys(stateData.world_changes || {}).length
+        );
+    }
+
+    normalizeChapterSnapshotRecord(snapshot) {
+        const source = snapshot && typeof snapshot === "object" && !Array.isArray(snapshot) ? snapshot : {};
+        const nextChapterSetup = this.pickFirstNonEmptyValue(
+            source.next_chapter_setup,
+            source.nextChapterSetup,
+            source["\u4e0b\u7ae0\u94fa\u57ab"]
+        ) || {};
+        const snapshotState = this.normalizeStateData(
+            this.pickFirstNonEmptyValue(
+                source.story_state,
+                source.storyState,
+                source.state,
+                source["\u6545\u4e8b\u72b6\u6001"],
+                source["\u72b6\u6001"]
+            ) || {},
+            ""
+        );
+        const timeline = this.pickFirstStateString([
+            source.timeline,
+            source.time,
+            source.current_time,
+            source["\u65f6\u95f4"],
+            source["\u5f53\u524d\u65f6\u95f4"],
+            source["\u5f53\u524d\u65f6\u95f4\u70b9"],
+            snapshotState.timeline
+        ]);
+        const currentLocation = this.pickFirstStateString([
+            source.current_location,
+            source.currentLocation,
+            source.location,
+            source["\u4f4d\u7f6e"],
+            source["\u5f53\u524d\u4f4d\u7f6e"],
+            source["\u5f53\u524d\u5730\u70b9"],
+            snapshotState.current_location
+        ]);
+        const pendingPlots = this.pickFirstStateString([
+            source.pending_plots,
+            source.pendingPlot,
+            source["\u5f85\u63a8\u8fdb\u4e8b\u9879"],
+            source["\u672a\u5b8c\u4e8b\u9879"],
+            snapshotState.pending_plots
+        ]);
+        const importantItems = this.pickFirstStateString([
+            source.important_items,
+            source.importantItems,
+            source["\u91cd\u8981\u7269\u54c1"],
+            source["\u5173\u952e\u7269\u54c1"],
+            snapshotState.important_items
+        ]);
+        const keyEvent = this.pickFirstStateString([
+            source.key_event,
+            source.keyEvent,
+            source.core_event,
+            source.main_event,
+            source["\u5173\u952e\u4e8b\u4ef6"],
+            source["\u6838\u5fc3\u4e8b\u4ef6"],
+            source["\u5173\u952e\u4fe1\u606f"],
+            snapshotState.key_event
+        ]);
+        const nextExpectation = this.pickFirstStateString([
+            source["\u4e0b\u4e00\u7ae0\u9884\u671f"],
+            source.next_expectation,
+            source.nextExpectation,
+            source.transition_focus,
+            source.transitionFocus
+        ]) || (this.hasContentfulNextChapterSetup(nextChapterSetup)
+            ? this.formatNextChapterSetupPreview(nextChapterSetup)
+            : "");
+        const keyInfoSource = this.pickFirstNonEmptyValue(
+            source["\u5173\u952e\u4fe1\u606f"],
+            source.key_info,
+            source.keyInfo,
+            snapshotState.key_event ? [snapshotState.key_event] : [],
+            keyEvent ? [keyEvent] : []
+        );
+        const keyInfo = Array.isArray(keyInfoSource)
+            ? keyInfoSource.map((item) => this.stringifyStateField(item)).filter(Boolean)
+            : this.stringifyStateField(keyInfoSource)
+                ? [this.stringifyStateField(keyInfoSource)]
+                : [];
+
+        return {
+            ...source,
+            title: source.title || source.chapter_title || source.chapterTitle || "",
+            \u65f6\u95f4: timeline,
+            \u4f4d\u7f6e: currentLocation,
+            pending_plots: pendingPlots,
+            important_items: importantItems,
+            \u5173\u952e\u4fe1\u606f: keyInfo,
+            current_location: currentLocation,
+            timeline,
+            \u4e0b\u4e00\u7ae0\u9884\u671f: nextExpectation || pendingPlots,
+            next_chapter_setup: nextChapterSetup,
+            transition_focus: this.pickFirstStateString([
+                source.transition_focus,
+                source.transitionFocus,
+                nextChapterSetup.state_setup,
+                nextChapterSetup.suspense_hook,
+                pendingPlots
+            ]),
+            key_event: keyEvent
+        };
+    }
+
+    hasMeaningfulChapterSnapshot(snapshot) {
+        if (!snapshot || typeof snapshot !== "object") {
+            return false;
+        }
+        return Boolean(
+            snapshot.timeline
+            || snapshot.current_location
+            || snapshot.pending_plots
+            || snapshot.important_items
+            || snapshot.key_event
+            || snapshot["\u4e0b\u4e00\u7ae0\u9884\u671f"]
+            || (snapshot["\u5173\u952e\u4fe1\u606f"] || []).length
+        );
+    }
+
+    getChapterSnapshotRecord(chapterNumber) {
+        const direct = this.normalizeChapterSnapshotRecord(
+            this.novelData.chapter_snapshot?.snapshots?.[`chapter_${chapterNumber}`]
+        );
+        if (this.hasMeaningfulChapterSnapshot(direct)) {
+            return direct;
+        }
+
+        const stateSnapshot = this.novelData.outline?.state_snapshots?.[`chapter_${chapterNumber}`];
+        const nested = this.normalizeChapterSnapshotRecord(
+            stateSnapshot?.chapter_snapshot?.snapshots?.[`chapter_${chapterNumber}`]
+        );
+        if (this.hasMeaningfulChapterSnapshot(nested)) {
+            return nested;
+        }
+
+        const storyState = this.normalizeStateData(
+            this.pickFirstNonEmptyValue(
+                stateSnapshot?.story_state,
+                stateSnapshot?.storyState,
+                stateSnapshot?.state,
+                stateSnapshot?.["\u6545\u4e8b\u72b6\u6001"],
+                stateSnapshot
+            ) || {},
+            ""
+        );
+        if (this.hasMeaningfulStateData(storyState)) {
+            return this.normalizeChapterSnapshotRecord({
+                title: stateSnapshot?.title || `\u7b2c${chapterNumber}\u7ae0`,
+                timeline: storyState.timeline,
+                current_location: storyState.current_location,
+                important_items: storyState.important_items,
+                pending_plots: storyState.pending_plots,
+                key_event: storyState.key_event,
+                next_chapter_setup: nested.next_chapter_setup || {}
+            });
+        }
+
+        return direct;
+    }
+
+    iterateAllChapters(callback) {
+        (this.novelData.outline?.volumes || []).forEach((volume, volumeIndex) => {
+            (volume.chapters || []).forEach((chapter, chapterIndex) => {
+                callback(chapter, volume, volumeIndex, chapterIndex);
+            });
+        });
+    }
+
+    rehydrateDerivedChapterArtifacts() {
+        this.novelData.chapter_snapshot = this.novelData.chapter_snapshot && typeof this.novelData.chapter_snapshot === "object"
+            ? this.novelData.chapter_snapshot
+            : { snapshots: {} };
+        this.novelData.chapter_snapshot.snapshots = this.novelData.chapter_snapshot.snapshots && typeof this.novelData.chapter_snapshot.snapshots === "object"
+            ? this.novelData.chapter_snapshot.snapshots
+            : {};
+
+        this.iterateAllChapters((chapter) => {
+            if (!(chapter?.content || "").trim()) {
+                return;
+            }
+
+            const chapterNumber = Number(chapter.number || 0);
+            if (!chapterNumber) {
+                return;
+            }
+
+            const snapshot = this.getChapterSnapshotRecord(chapterNumber);
+            if (this.hasMeaningfulChapterSnapshot(snapshot)) {
+                this.novelData.chapter_snapshot.snapshots[`chapter_${chapterNumber}`] = snapshot;
+            }
+
+            this.recordChapterAnalysisTags(chapterNumber, chapter, chapter.content || "", {
+                timeline: snapshot.timeline || "",
+                current_location: snapshot.current_location || "",
+                pending_plots: snapshot.pending_plots || "",
+                key_event: snapshot.key_event || ""
+            });
+            this.refreshChapterReports(chapter);
+        });
     }
 
     applyStateUpdate(chapterNumber, chapterTitle, stateData, chapter = null) {
@@ -4971,13 +5761,14 @@ ${(detailedOutline || concept || "未填写").slice(0, 2200)}`;
         const content = String(chapter.content || "").trim();
         const summary = String(chapter.summary || "").trim();
         const volumeNumber = this.getVolumeNumberForChapter(chapter);
-        const outlineCoverage = this.estimateOutlineCoverage(summary, content);
-        const keywordSummary = this.extractNarrativeFocusKeywords(summary, content, chapterNumber, 6);
+        const outlineReference = this.buildChapterAnalysisReference(chapter);
+        const outlineCoverage = this.estimateOutlineCoverage(outlineReference, content);
+        const keywordSummary = this.extractNarrativeFocusKeywords(outlineReference, content, chapterNumber, 6);
         const characters = this.collectChapterCharacters(chapterNumber, content);
         const sceneCount = Math.max(1, content.split(/\n{2,}/).filter((block) => block.trim()).length);
         const rhythm = this.novelData.chapter_rhythms?.[`第${chapterNumber}章`] || this.novelData.chapter_rhythms?.[`chapter_${chapterNumber}`] || "待判断";
         const emotion = this.novelData.chapter_emotions?.[`第${chapterNumber}章`] || this.novelData.chapter_emotions?.[`chapter_${chapterNumber}`] || "待判断";
-        const snapshot = this.novelData.chapter_snapshot?.snapshots?.[`chapter_${chapterNumber}`] || {};
+        const snapshot = this.getChapterSnapshotRecord(chapterNumber);
         const nextSetup = chapter.next_chapter_setup || {};
         const endingHook = nextSetup.suspense_hook || snapshot["下一章预期"] || "本章还没有明确钩子。";
         const plotExecution = outlineCoverage >= 0.68 ? "高" : outlineCoverage >= 0.38 ? "中" : "偏弱";
@@ -5018,7 +5809,8 @@ ${(detailedOutline || concept || "未填写").slice(0, 2200)}`;
         const content = String(chapter.content || "").trim();
         const summary = String(chapter.summary || "").trim();
         const issues = [];
-        const outlineCoverage = this.estimateOutlineCoverage(summary, content);
+        const outlineReference = this.buildChapterAnalysisReference(chapter);
+        const outlineCoverage = this.estimateOutlineCoverage(outlineReference, content);
         const duplicateLines = this.detectRepeatedLines(content);
         const previousChapter = this.getAdjacentChapter(chapter.number, -1, this.getVolumeNumberForChapter(chapter));
         const nextChapter = this.getAdjacentChapter(chapter.number, 1, this.getVolumeNumberForChapter(chapter));
@@ -5026,7 +5818,7 @@ ${(detailedOutline || concept || "未填写").slice(0, 2200)}`;
         if (content.length < 2000) {
             issues.push("字数偏少：当前正文低于 2000 字，容易显得情节过薄。");
         }
-        if (outlineCoverage < 0.3 && summary) {
+        if (outlineCoverage < 0.3 && outlineReference) {
             issues.push("大纲执行偏弱：正文与章纲的重合度较低，建议检查是否跑偏。");
         }
         if (duplicateLines.length) {
@@ -5065,7 +5857,7 @@ ${(detailedOutline || concept || "未填写").slice(0, 2200)}`;
         }
 
         lines.push("");
-        lines.push(`参考章纲：${summary ? Utils.summarizeText(summary, 90) : "暂无章纲"}`);
+        lines.push(`参考章纲：${summary ? Utils.summarizeText(summary, 90) : outlineReference ? Utils.summarizeText(outlineReference, 90) : "暂无章纲"}`);
         lines.push(`上一章：${previousChapter ? `${previousChapter.number} · ${previousChapter.title || `第${previousChapter.number}章`}` : "无"}`);
         lines.push(`下一章：${nextChapter ? `${nextChapter.number} · ${nextChapter.title || `第${nextChapter.number}章`}` : "无"}`);
         return lines.join("\n");
@@ -5095,6 +5887,26 @@ ${(detailedOutline || concept || "未填写").slice(0, 2200)}`;
         return [...new Set([...fromTracker, ...fromOutline])].slice(0, 8);
     }
 
+    buildChapterAnalysisReference(chapter) {
+        const plotUnit = chapter?.plot_unit && typeof chapter.plot_unit === "object" ? chapter.plot_unit : {};
+        const candidates = [
+            chapter?.summary,
+            chapter?.key_event,
+            chapter?.keyEvent,
+            plotUnit.plot_goal,
+            plotUnit.core_conflict
+        ];
+        const lines = [];
+        candidates.forEach((item) => {
+            const text = String(item || "").trim();
+            if (!text || lines.includes(text)) {
+                return;
+            }
+            lines.push(text);
+        });
+        return lines.join("\n");
+    }
+
     estimateOutlineCoverage(summary, content) {
         if (!summary || !content) {
             return 0;
@@ -5116,18 +5928,70 @@ ${(detailedOutline || concept || "未填写").slice(0, 2200)}`;
     }
 
     extractContentKeywords(text, limit = 5) {
-        const matches = String(text || "").match(/[\u4e00-\u9fa5]{2,6}/g) || [];
+        const source = String(text || "").replace(/\r\n?/g, "\n");
+        if (!source.trim()) {
+            return "";
+        }
+
         const stopwords = new Set([
             "当前", "这一章", "本章", "主角", "然后", "因为", "所以", "他们", "自己", "没有", "一个", "出来", "开始", "继续",
-            "空气", "荒野", "风声", "狂风", "黑暗", "光线", "地面", "碎石", "声音", "气味", "场景", "氛围", "周围", "前方", "后方"
+            "空气", "荒野", "风声", "狂风", "黑暗", "光线", "地面", "碎石", "声音", "气味", "场景", "氛围", "周围", "前方", "后方",
+            "上一秒", "下一秒", "这一秒", "这一刻", "此时", "这时", "当下", "随后", "而后", "很快", "立刻", "马上", "刚刚"
         ]);
+
         const unique = [];
-        matches.forEach((item) => {
-            if (stopwords.has(item) || unique.includes(item)) {
+        const push = (rawValue) => {
+            let value = String(rawValue || "")
+                .trim()
+                .replace(/^[“"'《【\[]+/u, "")
+                .replace(/[”"'》】\]]+$/u, "")
+                .replace(/^[•\-]\s*/u, "")
+                .replace(/^(?:上一秒|下一秒|这一秒|这一刻|此时|这时|当下|随后|然后|而后|很快|立刻|马上|已经|正在|仍在|刚刚|忽然|她还在|他还在|她还|他还|她正|他正|她便|他便|她又|他又|她先|他先)/u, "")
+                .replace(/^(?:她|他|它|他们|她们|众人|所有人|自己)/u, "")
+                .replace(/(?:里面|之中|那里|这里|身上|手中|眼前|耳边|脚下|周围|出去|进来|过去|回来|一下|一声|一眼|而已|起来|下去)$/u, "")
+                .trim();
+
+            if (!value) {
                 return;
             }
-            unique.push(item);
-        });
+
+            if (value.length > 18) {
+                const parts = value
+                    .split(/(?:在|把|被|将|向|对|给|从|和|与|跟|并且|而且|于是)/u)
+                    .map((item) => item.trim())
+                    .filter((item) => item && item !== value);
+                if (parts.length) {
+                    parts.forEach(push);
+                    return;
+                }
+            }
+
+            if (
+                value.length < 2
+                || value.length > 18
+                || stopwords.has(value)
+                || unique.includes(value)
+                || !/^[\u4e00-\u9fa5A-Za-z0-9]{2,18}$/u.test(value)
+            ) {
+                return;
+            }
+
+            unique.push(value);
+        };
+
+        (this.novelData.outline?.characters || [])
+            .map((item) => item?.name)
+            .filter((name) => name && source.includes(name))
+            .forEach(push);
+
+        source
+            .split(/[\n\r\t，。！？；：、,.!?（）()【】《》“”"'‘’\[\]<>]+/u)
+            .forEach(push);
+
+        if (!unique.length) {
+            (source.match(/[\u4e00-\u9fa5A-Za-z0-9]{2,18}/gu) || []).forEach(push);
+        }
+
         return unique.slice(0, limit).join("、");
     }
 
@@ -5154,8 +6018,10 @@ ${(detailedOutline || concept || "未填写").slice(0, 2200)}`;
 
         this.collectChapterCharacters(chapterNumber, content).forEach(push);
 
-        const eventKeywords = this.extractEventKeywordsFromContent(content);
-        eventKeywords.forEach(push);
+        if (focus.length < limit) {
+            const eventKeywords = this.extractEventKeywordsFromContent(content);
+            eventKeywords.forEach(push);
+        }
 
         return focus.slice(0, limit).join("、");
     }
@@ -5246,18 +6112,53 @@ ${(detailedOutline || concept || "未填写").slice(0, 2200)}`;
             return signals.slice(0, 10);
         }
 
-        return text
-            .split(/[。！？；\n]/)
-            .map((item) => item.trim())
-            .filter((item) => item.length >= 4 && item.length <= 36)
-            .slice(0, 8)
+        return this.extractLooseOutlineClauses(text)
+            .slice(0, 10)
             .map((item) => ({
                 label: "概括句",
                 phrase: item.slice(0, 24),
-                keywords: this.extractContentKeywords(item, 3).split("、").filter(Boolean),
-                weight: 1
+                keywords: this.extractContentKeywords(item, item.length >= 18 ? 4 : 3).split("、").filter(Boolean),
+                weight: item.length >= 18 ? 2 : 1
             }))
             .filter((item) => item.keywords.length);
+    }
+
+    extractLooseOutlineClauses(text) {
+        const source = String(text || "").replace(/\r\n?/g, "\n").trim();
+        if (!source) {
+            return [];
+        }
+
+        const clauses = [];
+        const seen = new Set();
+        const push = (rawValue) => {
+            const value = String(rawValue || "")
+                .replace(/^第\s*[0-9一二三四五六七八九十百零]+\s*章\s*[：:]\s*/u, "")
+                .replace(/^[•\-]\s*/u, "")
+                .replace(/^[\d一二三四五六七八九十]+[.、)\s]+/u, "")
+                .trim();
+            if (!value || value.length < 4 || seen.has(value)) {
+                return;
+            }
+            seen.add(value);
+            clauses.push(value);
+        };
+
+        source.split(/\n+/).forEach((line) => {
+            const cleanedLine = line.trim();
+            if (!cleanedLine) {
+                return;
+            }
+
+            push(cleanedLine);
+            cleanedLine.split(/\s*[-—]+\s*/u).forEach(push);
+            cleanedLine.split(/[。！？；]/u).forEach(push);
+            if (cleanedLine.length > 24) {
+                cleanedLine.split(/[，,、]/u).forEach(push);
+            }
+        });
+
+        return clauses;
     }
 
     detectRepeatedLines(content) {
