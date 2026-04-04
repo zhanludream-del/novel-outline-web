@@ -194,6 +194,7 @@ const DEFAULT_API_CONFIG = {
     provider: "doubao",
     apiKey: "",
     apiBase: "https://ark.cn-beijing.volces.com/api/v3",
+    rankApiUrl: "",
     model: "doubao-pro-32k-241215",
     temperature: 0.7,
     maxTokens: 4000,
@@ -209,6 +210,9 @@ const DEFAULT_NOVEL_DATA = {
         keyword: "",
         extra_note: "",
         version_count: 4,
+        use_market_trends: false,
+        market_summary: "",
+        market_items: [],
         selected_id: "",
         results: []
     },

@@ -613,6 +613,26 @@ button {
     letter-spacing: 0.04em;
 }
 
+.toggle-row {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    min-height: 48px;
+    padding: 12px 14px;
+    border-radius: 16px;
+    border: 1px solid rgba(255, 255, 255, 0.7);
+    background: rgba(248, 249, 250, 0.92);
+    box-shadow: inset 2px 2px 5px rgba(225, 230, 235, 0.86), inset -2px -2px 5px rgba(255, 255, 255, 0.92);
+    font-weight: 500;
+    color: var(--text);
+}
+
+.toggle-row input {
+    inline-size: 18px;
+    block-size: 18px;
+    accent-color: #7289a0;
+}
+
 .input {
     width: 100%;
     min-height: 48px;
@@ -658,6 +678,16 @@ button {
 .idea-card-grid {
     display: grid;
     gap: 16px;
+}
+
+.market-summary {
+    margin-bottom: 16px;
+    padding: 16px 18px;
+    border-radius: 18px;
+    background: linear-gradient(180deg, rgba(244, 248, 251, 0.96), rgba(250, 251, 252, 0.96));
+    border: 1px solid rgba(255, 255, 255, 0.78);
+    line-height: 1.85;
+    white-space: pre-wrap;
 }
 
 .idea-card {

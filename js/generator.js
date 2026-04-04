@@ -41,6 +41,8 @@
         subgenre,
         concept,
         extraNote,
+        marketTrendSummary,
+        marketTrendItems,
         versionCount = 4
     }) {
         const safeCount = Math.min(5, Math.max(3, Number(versionCount || 4) || 4));
@@ -84,11 +86,25 @@
             `核心主题参考：${theme || "未指定"}`,
             `当前题材参考：${subgenre || genre || "未指定"}`,
             concept ? `已有故事概念参考：${this.limitContext(concept, 600)}` : "",
+            marketTrendSummary ? `当前番茄榜摘要：\n${this.limitContext(marketTrendSummary, 2200)}` : "",
+            Array.isArray(marketTrendItems) && marketTrendItems.length
+                ? `榜单样本：\n${marketTrendItems.slice(0, 12).map((item, index) => {
+                    const tags = Array.isArray(item.tags) ? item.tags.join("、") : "";
+                    return [
+                        `${index + 1}. ${item.title || "未命名"} / ${item.author || "未知作者"}`,
+                        item.category ? `分类：${item.category}` : "",
+                        tags ? `标签：${tags}` : "",
+                        item.intro ? `简介：${this.limitContext(item.intro, 100)}` : "",
+                        item.readingCount ? `在读：${item.readingCount}` : ""
+                    ].filter(Boolean).join(" | ");
+                }).join("\n")}`
+                : "",
             extraNote ? `用户补充要求：${this.limitContext(extraNote, 800)}` : "",
             "",
             "请围绕这个关键词输出多个差异明显的故事脑洞版本。",
             "至少覆盖两种不同创作方向，例如：不同赛道、不同故事气质、不同冲突发动机。",
-            "每个版本都必须可写、可连载、可持续制造爽点。"
+            "每个版本都必须可写、可连载、可持续制造爽点。",
+            marketTrendSummary ? "如果给了榜单摘要，请提炼当前高位作品的共同卖点和缺口，做出对标但不照抄的方案。" : ""
         ].filter(Boolean).join("\n");
 
         const parsed = await this.requestJSONArray(systemPrompt, userPrompt, {

@@ -65,6 +65,9 @@ class StorageManager {
                 keyword: merged.idea_lab.keyword || "",
                 extra_note: merged.idea_lab.extra_note || "",
                 version_count: Math.min(5, Math.max(3, Number(merged.idea_lab.version_count || 4) || 4)),
+                use_market_trends: merged.idea_lab.use_market_trends === true,
+                market_summary: merged.idea_lab.market_summary || "",
+                market_items: Array.isArray(merged.idea_lab.market_items) ? merged.idea_lab.market_items : [],
                 selected_id: merged.idea_lab.selected_id || "",
                 results: Array.isArray(merged.idea_lab.results) ? merged.idea_lab.results : []
             }
@@ -72,6 +75,9 @@ class StorageManager {
                 keyword: "",
                 extra_note: "",
                 version_count: 4,
+                use_market_trends: false,
+                market_summary: "",
+                market_items: [],
                 selected_id: "",
                 results: []
             };

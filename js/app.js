@@ -59,7 +59,9 @@ class NovelOutlineWebApp {
             projectConcept: document.getElementById("projectConcept"),
             ideaKeywordInput: document.getElementById("ideaKeywordInput"),
             ideaVersionCount: document.getElementById("ideaVersionCount"),
+            ideaUseMarketTrends: document.getElementById("ideaUseMarketTrends"),
             ideaExtraNoteInput: document.getElementById("ideaExtraNoteInput"),
+            ideaMarketSummary: document.getElementById("ideaMarketSummary"),
             ideaResults: document.getElementById("ideaResults"),
             worldbuildingText: document.getElementById("worldbuildingText"),
             volumeSynopsisText: document.getElementById("volumeSynopsisText"),
@@ -114,6 +116,7 @@ class NovelOutlineWebApp {
             settingProvider: document.getElementById("settingProvider"),
             settingModel: document.getElementById("settingModel"),
             settingApiBase: document.getElementById("settingApiBase"),
+            settingRankApiUrl: document.getElementById("settingRankApiUrl"),
             settingApiKey: document.getElementById("settingApiKey"),
             settingTemperature: document.getElementById("settingTemperature"),
             settingMaxTokens: document.getElementById("settingMaxTokens"),
@@ -304,6 +307,9 @@ class NovelOutlineWebApp {
         this.novelData.idea_lab.keyword = this.novelData.idea_lab.keyword || "";
         this.novelData.idea_lab.extra_note = this.novelData.idea_lab.extra_note || "";
         this.novelData.idea_lab.version_count = Math.min(5, Math.max(3, Number(this.novelData.idea_lab.version_count || 4) || 4));
+        this.novelData.idea_lab.use_market_trends = this.novelData.idea_lab.use_market_trends === true;
+        this.novelData.idea_lab.market_summary = this.novelData.idea_lab.market_summary || "";
+        this.novelData.idea_lab.market_items = Array.isArray(this.novelData.idea_lab.market_items) ? this.novelData.idea_lab.market_items : [];
         this.novelData.idea_lab.selected_id = this.novelData.idea_lab.selected_id || "";
         this.novelData.idea_lab.results = Array.isArray(this.novelData.idea_lab.results) ? this.novelData.idea_lab.results : [];
         if (!this.novelData.prompt_state) {
@@ -419,6 +425,12 @@ class NovelOutlineWebApp {
         if (this.elements.ideaVersionCount) {
             this.elements.ideaVersionCount.addEventListener("change", () => {
                 this.novelData.idea_lab.version_count = Math.min(5, Math.max(3, Number(this.elements.ideaVersionCount.value || 4) || 4));
+                this.persist(true);
+            });
+        }
+        if (this.elements.ideaUseMarketTrends) {
+            this.elements.ideaUseMarketTrends.addEventListener("change", () => {
+                this.novelData.idea_lab.use_market_trends = this.elements.ideaUseMarketTrends.checked;
                 this.persist(true);
             });
         }
@@ -956,6 +968,9 @@ ${(detailedOutline || concept || "未填写").slice(0, 2200)}`;
         if (this.elements.ideaVersionCount) {
             this.elements.ideaVersionCount.value = String(this.novelData.idea_lab?.version_count || 4);
         }
+        if (this.elements.ideaUseMarketTrends) {
+            this.elements.ideaUseMarketTrends.checked = this.novelData.idea_lab?.use_market_trends === true;
+        }
         if (this.elements.ideaExtraNoteInput) {
             this.elements.ideaExtraNoteInput.value = this.novelData.idea_lab?.extra_note || "";
         }
@@ -987,6 +1002,9 @@ ${(detailedOutline || concept || "未填写").slice(0, 2200)}`;
         this.elements.settingProvider.value = settings.provider || DEFAULT_API_CONFIG.provider;
         this.elements.settingModel.value = settings.model || DEFAULT_API_CONFIG.model;
         this.elements.settingApiBase.value = settings.apiBase || DEFAULT_API_CONFIG.apiBase;
+        if (this.elements.settingRankApiUrl) {
+            this.elements.settingRankApiUrl.value = settings.rankApiUrl || "";
+        }
         this.elements.settingApiKey.value = settings.apiKey || "";
         this.elements.settingTemperature.value = settings.temperature ?? DEFAULT_API_CONFIG.temperature;
         this.elements.settingMaxTokens.value = settings.maxTokens ?? DEFAULT_API_CONFIG.maxTokens;
@@ -1725,6 +1743,7 @@ ${(detailedOutline || concept || "未填写").slice(0, 2200)}`;
             provider: this.elements.settingProvider.value,
             model: this.elements.settingModel.value.trim(),
             apiBase: this.elements.settingApiBase.value.trim(),
+            rankApiUrl: this.elements.settingRankApiUrl?.value.trim() || "",
             apiKey: this.elements.settingApiKey.value.trim(),
             temperature: Number(this.elements.settingTemperature.value || DEFAULT_API_CONFIG.temperature),
             maxTokens: Number(this.elements.settingMaxTokens.value || DEFAULT_API_CONFIG.maxTokens),
@@ -1781,6 +1800,9 @@ ${(detailedOutline || concept || "未填写").slice(0, 2200)}`;
         this.novelData.idea_lab.keyword = this.novelData.idea_lab.keyword || "";
         this.novelData.idea_lab.extra_note = this.novelData.idea_lab.extra_note || "";
         this.novelData.idea_lab.version_count = Math.min(5, Math.max(3, Number(this.novelData.idea_lab.version_count || 4) || 4));
+        this.novelData.idea_lab.use_market_trends = this.novelData.idea_lab.use_market_trends === true;
+        this.novelData.idea_lab.market_summary = this.novelData.idea_lab.market_summary || "";
+        this.novelData.idea_lab.market_items = Array.isArray(this.novelData.idea_lab.market_items) ? this.novelData.idea_lab.market_items : [];
         this.novelData.idea_lab.selected_id = this.novelData.idea_lab.selected_id || "";
         this.novelData.idea_lab.results = Array.isArray(this.novelData.idea_lab.results) ? this.novelData.idea_lab.results : [];
         this.novelData.prompt_state = this.novelData.prompt_state || JSON.parse(JSON.stringify(DEFAULT_NOVEL_DATA.prompt_state));
@@ -2772,6 +2794,7 @@ ${(detailedOutline || concept || "未填写").slice(0, 2200)}`;
 
         const results = this.novelData.idea_lab?.results || [];
         const selectedId = this.novelData.idea_lab?.selected_id || "";
+        this.renderIdeaMarketSummary();
         if (!results.length) {
             this.elements.ideaResults.innerHTML = '<div class="empty-state">这里会展示 3 到 5 个差异化脑洞版本。你选中一个后，再继续去做世界观、卷纲和细纲。</div>';
             return;
@@ -2811,6 +2834,29 @@ ${(detailedOutline || concept || "未填写").slice(0, 2200)}`;
                 <p>${Utils.escapeHTML(text || "暂无内容")}</p>
             </section>
         `;
+    }
+
+    renderIdeaMarketSummary() {
+        if (!this.elements.ideaMarketSummary) {
+            return;
+        }
+
+        const summary = String(this.novelData.idea_lab?.market_summary || "").trim();
+        const useMarket = this.novelData.idea_lab?.use_market_trends === true;
+        if (!useMarket) {
+            this.elements.ideaMarketSummary.className = "market-summary empty-state";
+            this.elements.ideaMarketSummary.textContent = "如果开启榜单趋势，这里会显示本次抓到的番茄榜摘要。";
+            return;
+        }
+
+        if (!summary) {
+            this.elements.ideaMarketSummary.className = "market-summary empty-state";
+            this.elements.ideaMarketSummary.textContent = "已开启榜单趋势，但这次还没有成功拿到榜单摘要。请检查榜单接口 URL。";
+            return;
+        }
+
+        this.elements.ideaMarketSummary.className = "market-summary";
+        this.elements.ideaMarketSummary.textContent = summary;
     }
 
     handleIdeaResultClick(event) {
@@ -2855,6 +2901,15 @@ ${(detailedOutline || concept || "未填写").slice(0, 2200)}`;
         const payload = this.getProjectPayload();
         const versionCount = Math.min(5, Math.max(3, Number(this.elements.ideaVersionCount?.value || 4) || 4));
         await this.runWithLoading("正在生成脑洞方案...", async () => {
+            let marketSnapshot = null;
+            if (this.novelData.idea_lab.use_market_trends) {
+                marketSnapshot = await this.fetchIdeaMarketSnapshot({
+                    keyword,
+                    genre: payload.genre,
+                    subgenre: payload.subgenre
+                });
+            }
+
             const results = await this.generator.generateStoryIdeas({
                 keyword,
                 title: payload.title,
@@ -2863,12 +2918,17 @@ ${(detailedOutline || concept || "未填写").slice(0, 2200)}`;
                 subgenre: payload.subgenre,
                 concept: payload.concept,
                 extraNote: String(this.elements.ideaExtraNoteInput?.value || "").trim(),
+                marketTrendSummary: marketSnapshot?.summary || "",
+                marketTrendItems: marketSnapshot?.items || [],
                 versionCount
             });
 
             this.novelData.idea_lab.keyword = keyword;
             this.novelData.idea_lab.extra_note = String(this.elements.ideaExtraNoteInput?.value || "").trim();
             this.novelData.idea_lab.version_count = versionCount;
+            this.novelData.idea_lab.use_market_trends = this.elements.ideaUseMarketTrends?.checked === true;
+            this.novelData.idea_lab.market_summary = marketSnapshot?.summary || "";
+            this.novelData.idea_lab.market_items = Array.isArray(marketSnapshot?.items) ? marketSnapshot.items : [];
             this.novelData.idea_lab.results = results;
             this.novelData.idea_lab.selected_id = results[0]?.id || "";
             this.persist(true);
@@ -2876,6 +2936,34 @@ ${(detailedOutline || concept || "未填写").slice(0, 2200)}`;
             Utils.showMessage("脑洞方案已生成。", "success");
             Utils.log(`脑洞生成完成，共返回 ${results.length} 个版本。`, "success");
         });
+    }
+
+    async fetchIdeaMarketSnapshot({ keyword, genre, subgenre }) {
+        const endpoint = String(this.api.getConfig().rankApiUrl || "").trim();
+        if (!endpoint) {
+            Utils.log("已开启榜单趋势，但还没配置榜单接口 URL，这次跳过榜单注入。", "info");
+            return null;
+        }
+
+        try {
+            Utils.log("正在拉取番茄榜单摘要，用于脑洞对标。", "info");
+            const snapshot = await this.api.fetchFanqieTrendSnapshot({
+                keyword,
+                genre,
+                subgenre,
+                limit: 10
+            });
+
+            if (snapshot?.summary) {
+                Utils.log(`已注入番茄榜摘要（${snapshot.items?.length || 0} 本样本）。`, "success");
+            } else {
+                Utils.log("榜单接口已返回，但没有拿到可用摘要。", "info");
+            }
+            return snapshot;
+        } catch (error) {
+            Utils.log(`番茄榜单接口调用失败，这次改为普通脑洞模式：${error?.message || error}`, "error");
+            return null;
+        }
     }
 
     clearIdeaLab() {
@@ -2898,6 +2986,9 @@ ${(detailedOutline || concept || "未填写").slice(0, 2200)}`;
         }
         if (this.elements.ideaVersionCount) {
             this.elements.ideaVersionCount.value = "4";
+        }
+        if (this.elements.ideaUseMarketTrends) {
+            this.elements.ideaUseMarketTrends.checked = false;
         }
         if (this.elements.ideaExtraNoteInput) {
             this.elements.ideaExtraNoteInput.value = "";

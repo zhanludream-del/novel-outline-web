@@ -187,6 +187,13 @@
                                     <option value="5">5个版本</option>
                                 </select>
                             </label>
+                            <label class="field">
+                                <span>榜单趋势</span>
+                                <label class="toggle-row">
+                                    <input id="ideaUseMarketTrends" type="checkbox">
+                                    <span>结合当前番茄榜高位作品做脑洞对标</span>
+                                </label>
+                            </label>
                             <label class="field field-full">
                                 <span>补充要求</span>
                                 <textarea class="input textarea" id="ideaExtraNoteInput" rows="5" placeholder="可选。比如：更偏男频、更偏群像、不要纯恋爱、希望有影视化感、不要太套路。"></textarea>
@@ -206,6 +213,7 @@
                                 <button class="btn btn-secondary" id="btnApplySelectedIdea" type="button">写入故事概念</button>
                             </div>
                         </div>
+                        <div id="ideaMarketSummary" class="market-summary empty-state">如果开启榜单趋势，这里会显示本次抓到的番茄榜摘要。</div>
                         <div id="ideaResults" class="idea-results">
                             <div class="empty-state">这里会展示 3 到 5 个差异化脑洞版本。你选中一个后，再继续去做世界观、卷纲和细纲。</div>
                         </div>
@@ -860,6 +868,11 @@
                     <label class="field field-full">
                         <span>API Base URL</span>
                         <input class="input" id="settingApiBase" type="text" placeholder="例如：https://api.openai.com/v1">
+                    </label>
+
+                    <label class="field field-full">
+                        <span>榜单接口 URL</span>
+                        <input class="input" id="settingRankApiUrl" type="text" placeholder="例如：https://你的-worker域名/api/fanqie/trends">
                     </label>
 
                     <label class="field field-full">

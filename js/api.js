@@ -95,6 +95,36 @@ class AIAPIClient {
         throw lastError || new Error("AI 请求失败。");
     }
 
+    async fetchFanqieTrendSnapshot(params = {}) {
+        const config = { ...this.config };
+        const endpoint = String(config.rankApiUrl || "").trim();
+        if (!endpoint) {
+            return null;
+        }
+
+        const url = new URL(endpoint);
+        Object.entries(params || {}).forEach(([key, value]) => {
+            if (value === undefined || value === null || value === "") {
+                return;
+            }
+            url.searchParams.set(key, String(value));
+        });
+
+        const response = await fetch(url.toString(), {
+            method: "GET",
+            headers: {
+                Accept: "application/json"
+            }
+        });
+
+        const data = await response.json().catch(() => ({}));
+        if (!response.ok) {
+            throw new Error(data?.error || data?.message || `榜单接口请求失败：${response.status}`);
+        }
+
+        return data;
+    }
+
     buildUrl(config) {
         const apiBase = String(config.apiBase || "").replace(/\/$/, "");
         if (!apiBase) {
