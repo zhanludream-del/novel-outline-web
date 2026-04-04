@@ -323,8 +323,22 @@ class Utils {
         let normalized = raw
             .replace(/[“”]/g, "\"")
             .replace(/[‘’]/g, "'")
+            .replace(/\u3000/g, " ")
+            .replace(/：/g, ":")
+            .replace(/，/g, ",")
             .replace(/^\uFEFF/, "")
             .replace(/,\s*([}\]])/g, "$1");
+
+        normalized = normalized
+            .replace(/([{,]\s*)([A-Za-z_\u4e00-\u9fa5][A-Za-z0-9_\-\u4e00-\u9fa5]*)(\s*:)/gu, "$1\"$2\"$3")
+            .replace(/'([^'\\]*(?:\\.[^'\\]*)*)'/g, (_, value) => `"${String(value || "")
+                .replace(/\\/g, "\\\\")
+                .replace(/"/g, "\\\"")}"`);
+
+        normalized = normalized.replace(
+            /(["}\]0-9\u4e00-\u9fa5])\s*\n(\s*(?:"[A-Za-z0-9_\-\u4e00-\u9fa5]+"|[A-Za-z_\u4e00-\u9fa5][A-Za-z0-9_\-\u4e00-\u9fa5]*)\s*:)/gu,
+            "$1,\n$2"
+        );
 
         normalized = this.extractBalancedJson(normalized, "[", "]") || normalized;
 
