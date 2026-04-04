@@ -52,12 +52,14 @@ export default {
             }
 
             const items = Array.from(itemMap.values()).slice(0, limit);
+            const diagnostics = buildTrendDiagnostics(items);
             const summary = buildTrendSummary({
                 keyword,
                 genre,
                 subgenre,
                 categories: categoryTargets,
-                items
+                items,
+                diagnostics
             });
 
             return json({
@@ -67,6 +69,7 @@ export default {
                 subgenre,
                 selectedCategories: categoryTargets,
                 items,
+                diagnostics,
                 summary,
                 fetchedAt: new Date().toISOString()
             });
@@ -399,8 +402,8 @@ function normalizeBook(book) {
     };
 }
 
-function buildTrendSummary({ keyword, genre, subgenre, categories, items }) {
-    const cleanItems = items.filter((item) => !containsObfuscatedText(item.intro));
+function buildTrendSummary({ keyword, genre, subgenre, categories, items, diagnostics }) {
+    const cleanItems = items.filter((item) => isUsableIntro(item.intro));
     const categoriesText = categories.map((item) => item.name).filter(Boolean).join("、") || "总榜";
     const hotTags = collectHotTags(cleanItems);
     const protagonistSignals = collectFrequentSignals(cleanItems, [
@@ -427,6 +430,7 @@ function buildTrendSummary({ keyword, genre, subgenre, categories, items }) {
     return [
         `本次对标关键词：${keyword || "未指定"}。`,
         `参考榜单分类：${categoriesText}。`,
+        diagnostics ? `本次共抓到 ${diagnostics.totalItems} 本样本，可直接用于趋势提炼的简介有 ${diagnostics.usableIntroCount} 本，书名混淆 ${diagnostics.obfuscatedTitleCount} 本。` : "",
         hotTags.length ? `当前高位常见卖点：${hotTags.join("、")}。` : "当前榜单文本里可稳定提取到的标签不多，建议结合分类趋势理解赛道方向。",
         protagonistSignals.length ? `高频主角模板信号：${protagonistSignals.join("、")}。` : "",
         conflictSignals.length ? `高频冲突发动机：${conflictSignals.join("、")}。` : "",
@@ -436,6 +440,29 @@ function buildTrendSummary({ keyword, genre, subgenre, categories, items }) {
         `不要照搬榜单书名和现成剧情，更适合提炼“赛道共性 + 读者情绪需求 + 缺口打法”。`,
         (subgenre || genre) ? `当前项目题材参考：${subgenre || genre}。请在同赛道内做升级或反差切入。` : ""
     ].filter(Boolean).join("\n");
+}
+
+function buildTrendDiagnostics(items) {
+    const diagnostics = {
+        totalItems: items.length,
+        usableIntroCount: 0,
+        obfuscatedTitleCount: 0,
+        obfuscatedIntroCount: 0
+    };
+
+    items.forEach((item) => {
+        if (containsObfuscatedText(item.title)) {
+            diagnostics.obfuscatedTitleCount += 1;
+        }
+        if (containsObfuscatedText(item.intro)) {
+            diagnostics.obfuscatedIntroCount += 1;
+        }
+        if (isUsableIntro(item.intro)) {
+            diagnostics.usableIntroCount += 1;
+        }
+    });
+
+    return diagnostics;
 }
 
 function collectHotTags(items) {
@@ -477,7 +504,7 @@ function inferOpeningPatterns(items) {
     const patterns = new Map();
     items.forEach((item) => {
         const intro = String(item.intro || "");
-        if (!intro || containsObfuscatedText(intro)) {
+        if (!isUsableIntro(intro)) {
             return;
         }
         if (/穿越|重生|穿书/.test(intro)) {
@@ -565,6 +592,17 @@ function cleanText(value) {
 
 function normalizeKey(value) {
     return cleanText(value).toLowerCase();
+}
+
+function isUsableIntro(value) {
+    const text = cleanText(value);
+    if (!text || text.length < 12) {
+        return false;
+    }
+    if (containsObfuscatedText(text)) {
+        return false;
+    }
+    return true;
 }
 
 function containsObfuscatedText(value) {

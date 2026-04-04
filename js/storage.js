@@ -68,6 +68,9 @@ class StorageManager {
                 use_market_trends: merged.idea_lab.use_market_trends === true,
                 market_summary: merged.idea_lab.market_summary || "",
                 market_items: Array.isArray(merged.idea_lab.market_items) ? merged.idea_lab.market_items : [],
+                market_diagnostics: merged.idea_lab.market_diagnostics && typeof merged.idea_lab.market_diagnostics === "object"
+                    ? merged.idea_lab.market_diagnostics
+                    : {},
                 selected_id: merged.idea_lab.selected_id || "",
                 results: Array.isArray(merged.idea_lab.results) ? merged.idea_lab.results : []
             }
@@ -78,6 +81,7 @@ class StorageManager {
                 use_market_trends: false,
                 market_summary: "",
                 market_items: [],
+                market_diagnostics: {},
                 selected_id: "",
                 results: []
             };

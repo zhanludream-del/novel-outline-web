@@ -310,6 +310,9 @@ class NovelOutlineWebApp {
         this.novelData.idea_lab.use_market_trends = this.novelData.idea_lab.use_market_trends === true;
         this.novelData.idea_lab.market_summary = this.novelData.idea_lab.market_summary || "";
         this.novelData.idea_lab.market_items = Array.isArray(this.novelData.idea_lab.market_items) ? this.novelData.idea_lab.market_items : [];
+        this.novelData.idea_lab.market_diagnostics = this.novelData.idea_lab.market_diagnostics && typeof this.novelData.idea_lab.market_diagnostics === "object"
+            ? this.novelData.idea_lab.market_diagnostics
+            : {};
         this.novelData.idea_lab.selected_id = this.novelData.idea_lab.selected_id || "";
         this.novelData.idea_lab.results = Array.isArray(this.novelData.idea_lab.results) ? this.novelData.idea_lab.results : [];
         if (!this.novelData.prompt_state) {
@@ -1803,6 +1806,9 @@ ${(detailedOutline || concept || "未填写").slice(0, 2200)}`;
         this.novelData.idea_lab.use_market_trends = this.novelData.idea_lab.use_market_trends === true;
         this.novelData.idea_lab.market_summary = this.novelData.idea_lab.market_summary || "";
         this.novelData.idea_lab.market_items = Array.isArray(this.novelData.idea_lab.market_items) ? this.novelData.idea_lab.market_items : [];
+        this.novelData.idea_lab.market_diagnostics = this.novelData.idea_lab.market_diagnostics && typeof this.novelData.idea_lab.market_diagnostics === "object"
+            ? this.novelData.idea_lab.market_diagnostics
+            : {};
         this.novelData.idea_lab.selected_id = this.novelData.idea_lab.selected_id || "";
         this.novelData.idea_lab.results = Array.isArray(this.novelData.idea_lab.results) ? this.novelData.idea_lab.results : [];
         this.novelData.prompt_state = this.novelData.prompt_state || JSON.parse(JSON.stringify(DEFAULT_NOVEL_DATA.prompt_state));
@@ -2843,6 +2849,7 @@ ${(detailedOutline || concept || "未填写").slice(0, 2200)}`;
 
         const summary = String(this.novelData.idea_lab?.market_summary || "").trim();
         const useMarket = this.novelData.idea_lab?.use_market_trends === true;
+        const diagnostics = this.novelData.idea_lab?.market_diagnostics || {};
         if (!useMarket) {
             this.elements.ideaMarketSummary.className = "market-summary empty-state";
             this.elements.ideaMarketSummary.textContent = "如果开启榜单趋势，这里会显示本次抓到的番茄榜摘要。";
@@ -2856,7 +2863,10 @@ ${(detailedOutline || concept || "未填写").slice(0, 2200)}`;
         }
 
         this.elements.ideaMarketSummary.className = "market-summary";
-        this.elements.ideaMarketSummary.textContent = summary;
+        const prefix = diagnostics.totalItems
+            ? `样本 ${diagnostics.totalItems} 本，可用简介 ${diagnostics.usableIntroCount || 0} 本，混淆书名 ${diagnostics.obfuscatedTitleCount || 0} 本，混淆简介 ${diagnostics.obfuscatedIntroCount || 0} 本。\n\n`
+            : "";
+        this.elements.ideaMarketSummary.textContent = `${prefix}${summary}`;
     }
 
     handleIdeaResultClick(event) {
@@ -2929,6 +2939,9 @@ ${(detailedOutline || concept || "未填写").slice(0, 2200)}`;
             this.novelData.idea_lab.use_market_trends = this.elements.ideaUseMarketTrends?.checked === true;
             this.novelData.idea_lab.market_summary = marketSnapshot?.summary || "";
             this.novelData.idea_lab.market_items = Array.isArray(marketSnapshot?.items) ? marketSnapshot.items : [];
+            this.novelData.idea_lab.market_diagnostics = marketSnapshot?.diagnostics && typeof marketSnapshot.diagnostics === "object"
+                ? marketSnapshot.diagnostics
+                : {};
             this.novelData.idea_lab.results = results;
             this.novelData.idea_lab.selected_id = results[0]?.id || "";
             this.persist(true);

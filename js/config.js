@@ -213,6 +213,7 @@ const DEFAULT_NOVEL_DATA = {
         use_market_trends: false,
         market_summary: "",
         market_items: [],
+        market_diagnostics: {},
         selected_id: "",
         results: []
     },
