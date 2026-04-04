@@ -2544,7 +2544,98 @@
         return Array.from(pending).sort((left, right) => right.length - left.length);
     }
 
+    detectSynopsisRoleRequirements(project, text = "", lockedVolume = 1) {
+        const synopsisData = this.restoreSynopsisMainCharacters(project);
+        const content = String(text || "");
+        const vagueNames = new Set(["男主", "女主", "主角", "主人公", "男一", "女一", "男一号", "女一号", "男角", "女角"]);
+        const pendingRoles = new Set();
+        const roleHints = [];
+
+        (project?.outline?.characters || []).forEach((character) => {
+            const rawName = String(character?.name || "").trim();
+            const identity = String(character?.identity || character?.["身份"] || "").trim();
+            if (!identity) {
+                return;
+            }
+
+            let role = "";
+            if (/女主|女主角|女一|女主人公|女角/.test(identity)) {
+                role = "女主";
+            } else if (/男主|男主角|男一|男主人公|男角/.test(identity)) {
+                role = "男主";
+            } else if (/主角|主人公/.test(identity)) {
+                role = /女/.test(identity) ? "女主" : /男/.test(identity) ? "男主" : "";
+            }
+
+            if (!role) {
+                return;
+            }
+
+            if (!rawName || vagueNames.has(rawName)) {
+                pendingRoles.add(role);
+                roleHints.push(`角色设定中【${role}】仍是模糊称呼：${rawName || "空"}`);
+                return;
+            }
+
+            if (this.applySynopsisMainCharacter(project, role, rawName, lockedVolume)) {
+                roleHints.push(`已从角色设定锁定【${role}】=${rawName}`);
+            }
+        });
+
+        Object.entries(this.getSynopsisRoleAliases()).forEach(([role, aliases]) => {
+            if (synopsisData.main_characters?.[role]) {
+                return;
+            }
+            if (aliases.some((alias) => content.includes(alias))) {
+                pendingRoles.add(role);
+            }
+        });
+
+        return {
+            pendingRoles: Array.from(pendingRoles),
+            roleHints
+        };
+    }
+
+    buildSynopsisLockedNameTable(project) {
+        const synopsisData = this.restoreSynopsisMainCharacters(project);
+        const protagonistLines = Object.entries(synopsisData.main_characters || {})
+            .filter(([, name]) => String(name || "").trim())
+            .map(([role, name]) => `【${role}】${name}`);
+        const supportingLines = Object.entries(synopsisData.locked_character_names || {})
+            .filter(([, info]) => info?.type !== "主角")
+            .slice(0, 20)
+            .map(([name, info]) => {
+                const identity = info?.identity || "未知";
+                const lockedVolume = info?.locked_volume ? `，锁定卷：第${info.locked_volume}卷` : "";
+                return `${name}（${identity}${lockedVolume}）`;
+            });
+
+        if (!protagonistLines.length && !supportingLines.length) {
+            return "";
+        }
+
+        return [
+            "【角色名字锁定表】",
+            "一、主角名字（最高优先级，绝对不能改名或退回模糊称呼）：",
+            protagonistLines.length ? protagonistLines.join("\n") : "（暂无）",
+            "",
+            "二、已锁定角色名字（后续细纲/章纲/正文必须沿用）：",
+            supportingLines.length ? supportingLines.join("、") : "（暂无）",
+            "",
+            "强制规则：",
+            "1. 已锁定角色必须一直使用真实姓名，不能写回男主、女主、主角、师尊、同事A之类代称。",
+            "2. 已锁定角色的常见简称、别名也不能误写成另一个新角色。",
+            "3. 新角色可以起新名字，但不能撞到锁定表里的实名或别名。"
+        ].join("\n");
+    }
+
     prepareSynopsisGenerationInput(project, { concept, volumeSummary, existingSynopsis, volumeNumber }) {
+        const roleRequirement = this.detectSynopsisRoleRequirements(
+            project,
+            `${concept || ""}\n${volumeSummary || ""}\n${existingSynopsis || ""}`,
+            volumeNumber
+        );
         const synopsisData = this.restoreSynopsisMainCharacters(project);
         synopsisData.vague_to_name_mapping = synopsisData.vague_to_name_mapping && typeof synopsisData.vague_to_name_mapping === "object"
             ? synopsisData.vague_to_name_mapping
@@ -2565,6 +2656,7 @@
             processedConcept,
             processedVolumeSummary,
             processedExistingSynopsis,
+            lockedNamesHint: this.buildSynopsisLockedNameTable(project),
             mappingHint: mappingLines.length
                 ? [
                     "【🔒 模糊称呼→具体名字映射表（必须遵守）】",
@@ -2573,7 +2665,7 @@
                 ].join("\n")
                 : "",
             pendingHint: pendingTerms.length && Number(volumeNumber || 0) > 0
-                ? `【待继续明确的模糊称呼】\n${pendingTerms.slice(0, 12).map((term) => `- ${term}`).join("\n")}\n如果本卷明确写出了真实名字，可以直接用真实名字，不要长期停留在模糊称呼。`
+                ? `【待继续明确的模糊称呼】\n${[...new Set([...pendingTerms, ...(roleRequirement.pendingRoles || [])])].slice(0, 12).map((term) => `- ${term}`).join("\n")}\n如果本卷明确写出了真实名字，可以直接用真实名字，不要长期停留在模糊称呼。`
                 : ""
         };
     }
@@ -2761,6 +2853,11 @@
     }
 
     mergeSynopsisStateFromGeneratedChapters(project, chapters, volumeNumber, inputs = {}) {
+        this.detectSynopsisRoleRequirements(
+            project,
+            `${inputs.concept || ""}\n${inputs.volumeSummary || ""}`,
+            volumeNumber
+        );
         const synopsisData = this.restoreSynopsisMainCharacters(project);
         synopsisData.vague_to_name_mapping = synopsisData.vague_to_name_mapping && typeof synopsisData.vague_to_name_mapping === "object"
             ? synopsisData.vague_to_name_mapping

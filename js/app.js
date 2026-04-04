@@ -2764,6 +2764,7 @@ ${(detailedOutline || concept || "未填写").slice(0, 2200)}`;
                 ...payload,
                 concept: [
                     preparedSynopsisInput.processedConcept || payload.concept,
+                    preparedSynopsisInput.lockedNamesHint,
                     preparedSynopsisInput.mappingHint,
                     preparedSynopsisInput.pendingHint
                 ].filter(Boolean).join("\n\n"),
@@ -4334,7 +4335,12 @@ ${(detailedOutline || concept || "未填写").slice(0, 2200)}`;
         };
     }
 
-    ensureCharacterAppearanceEntry(name, chapterNumber = 0, identity = "", initialAppearance = "") {
+    getSelectedChapterVolumeNumber() {
+        const selected = Number(this.elements.chapterEditorVolumeSelect?.value || this.elements.chapterVolumeSelect?.value || 0);
+        return selected > 0 ? selected : 0;
+    }
+
+    ensureCharacterAppearanceEntry(name, chapterNumber = 0, identity = "", initialAppearance = "", volumeNumber = 0) {
         const resolvedName = this.resolveKnownCharacterName(name);
         if (!resolvedName) {
             return null;
@@ -4347,10 +4353,13 @@ ${(detailedOutline || concept || "未填写").slice(0, 2200)}`;
         const profile = this.getCharacterProfileForTracking(resolvedName);
         const baseIdentity = identity || profile.identity || "";
         const baseAppearance = initialAppearance || profile.appearance || "";
+        const effectiveVolume = Number(volumeNumber || this.getSelectedChapterVolumeNumber() || 0);
 
         const appearanceEntry = appearanceTracker.appearances[resolvedName] || {
             首次出场: chapterNumber || 0,
+            首次出场卷号: effectiveVolume || 0,
             出场章节: chapterNumber ? [chapterNumber] : [],
+            出场卷号: effectiveVolume ? [effectiveVolume] : [],
             身份: baseIdentity,
             初始形象: baseAppearance,
             真实形象: baseAppearance,
@@ -4363,6 +4372,13 @@ ${(detailedOutline || concept || "未填写").slice(0, 2200)}`;
         }
         if (!appearanceEntry.首次出场 && chapterNumber) {
             appearanceEntry.首次出场 = chapterNumber;
+        }
+        if (!appearanceEntry.首次出场卷号 && effectiveVolume) {
+            appearanceEntry.首次出场卷号 = effectiveVolume;
+        }
+        appearanceEntry.出场卷号 = Array.isArray(appearanceEntry.出场卷号) ? appearanceEntry.出场卷号 : [];
+        if (effectiveVolume && !appearanceEntry.出场卷号.includes(effectiveVolume)) {
+            appearanceEntry.出场卷号.push(effectiveVolume);
         }
         if (baseIdentity && !appearanceEntry.身份) {
             appearanceEntry.身份 = baseIdentity;
@@ -4579,7 +4595,13 @@ ${(detailedOutline || concept || "未填写").slice(0, 2200)}`;
         const changeType = String(options.changeType || "").trim() || "正常";
         const reason = String(options.reason || "").trim();
         const duration = String(options.duration || "").trim();
-        const seeded = this.ensureCharacterAppearanceEntry(name, chapterNumber, identity, realAppearance || appearanceText);
+        const seeded = this.ensureCharacterAppearanceEntry(
+            name,
+            chapterNumber,
+            identity,
+            realAppearance || appearanceText,
+            options.volumeNumber || 0
+        );
         if (!seeded) {
             return false;
         }
@@ -4623,6 +4645,7 @@ ${(detailedOutline || concept || "未填写").slice(0, 2200)}`;
 
         const historyRecord = {
             章节: chapterNumber || 0,
+            卷号: Number(options.volumeNumber || this.getSelectedChapterVolumeNumber() || 0),
             形象: appearanceEntry.当前形象,
             类型: changeType,
             原因: reason,
@@ -4698,7 +4721,13 @@ ${(detailedOutline || concept || "未填写").slice(0, 2200)}`;
             if (!content.includes(name)) {
                 return;
             }
-            const seeded = this.ensureCharacterAppearanceEntry(name, chapterNumber);
+            const seeded = this.ensureCharacterAppearanceEntry(
+                name,
+                chapterNumber,
+                "",
+                "",
+                this.getSelectedChapterVolumeNumber()
+            );
             if (seeded) {
                 stats.appearances += 1;
             }
@@ -5781,7 +5810,7 @@ ${(detailedOutline || concept || "未填写").slice(0, 2200)}`;
                 progress: 10,
                 detail: "先同步章纲中的出场人物"
             });
-            const preseeded = this.syncCharactersFromOutlineSections(outlineChapters);
+            const preseeded = this.syncCharactersFromOutlineSections(outlineChapters, volumeNumber);
             if (preseeded.added || preseeded.updated) {
                 Utils.log(`已先从章纲【出场人物】同步 ${preseeded.added} 个新角色，补全 ${preseeded.updated} 个角色基础信息。`, "info");
             }
@@ -5935,7 +5964,7 @@ ${(detailedOutline || concept || "未填写").slice(0, 2200)}`;
         return seeds;
     }
 
-    syncCharactersFromOutlineSections(chapters = []) {
+    syncCharactersFromOutlineSections(chapters = [], volumeNumber = 0) {
         let added = 0;
         let updated = 0;
         const appearanceTracker = this.novelData.character_appearance_tracker || {};
@@ -5985,10 +6014,17 @@ ${(detailedOutline || concept || "未填写").slice(0, 2200)}`;
                     if (!appearanceTracker.appearances[seed.name]) {
                         appearanceTracker.appearances[seed.name] = {
                             身份: seed.identity || "",
-                            出场章节: [chapterNumber]
+                            出场章节: [chapterNumber],
+                            出场卷号: volumeNumber ? [volumeNumber] : []
                         };
                     } else if (!appearanceTracker.appearances[seed.name].出场章节.includes(chapterNumber)) {
                         appearanceTracker.appearances[seed.name].出场章节.push(chapterNumber);
+                    }
+                    appearanceTracker.appearances[seed.name].出场卷号 = Array.isArray(appearanceTracker.appearances[seed.name].出场卷号)
+                        ? appearanceTracker.appearances[seed.name].出场卷号
+                        : [];
+                    if (volumeNumber && !appearanceTracker.appearances[seed.name].出场卷号.includes(volumeNumber)) {
+                        appearanceTracker.appearances[seed.name].出场卷号.push(volumeNumber);
                     }
                 }
             });
@@ -6217,7 +6253,7 @@ ${(detailedOutline || concept || "未填写").slice(0, 2200)}`;
         return seeds;
     }
 
-    syncCharactersFromOutlineSections(chapters = []) {
+    syncCharactersFromOutlineSections(chapters = [], volumeNumber = 0) {
         let added = 0;
         let updated = 0;
         const appearanceTracker = this.novelData.character_appearance_tracker || {};
@@ -6280,10 +6316,17 @@ ${(detailedOutline || concept || "未填写").slice(0, 2200)}`;
                     if (!appearanceTracker.appearances[seed.name]) {
                         appearanceTracker.appearances[seed.name] = {
                             身份: seed.identity || "",
-                            出场章节: [chapterNumber]
+                            出场章节: [chapterNumber],
+                            出场卷号: volumeNumber ? [volumeNumber] : []
                         };
                     } else if (!appearanceTracker.appearances[seed.name].出场章节.includes(chapterNumber)) {
                         appearanceTracker.appearances[seed.name].出场章节.push(chapterNumber);
+                    }
+                    appearanceTracker.appearances[seed.name].出场卷号 = Array.isArray(appearanceTracker.appearances[seed.name].出场卷号)
+                        ? appearanceTracker.appearances[seed.name].出场卷号
+                        : [];
+                    if (volumeNumber && !appearanceTracker.appearances[seed.name].出场卷号.includes(volumeNumber)) {
+                        appearanceTracker.appearances[seed.name].出场卷号.push(volumeNumber);
                     }
                 }
             });
