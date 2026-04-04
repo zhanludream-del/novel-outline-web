@@ -777,7 +777,19 @@
         for (let batchStart = 0; batchStart < rawItems.length; batchStart += CHAR_BATCH_SIZE) {
             const batchItems = rawItems.slice(batchStart, batchStart + CHAR_BATCH_SIZE);
             const batchIndex = Math.floor(batchStart / CHAR_BATCH_SIZE) + 1;
-            const batchStr = batchItems.map(([label, desc]) => `- ${label}${desc ? `（${desc}）` : ""}`).join("\n");
+            const batchStr = batchItems.map(([label, meta]) => {
+                const detail = meta && typeof meta === "object"
+                    ? meta
+                    : { description: String(meta || "").trim(), needsNaming: false, aliases: [] };
+                const desc = String(detail.description || "").trim();
+                const aliasText = Array.isArray(detail.aliases) && detail.aliases.length
+                    ? `；原称呼/别名：${detail.aliases.join("、")}`
+                    : "";
+                const namingHint = detail.needsNaming
+                    ? "；【需要先起一个具体中文名字，禁止继续用模糊称呼做name，并把原称呼写入aliases】"
+                    : "";
+                return `- ${label}${desc ? `（${desc}）` : ""}${aliasText}${namingHint}`;
+            }).join("\n");
 
             if (typeof onProgress === "function") {
                 onProgress({
@@ -825,7 +837,9 @@
                 "10. 必须保留角色原名字，不得擅自改名；如果已有别名或常见称呼，请写入 aliases / 别名 字段。",
                 "11. 如果新角色和已有角色存在亲属、师门、敌对、上下级、旧识关系，必须在 relationships 字段中写清楚。",
                 "12. 不要让新角色无故顶替已有角色的重要身份，也不要把已有角色的别名重复发给其他人。",
-                "13. 不要包含任何 markdown 标记，直接返回纯 JSON 数组。",
+                "13. 如果输入项是“主角、女主、男主、龙神、审判官”等模糊称呼，且尚未锁定实名，你必须先给这个角色起一个具体中文名字，原称呼写入 aliases / 别名；绝对不能把 name 仍然写成模糊称呼。",
+                "14. 如果某个模糊称呼其实已经对应已有角色，必须沿用已有名字，不能重复造一个新角色。",
+                "15. 不要包含任何 markdown 标记，直接返回纯 JSON 数组。",
                 "",
                 "【输出格式示例】",
                 `[${JSON.stringify(exampleChar, null, 2)}]`
@@ -837,9 +851,26 @@
                 timeout: this.getTaskTimeoutMs(240000)
             });
 
-            parsed.forEach((character) => {
+            parsed.forEach((character, index) => {
+                const sourceMeta = batchItems[index]?.[1] && typeof batchItems[index][1] === "object"
+                    ? batchItems[index][1]
+                    : { description: String(batchItems[index]?.[1] || "").trim(), needsNaming: false, aliases: [] };
+                const candidateName = String(batchItems[index]?.[0] || "").trim();
+                const rawReturnedName = String(character.name || "").trim();
+                const inputAliases = Array.isArray(sourceMeta.aliases) ? sourceMeta.aliases : [];
+                const returnedAliases = Array.isArray(character.aliases)
+                    ? character.aliases
+                    : Utils.ensureArrayFromText(character.aliases || character["别名"]);
+                const chosenName = (!sourceMeta.needsNaming && candidateName) ||
+                    (this.isGenericCharacterCandidateName(rawReturnedName) ? "" : rawReturnedName) ||
+                    candidateName;
+                const mergedAliases = Array.from(new Set([
+                    ...returnedAliases,
+                    ...inputAliases,
+                    ...(sourceMeta.needsNaming && candidateName ? [candidateName] : [])
+                ])).filter(Boolean);
                 const normalized = {
-                    name: character.name || "",
+                    name: chosenName || "",
                     identity: character.identity || "",
                     age: character.age || "",
                     gender: character.gender || "",
@@ -849,18 +880,14 @@
                     abilities: character.abilities || character["能力特长"] || "",
                     goals: character.goals || character["目标动机"] || "",
                     relationships: character.relationships || character["人物关系"] || "",
-                    aliases: Array.isArray(character.aliases)
-                        ? character.aliases
-                        : Utils.ensureArrayFromText(character.aliases || character["别名"]),
+                    aliases: mergedAliases,
                     性格特点: character.personality || character["性格特点"] || "",
                     背景故事: character.background || character["背景故事"] || "",
                     外貌描述: character.appearance || character["外貌描述"] || "",
                     能力特长: character.abilities || character["能力特长"] || "",
                     目标动机: character.goals || character["目标动机"] || "",
                     人物关系: character.relationships || character["人物关系"] || "",
-                    别名: Array.isArray(character.aliases)
-                        ? character.aliases.join("、")
-                        : (character["别名"] || "")
+                    别名: mergedAliases.join("、")
                 };
 
                 if (normalized.name) {
@@ -4149,22 +4176,37 @@
         });
 
         const roleMap = {};
-        const mapping = project.synopsisData?.vague_to_name_mapping || project.synopsis_data?.vague_to_name_mapping || {};
         const normalizeLabel = (value) => String(value || "")
             .replace(/^[•\-]\s*/, "")
             .split(/[（(：:]/)[0]
             .trim();
 
         const addRole = (name, description) => {
-            const mappedName = mapping[name] || name;
-            const cleanName = normalizeLabel(mappedName);
+            const cleanLabel = normalizeLabel(name);
+            if (!cleanLabel || cleanLabel.length < 2) {
+                return;
+            }
+            const resolved = this.resolveOutlineCandidateName(project, cleanLabel, description);
+            const cleanName = normalizeLabel(resolved.name);
             if (!cleanName || cleanName.length < 2) {
                 return;
             }
-            if (existingAllNames.has(cleanName) || roleMap[cleanName]) {
+            if (!resolved.needsNaming && existingAllNames.has(cleanName)) {
                 return;
             }
-            roleMap[cleanName] = String(description || "").trim();
+
+            if (roleMap[cleanName]) {
+                roleMap[cleanName].description = [roleMap[cleanName].description, String(description || "").trim()].filter(Boolean).join("；");
+                roleMap[cleanName].needsNaming = roleMap[cleanName].needsNaming && resolved.needsNaming;
+                roleMap[cleanName].aliases = Array.from(new Set([...(roleMap[cleanName].aliases || []), ...(resolved.aliases || [])])).filter(Boolean);
+                return;
+            }
+
+            roleMap[cleanName] = {
+                description: String(description || "").trim(),
+                needsNaming: Boolean(resolved.needsNaming),
+                aliases: Array.from(new Set(resolved.aliases || [])).filter(Boolean)
+            };
         };
 
         (chapters || []).forEach((chapter) => {
@@ -4299,6 +4341,104 @@
         });
 
         return lines.length ? lines.join("\n") : "暂无已建立关系";
+    }
+
+    getOutlineCharacterExcludedNames() {
+        return new Set([
+            "主角", "男主", "女主", "反派", "路人", "众人", "少年", "少女", "男人", "女人",
+            "师尊", "掌门", "长老", "弟子", "同门", "敌人", "对手", "黑影", "来人", "医者"
+        ]);
+    }
+
+    buildKnownCharacterAliasMap(project) {
+        const aliasMap = {};
+        const addAlias = (alias, realName) => {
+            const cleanAlias = String(alias || "").trim();
+            const cleanName = String(realName || "").trim();
+            if (!cleanAlias || !cleanName || aliasMap[cleanAlias]) {
+                return;
+            }
+            aliasMap[cleanAlias] = cleanName;
+        };
+
+        const synopsisData = this.getSynopsisData(project) || {};
+        Object.entries(synopsisData.vague_to_name_mapping || {}).forEach(([alias, realName]) => addAlias(alias, realName));
+        Object.entries(synopsisData.main_characters || {}).forEach(([role, realName]) => {
+            addAlias(role, realName);
+            (this.getSynopsisRoleAliases()[role] || []).forEach((alias) => addAlias(alias, realName));
+        });
+        Object.entries(synopsisData.locked_character_names || {}).forEach(([name, info]) => {
+            addAlias(name, name);
+            Utils.ensureArrayFromText(info?.aliases || []).forEach((alias) => addAlias(alias, name));
+        });
+        (project.outline?.characters || []).forEach((character) => {
+            const primaryName = String(character.name || "").trim();
+            if (!primaryName) {
+                return;
+            }
+            addAlias(primaryName, primaryName);
+            Utils.ensureArrayFromText(character.aliases || character["别名"] || "")
+                .forEach((alias) => addAlias(alias, primaryName));
+        });
+
+        return aliasMap;
+    }
+
+    isGenericCharacterCandidateName(name) {
+        const cleanName = String(name || "").trim();
+        if (!cleanName) {
+            return true;
+        }
+        if (this.getOutlineCharacterExcludedNames().has(cleanName)) {
+            return true;
+        }
+        const aliasToRole = this.buildSynopsisAliasToRoleMap();
+        if (aliasToRole[cleanName]) {
+            return true;
+        }
+        return /^(龙神|神胎|审判官|骑士|圣骑士|主教|祭司|侍女|丫鬟|婢女|护卫|下属|手下|师兄|师姐|师弟|师妹|师父|师母|父亲|母亲|哥哥|姐姐|妹妹|弟弟|同门|同伴|邻居|室友|同事|上司|老板|老师|学生)$/.test(cleanName);
+    }
+
+    resolveOutlineCandidateName(project, label, description = "") {
+        const aliasMap = this.buildKnownCharacterAliasMap(project);
+        const cleanLabel = String(label || "").trim();
+        const directMapped = String(aliasMap[cleanLabel] || "").trim();
+        if (directMapped) {
+            return {
+                name: directMapped,
+                needsNaming: false,
+                aliases: cleanLabel && cleanLabel !== directMapped ? [cleanLabel] : []
+            };
+        }
+
+        if (!this.isGenericCharacterCandidateName(cleanLabel)) {
+            return {
+                name: cleanLabel,
+                needsNaming: false,
+                aliases: []
+            };
+        }
+
+        const descriptionText = String(description || "");
+        const matchedAlias = Object.keys(aliasMap)
+            .sort((left, right) => right.length - left.length)
+            .find((alias) => alias && descriptionText.includes(alias));
+        if (matchedAlias) {
+            const realName = String(aliasMap[matchedAlias] || "").trim();
+            if (realName) {
+                return {
+                    name: realName,
+                    needsNaming: false,
+                    aliases: Array.from(new Set([cleanLabel, matchedAlias].filter(Boolean)))
+                };
+            }
+        }
+
+        return {
+            name: cleanLabel,
+            needsNaming: true,
+            aliases: cleanLabel ? [cleanLabel] : []
+        };
     }
 
     limitContext(text, max = 2000) {

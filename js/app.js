@@ -9,6 +9,7 @@ class NovelOutlineWebApp {
             activeChapterSubview: window.localStorage.getItem("novel_outline_chapter_subview") || "batch",
             selectedChapterId: null,
             editingCharacterId: null,
+            selectedCharacterIds: new Set(),
             chapterListCollapsedMobile: window.localStorage.getItem("novel_outline_mobile_chapter_list") !== "open",
             logVisible: window.localStorage.getItem("novel_outline_log_visible") === "1",
             logCollapsed: window.localStorage.getItem("novel_outline_log_collapsed") !== "0"
@@ -102,6 +103,10 @@ class NovelOutlineWebApp {
             characterAppearance: document.getElementById("characterAppearance"),
             characterRelationships: document.getElementById("characterRelationships"),
             characterList: document.getElementById("characterList"),
+            characterSelectionCount: document.getElementById("characterSelectionCount"),
+            btnSelectAllCharacters: document.getElementById("btnSelectAllCharacters"),
+            btnClearCharacterSelection: document.getElementById("btnClearCharacterSelection"),
+            btnDeleteSelectedCharacters: document.getElementById("btnDeleteSelectedCharacters"),
 
             detailedOutlineInput: document.getElementById("detailedOutlineInput"),
             globalSettingNoteInput: document.getElementById("globalSettingNoteInput"),
@@ -538,6 +543,16 @@ class NovelOutlineWebApp {
             this.elements.chapterList.addEventListener("click", (event) => this.handleChapterListClick(event));
         }
         this.elements.characterList.addEventListener("click", (event) => this.handleCharacterListClick(event));
+        this.elements.characterList.addEventListener("change", (event) => this.handleCharacterListChange(event));
+        if (this.elements.btnSelectAllCharacters) {
+            this.elements.btnSelectAllCharacters.addEventListener("click", () => this.selectAllCharacters());
+        }
+        if (this.elements.btnClearCharacterSelection) {
+            this.elements.btnClearCharacterSelection.addEventListener("click", () => this.clearCharacterSelection());
+        }
+        if (this.elements.btnDeleteSelectedCharacters) {
+            this.elements.btnDeleteSelectedCharacters.addEventListener("click", () => this.deleteSelectedCharacters());
+        }
 
         this.elements.btnOpenSettings.addEventListener("click", () => this.openSettingsModal());
         this.elements.btnCloseSettings.addEventListener("click", () => this.closeSettingsModal());
@@ -1335,8 +1350,13 @@ ${(detailedOutline || concept || "未填写").slice(0, 2200)}`;
 
     renderCharacterList() {
         const characters = this.novelData.outline.characters || [];
+        const validIds = new Set(characters.map((character) => character.id));
+        this.state.selectedCharacterIds = new Set(
+            Array.from(this.state.selectedCharacterIds || []).filter((id) => validIds.has(id))
+        );
         if (characters.length === 0) {
             this.elements.characterList.innerHTML = '<div class="empty-state">人物库还是空的。可以手动新增，也可以后面根据章节再补充。</div>';
+            this.updateCharacterSelectionToolbar();
             return;
         }
 
@@ -1344,6 +1364,10 @@ ${(detailedOutline || concept || "未填写").slice(0, 2200)}`;
             <article class="character-card" data-character-id="${character.id}">
                 <div class="character-card-head">
                     <div>
+                        <label class="character-select">
+                            <input type="checkbox" class="character-select-input" data-character-select="${character.id}" ${this.state.selectedCharacterIds.has(character.id) ? "checked" : ""}>
+                            <span>选择</span>
+                        </label>
                         <h4>${Utils.escapeHTML(character.name || "未命名人物")}</h4>
                         <div class="character-meta">
                             ${character.identity ? `<span class="tag">${Utils.escapeHTML(character.identity)}</span>` : ""}
@@ -1361,6 +1385,7 @@ ${(detailedOutline || concept || "未填写").slice(0, 2200)}`;
                 <p><strong>关系：</strong>${Utils.escapeHTML(Utils.summarizeText(character.relationships, 90))}</p>
             </article>
         `).join("");
+        this.updateCharacterSelectionToolbar();
     }
 
     renderAdvancedState() {
@@ -1695,6 +1720,71 @@ ${(detailedOutline || concept || "未填写").slice(0, 2200)}`;
         } else if (action === "delete") {
             this.deleteCharacter(characterId);
         }
+    }
+
+    handleCharacterListChange(event) {
+        const checkbox = event.target.closest("[data-character-select]");
+        if (!checkbox) {
+            return;
+        }
+        const characterId = String(checkbox.dataset.characterSelect || "").trim();
+        if (!characterId) {
+            return;
+        }
+        if (checkbox.checked) {
+            this.state.selectedCharacterIds.add(characterId);
+        } else {
+            this.state.selectedCharacterIds.delete(characterId);
+        }
+        this.updateCharacterSelectionToolbar();
+    }
+
+    updateCharacterSelectionToolbar() {
+        const count = this.state.selectedCharacterIds?.size || 0;
+        if (this.elements.characterSelectionCount) {
+            this.elements.characterSelectionCount.textContent = `已选 ${count}`;
+        }
+        if (this.elements.btnClearCharacterSelection) {
+            this.elements.btnClearCharacterSelection.disabled = count === 0;
+        }
+        if (this.elements.btnDeleteSelectedCharacters) {
+            this.elements.btnDeleteSelectedCharacters.disabled = count === 0;
+        }
+    }
+
+    selectAllCharacters() {
+        const ids = (this.novelData.outline.characters || []).map((character) => character.id).filter(Boolean);
+        this.state.selectedCharacterIds = new Set(ids);
+        this.renderCharacterList();
+    }
+
+    clearCharacterSelection() {
+        this.state.selectedCharacterIds = new Set();
+        this.renderCharacterList();
+    }
+
+    deleteSelectedCharacters() {
+        const selectedIds = Array.from(this.state.selectedCharacterIds || []);
+        if (!selectedIds.length) {
+            Utils.showMessage("请先勾选要删除的人物。", "info");
+            return;
+        }
+        const ok = window.confirm(`确定要批量删除已选中的 ${selectedIds.length} 个人物吗？`);
+        if (!ok) {
+            return;
+        }
+
+        this.novelData.outline.characters = (this.novelData.outline.characters || []).filter(
+            (item) => !this.state.selectedCharacterIds.has(item.id)
+        );
+        if (this.state.editingCharacterId && this.state.selectedCharacterIds.has(this.state.editingCharacterId)) {
+            this.resetCharacterForm();
+        }
+        this.state.selectedCharacterIds = new Set();
+        this.persist(true);
+        this.renderCharacterList();
+        this.renderDashboard();
+        Utils.showMessage(`已删除 ${selectedIds.length} 个人物。`, "success");
     }
 
     switchTab(tabName) {
@@ -5882,7 +5972,7 @@ ${(detailedOutline || concept || "未填写").slice(0, 2200)}`;
                 ...character,
                 id: character.id || Utils.uid("character")
             });
-            const existingIndex = this.findExistingCharacterIndexByAnyName(normalized.name);
+            const existingIndex = this.findExistingCharacterIndexByAnyName(normalized);
 
             if (existingIndex >= 0) {
                 const existing = this.novelData.outline.characters[existingIndex];

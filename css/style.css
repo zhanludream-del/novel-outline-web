@@ -780,6 +780,40 @@ button {
     font-size: 1.15rem;
 }
 
+.panel-head-actions.character-batch-actions {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    flex-wrap: wrap;
+}
+
+.selection-pill {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-height: 32px;
+    padding: 0 12px;
+    border-radius: 999px;
+    background: rgba(32, 58, 67, 0.08);
+    color: var(--text);
+    font-size: 13px;
+    font-weight: 600;
+}
+
+.character-select {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    margin-bottom: 8px;
+    color: var(--muted);
+    font-size: 12px;
+}
+
+.character-select-input {
+    width: 16px;
+    height: 16px;
+}
+
 .volume-card-meta {
     color: var(--muted);
     font-size: 13px;

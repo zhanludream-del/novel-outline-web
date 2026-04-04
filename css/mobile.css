@@ -281,6 +281,15 @@
         align-items: flex-start;
     }
 
+    .panel-head-actions.character-batch-actions {
+        width: 100%;
+        gap: 8px;
+    }
+
+    .selection-pill {
+        min-height: 36px;
+    }
+
     .btn {
         min-height: 44px;
     }
