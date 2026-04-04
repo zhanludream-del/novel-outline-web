@@ -66,9 +66,28 @@ class AIAPIClient {
                     throw error;
                 }
 
-                const content = data?.choices?.[0]?.message?.content;
+                const content = this.extractContent(data);
                 if (!content) {
-                    throw new Error("接口已返回，但没有拿到有效内容。");
+                    const responseKeys = data && typeof data === "object"
+                        ? Object.keys(data).slice(0, 12).join(", ")
+                        : "无";
+                    const choiceKeys = data?.choices?.[0] && typeof data.choices[0] === "object"
+                        ? Object.keys(data.choices[0]).slice(0, 12).join(", ")
+                        : "无";
+                    if (typeof Utils !== "undefined" && typeof Utils.log === "function") {
+                        Utils.log(
+                            `接口返回为空内容：顶层键=${responseKeys || "无"}；choices[0]键=${choiceKeys || "无"}。`,
+                            "error"
+                        );
+                    }
+                    throw new Error("接口已返回，但没有拿到有效内容。可能是返回结构不兼容。");
+                }
+
+                if (typeof Utils !== "undefined" && typeof Utils.log === "function") {
+                    Utils.log(
+                        `接口内容提取成功：内容长度 ${String(content).length} 字。`,
+                        "info"
+                    );
                 }
 
                 return content;
@@ -131,6 +150,72 @@ class AIAPIClient {
             throw new Error("请先填写 API Base URL。");
         }
         return `${apiBase}/chat/completions`;
+    }
+
+    extractContent(data) {
+        const primary = this.normalizeContentValue(data?.choices?.[0]?.message?.content);
+        if (primary) {
+            return primary;
+        }
+
+        const alternateCandidates = [
+            data?.choices?.[0]?.text,
+            data?.choices?.[0]?.message?.text,
+            data?.choices?.[0]?.delta?.content,
+            data?.output_text,
+            data?.response?.output_text,
+            data?.data?.content,
+            data?.content
+        ];
+
+        for (const value of alternateCandidates) {
+            const normalized = this.normalizeContentValue(value);
+            if (normalized) {
+                return normalized;
+            }
+        }
+
+        const outputArray = data?.output;
+        if (Array.isArray(outputArray)) {
+            const merged = outputArray
+                .map((entry) => this.normalizeContentValue(entry?.content || entry?.text || entry))
+                .filter(Boolean)
+                .join("");
+            if (merged.trim()) {
+                return merged.trim();
+            }
+        }
+
+        return "";
+    }
+
+    normalizeContentValue(value) {
+        if (typeof value === "string") {
+            return value.trim();
+        }
+
+        if (Array.isArray(value)) {
+            const merged = value
+                .map((item) => {
+                    if (typeof item === "string") {
+                        return item;
+                    }
+                    if (item && typeof item === "object") {
+                        return item.text || item.content || item.value || "";
+                    }
+                    return "";
+                })
+                .filter(Boolean)
+                .join("");
+            return merged.trim();
+        }
+
+        if (value && typeof value === "object") {
+            const objectText = value.text || value.content || value.value || "";
+            return typeof objectText === "string" ? objectText.trim() : "";
+        }
+
+        return "";
     }
 
     normalizeError(error) {
