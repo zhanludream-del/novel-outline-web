@@ -1928,7 +1928,11 @@ ${(detailedOutline || concept || "未填写").slice(0, 2200)}`;
         }
 
         const volumeNumber = Number(this.elements.chapterEditorVolumeSelect?.value || this.elements.chapterVolumeSelect?.value || 1);
-        const text = this.buildSingleChapterTxtExport(chapter, volumeNumber);
+        const text = String(chapter.content || "").trim();
+        if (!text) {
+            Utils.showMessage("当前章节还没有正文，单章 TXT 只导出正文文本。", "info");
+            return;
+        }
         const baseName = this.novelData.outline.title || "novel-outline";
         const chapterLabel = `第${chapter.number}章_${chapter.title || `chapter_${chapter.number}`}`.replace(/[\\/:*?"<>|]/g, "_");
         Utils.downloadText(text, `${baseName}_${chapterLabel}.txt`);
@@ -3279,6 +3283,10 @@ ${(detailedOutline || concept || "未填写").slice(0, 2200)}`;
             if (this.novelData.prompt_state?.ai_filter_enabled !== false) {
                 Utils.log("🔍 正在进行AI深度去味（LLM润色）...", "info");
                 finalContent = await this.generator.filterAiFlavorText(finalContent, this.novelData);
+            }
+            const continuityWarning = this.detectOpeningRecapWarning(chapter, finalContent);
+            if (continuityWarning) {
+                Utils.log(continuityWarning, "info");
             }
             this.elements.chapterContentInput.value = finalContent;
             this.saveChapterEditor();
@@ -4668,6 +4676,66 @@ ${(detailedOutline || concept || "未填写").slice(0, 2200)}`;
             .filter(Boolean);
         const hitCount = keywords.filter((item) => String(content || "").includes(item)).length;
         return hitCount >= 3;
+    }
+
+    extractParagraphs(text, limit = 3, fromEnd = false) {
+        const paragraphs = String(text || "")
+            .split(/\n{2,}/)
+            .map((item) => item.trim())
+            .filter((item) => item.length >= 20);
+        if (!paragraphs.length) {
+            return [];
+        }
+        return fromEnd ? paragraphs.slice(-limit) : paragraphs.slice(0, limit);
+    }
+
+    countSharedKeywords(leftText, rightText, limit = 8) {
+        const left = new Set(this.extractContentKeywords(leftText, limit).split("、").filter(Boolean));
+        const right = new Set(this.extractContentKeywords(rightText, limit).split("、").filter(Boolean));
+        let hits = 0;
+        left.forEach((item) => {
+            if (right.has(item)) {
+                hits += 1;
+            }
+        });
+        return hits;
+    }
+
+    detectOpeningRecapWarning(chapter, content) {
+        const chapterNumber = Number(chapter?.number || 0);
+        if (!chapterNumber || !content) {
+            return "";
+        }
+        const volumeNumber = this.getVolumeNumberForChapter(chapter);
+        const previousChapter = this.getAdjacentChapter(chapterNumber, -1, volumeNumber);
+        if (!previousChapter || !previousChapter.content) {
+            return "";
+        }
+
+        const openingParagraphs = this.extractParagraphs(content, 3, false);
+        const endingParagraphs = this.extractParagraphs(previousChapter.content, 2, true);
+        if (!openingParagraphs.length || !endingParagraphs.length) {
+            return "";
+        }
+
+        const openingText = openingParagraphs.join("\n\n");
+        const previousTailText = endingParagraphs.join("\n\n");
+        const previousEventText = [
+            previousChapter.key_event || previousChapter.keyEvent || "",
+            previousChapter.summary || "",
+            previousChapter.next_chapter_setup?.suspense_hook || previousChapter.nextChapterSetup?.suspense_hook || ""
+        ].filter(Boolean).join("\n");
+
+        const tailOverlap = this.countSharedKeywords(openingText, previousTailText, 10);
+        const summaryOverlap = this.countSharedKeywords(openingText, previousEventText, 10);
+        const repeatedLineHits = endingParagraphs.filter((paragraph) =>
+            openingParagraphs.some((opening) => this.countSharedKeywords(paragraph, opening, 8) >= 4)
+        ).length;
+
+        if (repeatedLineHits >= 1 || tailOverlap >= 5 || summaryOverlap >= 6) {
+            return `连续性提醒：第${chapterNumber}章开头疑似大段复述上一章已完成内容，建议重看上一章结尾与本章开头的承接。`;
+        }
+        return "";
     }
 
     getAdjacentChapter(chapterNumber, offset, volumeNumber = 1) {

@@ -789,6 +789,7 @@
         const nextChapterSetupInstruction = this.buildNextChapterSetupInstruction(chapter);
         const nextChapterForbiddenPreview = this.buildNextChapterForbiddenPreview(nextOutline);
         const transitionGuide = this.buildChapterTransitionGuide(project, volume, chapter, prevContent);
+        const openingAntiRepeatGuard = this.buildOpeningAntiRepeatGuard(project, volume, chapter);
         const storyStateSummary = this.buildStoryStateSummary(project, volumeNumber, chapter.number || 0);
         const setupContinuityGuard = this.buildSetupContinuityGuard(
             project,
@@ -830,6 +831,7 @@
             storyStateSummary,
             expansionHint,
             setupContinuityGuard,
+            openingAntiRepeatGuard,
             nextChapterSetupInstruction,
             nextChapterForbiddenPreview,
             transitionGuide,
@@ -898,6 +900,11 @@
                         label: "章末快照衔接指导",
                         length: String(transitionGuide || "").trim().length,
                         preview: this.limitContext(transitionGuide || "", 160)
+                    },
+                    {
+                        label: "开头防重复约束",
+                        length: String(openingAntiRepeatGuard || "").trim().length,
+                        preview: this.limitContext(openingAntiRepeatGuard || "", 160)
                     },
                     {
                         label: "智能扩充建议",
@@ -1389,6 +1396,17 @@
         };
     }
 
+    extractEndingParagraphs(content, count = 2, limit = 700) {
+        const paragraphs = String(content || "")
+            .split(/\n{2,}/)
+            .map((item) => item.trim())
+            .filter((item) => item.length >= 20);
+        if (!paragraphs.length) {
+            return "";
+        }
+        return paragraphs.slice(-count).join("\n\n").slice(-limit);
+    }
+
     describeNextChapterSetup(setup) {
         if (!setup || typeof setup !== "object") {
             return "";
@@ -1401,6 +1419,42 @@
             setup.countdown ? `倒计时：${setup.countdown}` : ""
         ].filter(Boolean);
         return parts.join("；");
+    }
+
+    buildOpeningAntiRepeatGuard(project, currentVolume, currentChapter) {
+        const volumeNumber = this.getVolumeNumber(project, currentVolume);
+        const chapterNumber = Number(currentChapter?.number || currentChapter?.chapter_number || 0);
+        const previousChapter = this.getLatestChapterBefore(project, volumeNumber, chapterNumber);
+        if (!previousChapter) {
+            return "";
+        }
+
+        const previousCore = previousChapter.keyEvent
+            || Utils.summarizeText(previousChapter.summary || "", 120)
+            || previousChapter.title
+            || "";
+        const previousHook = this.describeNextChapterSetup(previousChapter.nextChapterSetup || previousChapter.next_chapter_setup || {});
+        const endingFocus = this.extractEndingParagraphs(previousChapter.content || "", 2, 620);
+
+        const lines = [
+            "【开头防重复硬约束】",
+            "1. 本章前3段必须直接承接上一章最后一个动作、情绪或状态变化，不要重新铺一遍上一章已经完成的主事件。",
+            "2. 如果必须回顾上一章，最多只允许 1-2 句，而且只能作为承接，绝不能把上章核心发现重讲成大段前情。",
+            "3. 上一章已经发生并确认过的核心信息，不能在本章开头重新推理、重新解释、重新铺陈。"
+        ];
+
+        if (previousCore) {
+            lines.push(`上一章已完成核心事件：${Utils.summarizeText(previousCore, 130)}`);
+        }
+        if (previousHook) {
+            lines.push(`上一章留给本章的承接钩子：${Utils.summarizeText(previousHook, 120)}`);
+        }
+        if (endingFocus) {
+            lines.push(`上一章结尾原文锚点：\n${endingFocus}`);
+        }
+        lines.push("本章开头要从这些已知结果继续往前写，而不是再讲一遍它们是怎么发生的。");
+
+        return lines.join("\n");
     }
 
     buildStoryStateSummary(project, volumeNumber, chapterNumber) {
@@ -2761,6 +2815,7 @@
         storyStateSummary,
         expansionHint,
         setupContinuityGuard,
+        openingAntiRepeatGuard,
         nextChapterSetupInstruction,
         nextChapterForbiddenPreview,
         transitionGuide,
@@ -2906,6 +2961,7 @@
             project.global_setting_note ? `【全局设定提醒】\n${project.global_setting_note}` : "",
             chapter.chapter_setting_note ? `【本章设定提醒】\n${chapter.chapter_setting_note}` : "",
             setupContinuityGuard || "",
+            openingAntiRepeatGuard || "",
             expansionHint || "",
             nextChapterSetupInstruction || "",
             nextChapterForbiddenPreview || "",
@@ -3123,8 +3179,15 @@
         if (index <= 0) {
             return "";
         }
-        return all.slice(Math.max(0, index - maxChapters), index)
-            .map((item) => `【第${item.number}章 ${item.title}】\n${Utils.summarizeText(item.content, 1200)}`)
+        const previousItems = all.slice(Math.max(0, index - maxChapters), index);
+        return previousItems
+            .map((item, itemIndex) => {
+                const isLatest = itemIndex === previousItems.length - 1;
+                const contentText = isLatest
+                    ? this.extractEndingParagraphs(item.content, 3, 1100) || Utils.summarizeText(item.content, 1100)
+                    : Utils.summarizeText(item.content, 360);
+                return `【第${item.number}章 ${item.title}】\n${contentText}`;
+            })
             .join("\n\n");
     }
 
