@@ -10,6 +10,17 @@
             : DEFAULT_API_CONFIG.maxTokens;
     }
 
+    getConfiguredTimeoutMs(fallback = DEFAULT_API_CONFIG.timeoutMs) {
+        const configured = Number(this.api?.getConfig?.().timeoutMs ?? fallback ?? DEFAULT_API_CONFIG.timeoutMs);
+        return Number.isFinite(configured) && configured > 0
+            ? Math.round(configured)
+            : DEFAULT_API_CONFIG.timeoutMs;
+    }
+
+    getTaskTimeoutMs(fallback = DEFAULT_API_CONFIG.timeoutMs) {
+        return Math.max(this.getConfiguredTimeoutMs(fallback), fallback);
+    }
+
     getGenreDefinition(genre) {
         if (!genre || !NOVEL_GENRES || typeof NOVEL_GENRES !== "object") {
             return null;
@@ -686,7 +697,7 @@
         const parsed = await this.requestJSONArray(systemPrompt, userPrompt, {
             temperature: 0.75,
             maxTokens: this.getConfiguredMaxTokens(12000),
-            timeout: 240000
+            timeout: this.getTaskTimeoutMs(240000)
         });
 
         return parsed.map((item, index) => {
@@ -823,7 +834,7 @@
             const parsed = await this.requestJSONArray(systemPrompt, `请为以上 ${batchItems.length} 个角色批量生成完整的人物设定，确保每个角色都有完整的中英文字段。`, {
                 temperature: 0.75,
                 maxTokens: this.getConfiguredMaxTokens(12000),
-                timeout: 240000
+                timeout: this.getTaskTimeoutMs(240000)
             });
 
             parsed.forEach((character) => {
@@ -1050,7 +1061,7 @@
         const rawContent = await this.api.callLLM(userPrompt, systemPrompt, {
             temperature: 0.82,
             maxTokens: this.getConfiguredMaxTokens(12000),
-            timeout: 240000
+            timeout: this.getTaskTimeoutMs(240000)
         });
 
         return this.sanitizeGeneratedChapterContent(rawContent, nextOutline).trim();
@@ -1166,7 +1177,7 @@
             const response = await this.api.callLLM(polishPrompt, systemPrompt, {
                 temperature: 0.35,
                 maxTokens: Math.min(this.getConfiguredMaxTokens(8000), excerptText.length * 2 + 1200),
-                timeout: 300000
+                timeout: this.getTaskTimeoutMs(300000)
             });
             const rewrittenLines = String(response || "")
                 .split(/\r?\n/)
@@ -1228,7 +1239,7 @@
         return this.api.callLLM(repairUserPrompt, repairSystemPrompt, {
             temperature: 0.1,
             maxTokens: Math.max(2000, Math.min(this.getConfiguredMaxTokens(12000), raw.length * 2)),
-            timeout: options.timeout || 180000,
+            timeout: Math.max(Number(options?.timeout || 0), this.getTaskTimeoutMs(180000)),
             retryCount: 1
         });
     }
