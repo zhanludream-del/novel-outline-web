@@ -375,6 +375,11 @@ class NovelOutlineWebApp {
         }
         if (!Object.keys(this.novelData.extra_character_records).length) {
             this.novelData.used_extras_characters = [];
+        } else {
+            this.novelData.extra_character_records = this.sanitizeHistoricalExtraCharacterRecords(
+                this.novelData.extra_character_records
+            );
+            this.rebuildUsedExtraCharacters();
         }
         this.ensureWorldStateManager();
         if (!this.novelData.genre_progress_tracker || typeof this.novelData.genre_progress_tracker !== "object") {
@@ -5194,17 +5199,24 @@ ${(detailedOutline || concept || "未填写").slice(0, 2200)}`;
                 logs.push("原始 STATE_JSON 提取失败，分离补提取也未成功。");
             }
         }
+        const appearanceStats = this.extractCharacterAppearances(chapterNumber, appearanceBlock, cleanedContent);
+        if (appearanceStats.appearances || appearanceStats.relationships) {
+            logs.push(`已更新人物出场 ${appearanceStats.appearances} 条、关系 ${appearanceStats.relationships} 条。`);
+        }
+
+        const extrasCount = this.extractExtraCharacters(chapterNumber, extraCharactersBlock, cleanedContent, {
+            appearanceBlock
+        });
+        if (extrasCount.characters || extrasCount.subplots) {
+            logs.push(`已记录 ${extrasCount.characters} 个龙套角色、${extrasCount.subplots} 条临时支线。`);
+        }
+
         if (stateData) {
             this.applyStateUpdate(chapterNumber, chapter.title || `第${chapterNumber}章`, stateData, chapter, {
                 cleanedContent,
                 extraCharactersBlock
             });
             logs.push("已回写状态 JSON 到故事状态/动态追踪/时间线/章末快照。");
-        }
-
-        const extrasCount = this.extractExtraCharacters(chapterNumber, extraCharactersBlock, cleanedContent);
-        if (extrasCount.characters || extrasCount.subplots) {
-            logs.push(`已记录 ${extrasCount.characters} 个龙套角色、${extrasCount.subplots} 条临时支线。`);
         }
 
         const foreshadowStats = this.extractForeshadowsFromBlock(chapterNumber, foreshadowsBlock);
@@ -5215,11 +5227,6 @@ ${(detailedOutline || concept || "未填写").slice(0, 2200)}`;
         const personalityChanges = this.extractPersonalityChanges(chapterNumber, personalityChangeBlock);
         if (personalityChanges > 0) {
             logs.push(`已记录 ${personalityChanges} 条人物性格演变。`);
-        }
-
-        const appearanceStats = this.extractCharacterAppearances(chapterNumber, appearanceBlock);
-        if (appearanceStats.appearances || appearanceStats.relationships) {
-            logs.push(`已更新人物出场 ${appearanceStats.appearances} 条、关系 ${appearanceStats.relationships} 条。`);
         }
 
         const scanStats = this.scanChapterStateSignals(chapterNumber, chapter, cleanedContent, stateData || {});
@@ -6572,12 +6579,9 @@ ${(detailedOutline || concept || "未填写").slice(0, 2200)}`;
             const cleanedContent = String(chapterContentMap.get(chapterNumber) || "");
             const seen = new Set();
             const nextCharacters = (Array.isArray(record?.characters) ? record.characters : [])
-                .map((name) => this.resolveKnownCharacterName(this.normalizeExtraCharacterNameCandidate(name)))
+                .map((name) => this.resolveExtraCharacterNameFromCandidate(name, cleanedContent))
                 .filter((name) => {
-                    if (!name || seen.has(name) || this.isExtraCharacterNameConflict(name)) {
-                        return false;
-                    }
-                    if (cleanedContent && !cleanedContent.includes(name)) {
+                    if (!name || seen.has(name)) {
                         return false;
                     }
                     seen.add(name);
@@ -6917,7 +6921,7 @@ ${(detailedOutline || concept || "未填写").slice(0, 2200)}`;
                 .filter(([key]) => this.extractSnapshotChapterNumber(key) <= maxChapter)
                 .forEach(([, record]) => {
                     (Array.isArray(record?.characters) ? record.characters : []).forEach((name) => {
-                        const text = String(name || "").trim();
+                        const text = this.resolveExtraCharacterNameFromCandidate(name);
                         if (text) {
                             names.add(text);
                         }
@@ -6937,11 +6941,8 @@ ${(detailedOutline || concept || "未填写").slice(0, 2200)}`;
             }
             const payload = text.replace(/^(?:\u9F99\u5957\u89D2\u8272|\u65B0\u589E\u9F99\u5957)[:\uFF1A]\s*/u, "");
             this.splitExtraCharacterPayload(payload).forEach((item) => {
-                const name = this.resolveKnownCharacterName(this.normalizeExtraCharacterNameCandidate(item));
-                if (!name || this.isExtraCharacterNameConflict(name)) {
-                    return;
-                }
-                if (content && !content.includes(name)) {
+                const name = this.resolveExtraCharacterNameFromCandidate(item, content);
+                if (!name) {
                     return;
                 }
                 names.add(name);
@@ -8810,6 +8811,150 @@ ${(detailedOutline || concept || "未填写").slice(0, 2200)}`;
         return surnames;
     }
 
+    resolveExactKnownCharacterName(name) {
+        const cleanName = this.normalizeCharacterReferenceLabel(name);
+        if (!cleanName) {
+            return "";
+        }
+
+        const synopsisData = this.novelData.synopsisData || this.novelData.synopsis_data || {};
+        const mapping = synopsisData.vague_to_name_mapping || {};
+        if (mapping[cleanName]) {
+            return String(mapping[cleanName] || "").trim();
+        }
+
+        const roleAliases = {
+            男主: ["男主", "男主角", "男主人公", "男一", "男一号", "男角"],
+            女主: ["女主", "女主角", "女主人公", "女一", "女一号", "女角"],
+            主角: ["主角", "主人公"],
+            师尊: ["师尊"],
+            反派: ["反派", "大反派", "反派boss"],
+            男二: ["男二", "男二号"],
+            女二: ["女二", "女二号"]
+        };
+        const matchedRole = Object.entries(roleAliases).find(([, aliases]) => aliases.includes(cleanName))?.[0];
+        if (matchedRole && synopsisData.main_characters?.[matchedRole]) {
+            return String(synopsisData.main_characters[matchedRole] || "").trim();
+        }
+
+        for (const [realName, info] of Object.entries(synopsisData.locked_character_names || {})) {
+            const aliases = Utils.ensureArrayFromText(info?.aliases || [])
+                .map((alias) => this.normalizeCharacterReferenceLabel(alias))
+                .filter(Boolean);
+            if (realName === cleanName || aliases.includes(cleanName)) {
+                return String(realName || "").trim();
+            }
+        }
+
+        const exactOutlineCharacter = (this.novelData.outline?.characters || []).find((item) =>
+            Array.from(this.getCharacterAliasSet(item))
+                .map((alias) => this.normalizeCharacterReferenceLabel(alias))
+                .filter(Boolean)
+                .includes(cleanName)
+        );
+        if (exactOutlineCharacter?.name) {
+            return String(exactOutlineCharacter.name || "").trim();
+        }
+
+        if (this.getKnownCharacterNamesForExtras().has(cleanName)) {
+            return cleanName;
+        }
+
+        return "";
+    }
+
+    getExtraCharacterSurnamePatternSource() {
+        return "(?:欧阳|司马|上官|诸葛|司徒|夏侯|东方|独孤|慕容|令狐|公孙|闻人|尉迟|长孙|宇文|轩辕|南宫|赵|钱|孙|李|周|吴|郑|王|冯|陈|褚|卫|蒋|沈|韩|杨|朱|秦|尤|许|何|吕|施|张|孔|曹|严|华|金|魏|陶|姜|戚|谢|邹|喻|柏|水|窦|章|云|苏|潘|葛|奚|范|彭|郎|鲁|韦|昌|马|苗|凤|花|方|俞|任|袁|柳|酆|鲍|史|唐|费|廉|岑|薛|雷|贺|倪|汤|滕|殷|罗|毕|郝|邬|安|常|乐|于|时|傅|皮|卞|齐|康|伍|余|元|顾|孟|平|黄|和|穆|萧|尹|姚|邵|湛|汪|祁|毛|禹|狄|米|贝|明|臧|计|伏|成|戴|谈|宋|茅|庞|熊|纪|舒|屈|项|祝|董|梁|杜|阮|蓝|闵|席|季|麻|强|贾|路|娄|危|江|童|颜|郭|梅|盛|林|刁|钟|徐|邱|骆|高|夏|蔡|田|樊|胡|凌|霍|虞|万|支|柯|昝|管|卢|莫|经|房|裘|缪|干|解|应|宗|丁|宣|贲|邓|郁|单|杭|洪|包|左|石|崔|吉|龚|程|嵇|邢|滑|裴|陆|荣|翁|荀|羊|於|惠|甄|曲|家|封|芮|羿|储|靳|汲|邴|糜|松|井|段|富|巫|乌|焦|巴|弓|牧|隗|山|谷|车|侯|宓|蓬|全|郗|班|仰|秋|仲|伊|宫|宁|仇|栾|暴|甘|钭|厉|戎|祖|武|符|刘|景|詹|束|龙|叶|幸|司|韶|郜|黎|蓟|薄|印|宿|白|怀|蒲|邰|从|鄂|索|咸|籍|赖|卓|蔺|屠|蒙|池|乔|阴|郁|胥|能|苍|双|闻|莘|党|翟|谭|贡|劳|逄|姬|申|扶|堵|冉|宰|郦|雍|郤|璩|桑|桂|濮|牛|寿|通|边|扈|燕|冀|郏|浦|尚|农|温|别|庄|晏|柴|瞿|阎|充|慕|连|茹|习|宦|艾|鱼|容|向|古|易|慎|戈|廖|庾|终|暨|居|衡|步|都|耿|满|弘|匡|国|文|寇|广|禄|阙|东|殳|沃|利|蔚|越|夔|隆|师|巩|厍|聂|晁|勾|敖|融|冷|訾|辛|阚|那|简|饶|空|曾|毋|沙|乜|养|鞠|须|丰|巢|关|蒯|相|查|后|荆|红|游|竺|权|逯|盖|益|桓|公)";
+    }
+
+    getExtraCharacterRoleSuffixPatternSource() {
+        return "(?:医生|护士|老师|同学|学长|学姐|师兄|师姐|师弟|师妹|师父|师娘|师傅|秘书|助理|前台|店员|经理|总监|院长|教授|导师|研究员|顾问|工程师|技工|组长|厂长|副厂长|技术员|组员|科员|科长|主任|部长|老板|警官|队长|代表|干事|班长|连长|营长|排长|大爷|大娘|婶子|嫂子|大嫂|伯伯|叔叔|阿姨)";
+    }
+
+    isPlausibleExtraCharacterName(name) {
+        const normalized = this.normalizeCharacterReferenceLabel(name);
+        if (!normalized) {
+            return false;
+        }
+
+        if (!/^[\u4e00-\u9fa5]{2,6}$/u.test(normalized)) {
+            return false;
+        }
+
+        const genericRolePattern = /^(主角|男主|女主|反派|路人|众人|少年|少女|男人|女人|师尊|掌门|长老|弟子|同门|敌人|对手|医生|护士|老师|学生|同学|学长|学姐|秘书|助理|前台|店员|经理|总监|院长|教授|导师|研究员|顾问|工程师|技工|组长|厂长|副厂长|技术员|组员|科员|科长|主任|部长|老板|上司|同事|室友|邻居|保镖|司机|管家|校医|警官|某人|某助理|某同事|某老师|某医生|某护士|某警官|某秘书)$/u;
+        const traitPattern = /(不苟言笑|势利眼|热心肠|傲慢|阴险|八卦|冷淡|严肃|冷漠|注重|纪律|厂区|说话|目光|表情|声音|语气)$/u;
+        if (genericRolePattern.test(normalized) || traitPattern.test(normalized)) {
+            return false;
+        }
+
+        const surnameSource = this.getExtraCharacterSurnamePatternSource();
+        const roleSuffixSource = this.getExtraCharacterRoleSuffixPatternSource();
+        const plainNamePattern = new RegExp(`^${surnameSource}[\\u4e00-\\u9fa5]{1,2}$`, "u");
+        const namedRolePattern = new RegExp(`^${surnameSource}(?:[\\u4e00-\\u9fa5]{0,2})${roleSuffixSource}$`, "u");
+        return namedRolePattern.test(normalized)
+            || (plainNamePattern.test(normalized) && normalized.length >= 3);
+    }
+
+    hasExtraCharacterEvidenceInContent(name, cleanedContent = "") {
+        const candidate = this.normalizeExtraCharacterNameCandidate(name);
+        const content = String(cleanedContent || "");
+        if (!candidate) {
+            return false;
+        }
+        if (!content.trim()) {
+            return true;
+        }
+        return content.includes(candidate);
+    }
+
+    resolveExtraCharacterNameFromCandidate(value, cleanedContent = "") {
+        const normalized = this.normalizeExtraCharacterNameCandidate(value);
+        if (!normalized || !this.isPlausibleExtraCharacterName(normalized)) {
+            return "";
+        }
+
+        if (this.isExtraCharacterNameConflict(normalized)) {
+            return "";
+        }
+
+        const content = String(cleanedContent || "");
+        if (!content.trim()) {
+            return normalized;
+        }
+
+        return this.hasExtraCharacterEvidenceInContent(normalized, content) ? normalized : "";
+    }
+
+    resolveAppearanceCharacterNameCandidate(value, cleanedContent = "") {
+        const exactKnown = this.resolveExactKnownCharacterName(value);
+        if (exactKnown) {
+            return exactKnown;
+        }
+        return this.resolveExtraCharacterNameFromCandidate(value, cleanedContent);
+    }
+
+    collectAppearanceExtraCharacterCandidates(block = "", cleanedContent = "") {
+        const names = [];
+        const seen = new Set();
+        block.split(/\r?\n/).forEach((line) => {
+            const text = line.trim();
+            if (!text || !text.includes("|")) {
+                return;
+            }
+            const parts = text.split("|").map((item) => item.trim()).filter(Boolean);
+            if (parts.length !== 3) {
+                return;
+            }
+            const name = this.resolveAppearanceCharacterNameCandidate(parts[0], cleanedContent);
+            if (!name || seen.has(name) || this.isExtraCharacterNameConflict(name)) {
+                return;
+            }
+            seen.add(name);
+            names.push(name);
+        });
+        return names;
+    }
+
     splitExtraCharacterPayload(payload) {
         const source = String(payload || "").trim();
         if (!source) {
@@ -8855,17 +9000,26 @@ ${(detailedOutline || concept || "未填写").slice(0, 2200)}`;
             return "";
         }
 
+        if (/^(?:她的|他的|我的|你的|这个|那个|这位|那位)/u.test(rawText)) {
+            return "";
+        }
+
         return this.normalizeCharacterReferenceLabel(
             rawText
                 .split(/[（(]/)[0]
                 .split(/[：:]/)[0]
+                .split(/[|｜]/)[0]
                 .trim()
         );
     }
 
     isExtraCharacterNameConflict(name) {
-        const normalized = this.resolveKnownCharacterName(this.normalizeExtraCharacterNameCandidate(name));
+        const normalized = this.normalizeExtraCharacterNameCandidate(name);
         if (!normalized) {
+            return true;
+        }
+
+        if (!this.isPlausibleExtraCharacterName(normalized)) {
             return true;
         }
 
@@ -8873,17 +9027,11 @@ ${(detailedOutline || concept || "未填写").slice(0, 2200)}`;
             return true;
         }
 
-        if (!/^[\u4e00-\u9fa5]{2,6}$/u.test(normalized)) {
+        const resolved = this.resolveKnownCharacterName(normalized);
+        if (resolved && resolved !== normalized) {
             return true;
         }
-
-        const genericRolePattern = /^(主角|男主|女主|反派|路人|众人|少年|少女|男人|女人|师尊|掌门|长老|弟子|同门|敌人|对手|医生|护士|老师|学生|同学|学长|学姐|秘书|助理|前台|店员|经理|总监|院长|教授|导师|研究员|顾问|工程师|技工|组长|厂长|副厂长|技术员|组员|科员|科长|主任|部长|老板|上司|同事|室友|邻居|保镖|司机|管家|校医|警官|某人|某助理|某同事|某老师|某医生|某护士|某警官|某秘书)$/;
-        const traitPattern = /(不苟言笑|势利眼|热心肠|傲慢|阴险|八卦|冷淡|严肃|冷漠|注重|纪律|厂区|说话|目光|表情|声音|语气)$/;
-        const namedRolePattern = /^[赵钱孙李周吴郑王冯陈褚卫蒋沈韩杨朱秦尤许何吕施张孔曹严华金魏陶姜戚谢邹喻柏水窦章云苏潘葛奚范彭郎鲁韦昌马苗凤花方俞任袁柳酆鲍史唐费廉岑薛雷贺倪汤滕殷罗毕郝邬安常乐于时傅皮卞齐康伍余元顾孟平黄和穆萧尹欧阳司马上官诸葛司徒夏侯东方独孤慕容令狐公孙闻人尉迟长孙宇文轩辕南宫]{1,2}[\u4e00-\u9fa5]{0,2}(?:医生|护士|老师|同学|学长|学姐|师兄|师姐|师弟|师妹|秘书|助理|前台|店员|经理|总监|院长|教授|导师|研究员|顾问|工程师|技工|组长|厂长|副厂长|技术员|组员|科员|科长|主任|部长|老板|警官|队长)$/u;
-        if (traitPattern.test(normalized)) {
-            return true;
-        }
-        if (genericRolePattern.test(normalized) && !namedRolePattern.test(normalized)) {
+        if (resolved && this.getKnownCharacterNamesForExtras().has(resolved)) {
             return true;
         }
 
@@ -8903,7 +9051,7 @@ ${(detailedOutline || concept || "未填写").slice(0, 2200)}`;
             .sort((left, right) => this.extractSnapshotChapterNumber(left[0]) - this.extractSnapshotChapterNumber(right[0]))
             .forEach(([, record]) => {
                 (Array.isArray(record?.characters) ? record.characters : []).forEach((name) => {
-                    const text = String(name || "").trim();
+                    const text = this.resolveExtraCharacterNameFromCandidate(name);
                     if (!text || seen.has(text)) {
                         return;
                     }
@@ -8916,17 +9064,18 @@ ${(detailedOutline || concept || "未填写").slice(0, 2200)}`;
         return extras;
     }
 
-    extractExtraCharacters(chapterNumber, block, cleanedContent = "") {
+    extractExtraCharacters(chapterNumber, block, cleanedContent = "", options = {}) {
         let characters = 0;
         let subplots = 0;
         const chapterKey = `chapter_${Number(chapterNumber || 0)}`;
+        const appearanceBlock = String(options.appearanceBlock || "");
         this.novelData.extra_character_records = this.novelData.extra_character_records && typeof this.novelData.extra_character_records === "object"
             ? this.novelData.extra_character_records
             : {};
         const previousRecord = this.novelData.extra_character_records[chapterKey];
         const previousCharacters = Array.isArray(previousRecord?.characters) ? previousRecord.characters : [];
 
-        if (!block) {
+        if (!block && !appearanceBlock.trim()) {
             delete this.novelData.extra_character_records[chapterKey];
             this.rebuildUsedExtraCharacters();
             return { characters, subplots };
@@ -8936,11 +9085,19 @@ ${(detailedOutline || concept || "未填写").slice(0, 2200)}`;
         const record = {
             chapter: Number(chapterNumber || 0),
             characters: [],
-            raw: block
+            raw: block || appearanceBlock
         };
         const seenCharacters = new Set();
 
-        block.split(/\r?\n/).forEach((line) => {
+        this.collectAppearanceExtraCharacterCandidates(appearanceBlock, cleanedContent).forEach((name) => {
+            if (!name || seenCharacters.has(name)) {
+                return;
+            }
+            seenCharacters.add(name);
+            record.characters.push(name);
+        });
+
+        String(block || "").split(/\r?\n/).forEach((line) => {
             const text = line.trim();
             if (!text) {
                 return;
@@ -8949,11 +9106,8 @@ ${(detailedOutline || concept || "未填写").slice(0, 2200)}`;
             if (/^(龙套角色|榫欏瑙掕壊)[:：]/.test(text)) {
                 const payload = text.replace(/^(龙套角色|榫欏瑙掕壊)[:：]\s*/, "");
                 this.splitExtraCharacterPayload(payload).forEach((item) => {
-                    const name = this.resolveKnownCharacterName(this.normalizeExtraCharacterNameCandidate(item));
-                    if (!name || seenCharacters.has(name) || this.isExtraCharacterNameConflict(name)) {
-                        return;
-                    }
-                    if (cleanedContent && !String(cleanedContent).includes(name)) {
+                    const name = this.resolveExtraCharacterNameFromCandidate(item, cleanedContent);
+                    if (!name || seenCharacters.has(name)) {
                         return;
                     }
                     seenCharacters.add(name);
@@ -9087,7 +9241,7 @@ ${(detailedOutline || concept || "未填写").slice(0, 2200)}`;
         return count;
     }
 
-    extractCharacterAppearances(chapterNumber, block) {
+    extractCharacterAppearances(chapterNumber, block, cleanedContent = "") {
         const stats = { appearances: 0, relationships: 0 };
         if (!block) {
             return stats;
@@ -9105,7 +9259,11 @@ ${(detailedOutline || concept || "未填写").slice(0, 2200)}`;
 
             const parts = text.split("|").map((item) => item.trim()).filter(Boolean);
             if (parts.length === 3) {
-                const [name, identity] = parts;
+                const [rawName, identity] = parts;
+                const name = this.resolveAppearanceCharacterNameCandidate(rawName, cleanedContent);
+                if (!name) {
+                    return;
+                }
                 if (!tracker.appearances[name]) {
                     tracker.appearances[name] = {
                         首次出场: chapterNumber,
@@ -9119,7 +9277,12 @@ ${(detailedOutline || concept || "未填写").slice(0, 2200)}`;
             }
 
             if (parts.length >= 4) {
-                const [left, right, relation] = parts;
+                const [rawLeft, rawRight, relation] = parts;
+                const left = this.resolveAppearanceCharacterNameCandidate(rawLeft, cleanedContent);
+                const right = this.resolveAppearanceCharacterNameCandidate(rawRight, cleanedContent);
+                if (!left || !right || left === right) {
+                    return;
+                }
                 const key = [left, right].sort().join("|");
                 if (!tracker.relationships[key]) {
                     tracker.relationships[key] = {
