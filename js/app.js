@@ -136,6 +136,7 @@ class NovelOutlineWebApp {
             worldStateSummaryCards: document.getElementById("worldStateSummaryCards"),
             worldStateCharacterList: document.getElementById("worldStateCharacterList"),
             worldStateFactionList: document.getElementById("worldStateFactionList"),
+            worldStateSystemList: document.getElementById("worldStateSystemList"),
             worldStateAssetList: document.getElementById("worldStateAssetList"),
             worldStateRiskList: document.getElementById("worldStateRiskList"),
 
@@ -1656,37 +1657,57 @@ ${(detailedOutline || concept || "未填写").slice(0, 2200)}`;
             .slice()
             .sort((left, right) => Number(right.chapter || 0) - Number(left.chapter || 0))
             .slice(0, 4);
-        const systemPanelEntries = [
-            (systemPanel.system_name || systemPanel.owner || systemMessages.length || systemStatuses.length) ? {
-                title: systemPanel.system_name ? `系统面板｜${systemPanel.system_name}` : "系统面板",
-                detail: [
-                    systemPanel.owner ? `宿主=${systemPanel.owner}` : "",
-                    systemMessages[0] ? `最近播报=${systemMessages[0]}` : "",
-                    systemStatuses[0] ? `当前状态=${systemStatuses[0]}` : ""
-                ].filter(Boolean).join("；")
+        const detailedSystemEntries = [
+            (systemPanel.system_name || systemPanel.owner) ? {
+                title: systemPanel.system_name ? `系统名称｜${systemPanel.system_name}` : "系统面板",
+                detail: systemPanel.owner ? `宿主=${systemPanel.owner}` : "已识别到系统正文播报"
             } : null,
+            ...systemMessages.map((message, index) => ({
+                title: `系统播报 ${index + 1}`,
+                detail: message
+            })),
+            ...systemStatuses.map((status, index) => ({
+                title: `系统状态 ${index + 1}`,
+                detail: status
+            })),
             systemBenefits.length ? {
                 title: "系统特权",
                 detail: systemBenefits.join("；")
             } : null,
-            systemRewards.length ? {
-                title: "系统奖励",
-                detail: systemRewards
-                    .map((item) => item.reward || item.name || "")
-                    .filter(Boolean)
-                    .join("；")
-            } : null,
+            ...systemRewards.map((item, index) => ({
+                title: `系统奖励 ${index + 1}`,
+                detail: [
+                    item.reward || item.name || "",
+                    item.status ? `状态=${item.status}` : "",
+                    item.source ? `来源=${item.source}` : ""
+                ].filter(Boolean).join("；")
+            })),
             systemPanel.rules.length ? {
-                title: "系统规则",
+                title: "核心规则",
                 detail: systemPanel.rules.slice(0, 2).join("；")
             } : null,
+            systemPanel.functions.length ? {
+                title: "系统功能",
+                detail: systemPanel.functions.slice(0, 3).join("；")
+            } : null,
             systemPanel.pending_unlocks.length ? {
-                title: "系统待解锁",
-                detail: systemPanel.pending_unlocks.slice(0, 2).join("；")
+                title: "待解锁",
+                detail: systemPanel.pending_unlocks.slice(0, 3).join("；")
             } : null
-        ].filter(Boolean);
+        ]
+            .filter(Boolean)
+            .slice(0, 8);
+        if (this.elements.worldStateSystemList) {
+            this.elements.worldStateSystemList.innerHTML = detailedSystemEntries.length
+                ? detailedSystemEntries.map((item) => `
+                    <article class="insight-item">
+                        <strong>${Utils.escapeHTML(item.title)}</strong>
+                        <p>${Utils.escapeHTML(Utils.summarizeText(item.detail || "待补系统状态", 96))}</p>
+                    </article>
+                `).join("")
+                : '<div class="empty-state compact">还没有识别到系统播报、系统奖励或持续特权。</div>';
+        }
         const prioritizedAssetItems = [
-            ...systemPanelEntries,
             ...rewards.slice(0, 3).map((item) => ({
                 title: item.reward || item.name || "奖励记录",
                 detail: [item.owner ? `归属=${item.owner}` : "", item.status ? `状态=${item.status}` : "", item.source ? `来源=${item.source}` : ""]
