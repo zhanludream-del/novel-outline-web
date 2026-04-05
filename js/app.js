@@ -358,6 +358,15 @@ class NovelOutlineWebApp {
         if (!this.novelData.supporting_characters || typeof this.novelData.supporting_characters !== "object") {
             this.novelData.supporting_characters = {};
         }
+        if (!this.novelData.extra_character_records || typeof this.novelData.extra_character_records !== "object") {
+            this.novelData.extra_character_records = {};
+        }
+        if (!Array.isArray(this.novelData.used_extras_characters)) {
+            this.novelData.used_extras_characters = [];
+        }
+        if (!Object.keys(this.novelData.extra_character_records).length) {
+            this.novelData.used_extras_characters = [];
+        }
         this.ensureWorldStateManager();
         if (!this.novelData.genre_progress_tracker || typeof this.novelData.genre_progress_tracker !== "object") {
             this.novelData.genre_progress_tracker = {
@@ -3050,6 +3059,12 @@ ${(detailedOutline || concept || "未填写").slice(0, 2200)}`;
         this.novelData.supporting_characters = this.novelData.supporting_characters && typeof this.novelData.supporting_characters === "object"
             ? this.novelData.supporting_characters
             : {};
+        this.novelData.extra_character_records = this.novelData.extra_character_records && typeof this.novelData.extra_character_records === "object"
+            ? this.novelData.extra_character_records
+            : {};
+        this.novelData.used_extras_characters = Array.isArray(this.novelData.used_extras_characters)
+            ? this.novelData.used_extras_characters
+            : [];
         this.novelData.genre_progress_tracker = this.novelData.genre_progress_tracker && typeof this.novelData.genre_progress_tracker === "object"
             ? this.novelData.genre_progress_tracker
             : {
@@ -3086,6 +3101,7 @@ ${(detailedOutline || concept || "未填写").slice(0, 2200)}`;
         });
 
         this.ensureWorldStateManager();
+        this.rebuildUsedExtraCharacters();
         this.syncWorldStateManager();
         this.syncGeneratedContexts();
     }
@@ -3401,6 +3417,10 @@ ${(detailedOutline || concept || "未填写").slice(0, 2200)}`;
             return;
         }
 
+        if (!String(chapter.content || "").trim() && Number(chapter.number || 0) > 0) {
+            delete this.novelData.extra_character_records?.[`chapter_${Number(chapter.number || 0)}`];
+            this.rebuildUsedExtraCharacters();
+        }
         this.refreshChapterReports(chapter);
         this.persist(true);
         this.renderChapterContextPreview(chapter);
@@ -5106,7 +5126,7 @@ ${(detailedOutline || concept || "未填写").slice(0, 2200)}`;
             logs.push("已回写状态 JSON 到故事状态/动态追踪/时间线/章末快照。");
         }
 
-        const extrasCount = this.extractExtraCharacters(extraCharactersBlock);
+        const extrasCount = this.extractExtraCharacters(chapterNumber, extraCharactersBlock, cleanedContent);
         if (extrasCount.characters || extrasCount.subplots) {
             logs.push(`已记录 ${extrasCount.characters} 个龙套角色、${extrasCount.subplots} 条临时支线。`);
         }
@@ -6027,6 +6047,8 @@ ${(detailedOutline || concept || "未填写").slice(0, 2200)}`;
             });
             this.refreshChapterReports(chapter);
         });
+
+        this.rebuildUsedExtraCharacters();
     }
 
     applyStateUpdate(chapterNumber, chapterTitle, stateData, chapter = null) {
@@ -6123,6 +6145,8 @@ ${(detailedOutline || concept || "未填写").slice(0, 2200)}`;
             dialogue_tracker: this.deepClone(this.novelData.dialogue_tracker || {}),
             world_tracker: this.deepClone(this.novelData.world_tracker || {}),
             world_state_manager: this.deepClone(this.novelData.world_state_manager || {}),
+            extra_character_records: this.deepClone(this.novelData.extra_character_records || {}),
+            used_extras_characters: this.deepClone(this.novelData.used_extras_characters || []),
             genre_progress_tracker: this.deepClone(this.novelData.genre_progress_tracker || {}),
             name_locker: this.deepClone(this.novelData.name_locker || {}),
             used_temp_subplots: this.deepClone(this.novelData.used_temp_subplots || [])
@@ -6138,6 +6162,8 @@ ${(detailedOutline || concept || "未填写").slice(0, 2200)}`;
 
         this.novelData.chapter_snapshot.snapshots = filterSnapshotObject(this.novelData.chapter_snapshot?.snapshots);
         this.novelData.outline.state_snapshots = filterSnapshotObject(this.novelData.outline?.state_snapshots);
+        this.novelData.extra_character_records = filterSnapshotObject(this.novelData.extra_character_records || {});
+        this.rebuildUsedExtraCharacters(target);
 
         const timelineTracker = this.novelData.timeline_tracker || {};
         timelineTracker.timeline_events = (timelineTracker.timeline_events || []).filter((item) => Number(item.chapter || item["章节"] || 0) <= target);
@@ -6183,6 +6209,8 @@ ${(detailedOutline || concept || "未填写").slice(0, 2200)}`;
             this.novelData.name_locker = this.deepClone(DEFAULT_NOVEL_DATA.name_locker);
             this.novelData.world_tracker = this.deepClone(DEFAULT_NOVEL_DATA.world_tracker);
             this.novelData.world_state_manager = this.deepClone(DEFAULT_NOVEL_DATA.world_state_manager);
+            this.novelData.extra_character_records = {};
+            this.novelData.used_extras_characters = [];
             this.novelData.world_state_manager.manual_state = preservedManualState;
             this.novelData.genre_progress_tracker = this.deepClone(DEFAULT_NOVEL_DATA.genre_progress_tracker);
             this.novelData.used_temp_subplots = [];
@@ -6207,9 +6235,12 @@ ${(detailedOutline || concept || "未填写").slice(0, 2200)}`;
             this.novelData.dialogue_tracker = this.deepClone(snapshot.dialogue_tracker || this.novelData.dialogue_tracker || {});
             this.novelData.world_tracker = this.deepClone(snapshot.world_tracker || this.novelData.world_tracker || {});
             this.novelData.world_state_manager = this.deepClone(snapshot.world_state_manager || this.novelData.world_state_manager || DEFAULT_NOVEL_DATA.world_state_manager);
+            this.novelData.extra_character_records = this.deepClone(snapshot.extra_character_records || this.novelData.extra_character_records || {});
+            this.novelData.used_extras_characters = this.deepClone(snapshot.used_extras_characters || this.novelData.used_extras_characters || []);
             this.novelData.genre_progress_tracker = this.deepClone(snapshot.genre_progress_tracker || this.novelData.genre_progress_tracker || {});
             this.novelData.name_locker = this.deepClone(snapshot.name_locker || this.novelData.name_locker || {});
             this.novelData.used_temp_subplots = this.deepClone(snapshot.used_temp_subplots || this.novelData.used_temp_subplots || []);
+            this.rebuildUsedExtraCharacters(target);
             this.ensureWorldStateManager();
             this.syncWorldStateManager();
             return;
@@ -6226,6 +6257,7 @@ ${(detailedOutline || concept || "未填写").slice(0, 2200)}`;
             this.novelData.story_state.current_location = outlineState.current_location || "";
             this.novelData.story_state.current_time = outlineState.timeline || "";
         }
+        this.rebuildUsedExtraCharacters(target);
         this.ensureWorldStateManager();
         this.syncWorldStateManager();
     }
@@ -7620,6 +7652,210 @@ ${(detailedOutline || concept || "未填写").slice(0, 2200)}`;
             }
         });
 
+        return { characters, subplots };
+    }
+
+    getKnownCharacterNamesForExtras() {
+        const names = new Set();
+        const addName = (value) => {
+            const normalized = this.resolveKnownCharacterName(this.normalizeCharacterReferenceLabel(value));
+            if (normalized) {
+                names.add(normalized);
+            }
+        };
+
+        (this.novelData.outline?.characters || []).forEach((character) => {
+            addName(character?.name || "");
+            Utils.ensureArrayFromText(character?.aliases || character?.["别名"] || "").forEach((alias) => addName(alias));
+        });
+        Object.values(this.novelData.supporting_characters || {}).forEach((value) => {
+            addName(value?.name || value?.["角色名"] || "");
+        });
+        Object.values(this.novelData.synopsisData?.main_characters || this.novelData.synopsis_data?.main_characters || {})
+            .forEach((name) => addName(name));
+        Object.keys(this.novelData.synopsisData?.locked_character_names || this.novelData.synopsis_data?.locked_character_names || {})
+            .forEach((name) => addName(name));
+        return names;
+    }
+
+    getKnownCharacterSurnamesForExtras() {
+        const surnames = new Set();
+        this.getKnownCharacterNamesForExtras().forEach((name) => {
+            if (name) {
+                surnames.add(name[0]);
+            }
+        });
+        return surnames;
+    }
+
+    splitExtraCharacterPayload(payload) {
+        const source = String(payload || "").trim();
+        if (!source) {
+            return [];
+        }
+
+        const parts = [];
+        let buffer = "";
+        let depth = 0;
+        for (const char of source) {
+            if (char === "（" || char === "(" || char === "[" || char === "【") {
+                depth += 1;
+                buffer += char;
+                continue;
+            }
+            if (char === "）" || char === ")" || char === "]" || char === "】") {
+                depth = Math.max(0, depth - 1);
+                buffer += char;
+                continue;
+            }
+            if (depth === 0 && /[，,、；;]/.test(char)) {
+                if (buffer.trim()) {
+                    parts.push(buffer.trim());
+                }
+                buffer = "";
+                continue;
+            }
+            buffer += char;
+        }
+        if (buffer.trim()) {
+            parts.push(buffer.trim());
+        }
+        return parts;
+    }
+
+    normalizeExtraCharacterNameCandidate(value) {
+        const rawText = String(value || "")
+            .trim()
+            .replace(/^["'“”‘’]+|["'“”‘’]+$/g, "")
+            .replace(/^[\-•·●]\s*/, "")
+            .trim();
+        if (!rawText) {
+            return "";
+        }
+
+        return this.normalizeCharacterReferenceLabel(
+            rawText
+                .split(/[（(]/)[0]
+                .split(/[：:]/)[0]
+                .trim()
+        );
+    }
+
+    isExtraCharacterNameConflict(name) {
+        const normalized = this.resolveKnownCharacterName(this.normalizeExtraCharacterNameCandidate(name));
+        if (!normalized) {
+            return true;
+        }
+
+        if (this.getKnownCharacterNamesForExtras().has(normalized)) {
+            return true;
+        }
+
+        if (!/^[\u4e00-\u9fa5]{2,6}$/u.test(normalized)) {
+            return true;
+        }
+
+        const genericRolePattern = /^(主角|男主|女主|反派|路人|众人|少年|少女|男人|女人|师尊|掌门|长老|弟子|同门|敌人|对手|医生|护士|老师|学生|同学|学长|学姐|秘书|助理|前台|店员|经理|总监|院长|教授|导师|研究员|顾问|工程师|技工|组长|厂长|副厂长|技术员|组员|科员|科长|主任|部长|老板|上司|同事|室友|邻居|保镖|司机|管家|校医|警官|某人|某助理|某同事|某老师|某医生|某护士|某警官|某秘书)$/;
+        const traitPattern = /(不苟言笑|势利眼|热心肠|傲慢|阴险|八卦|冷淡|严肃|冷漠|注重|纪律|厂区|说话|目光|表情|声音|语气)$/;
+        const namedRolePattern = /^[赵钱孙李周吴郑王冯陈褚卫蒋沈韩杨朱秦尤许何吕施张孔曹严华金魏陶姜戚谢邹喻柏水窦章云苏潘葛奚范彭郎鲁韦昌马苗凤花方俞任袁柳酆鲍史唐费廉岑薛雷贺倪汤滕殷罗毕郝邬安常乐于时傅皮卞齐康伍余元顾孟平黄和穆萧尹欧阳司马上官诸葛司徒夏侯东方独孤慕容令狐公孙闻人尉迟长孙宇文轩辕南宫]{1,2}[\u4e00-\u9fa5]{0,2}(?:医生|护士|老师|同学|学长|学姐|师兄|师姐|师弟|师妹|秘书|助理|前台|店员|经理|总监|院长|教授|导师|研究员|顾问|工程师|技工|组长|厂长|副厂长|技术员|组员|科员|科长|主任|部长|老板|警官|队长)$/u;
+        if (traitPattern.test(normalized)) {
+            return true;
+        }
+        if (genericRolePattern.test(normalized) && !namedRolePattern.test(normalized)) {
+            return true;
+        }
+
+        return false;
+    }
+
+    rebuildUsedExtraCharacters(targetChapterNumber = Infinity) {
+        const target = Number.isFinite(Number(targetChapterNumber)) ? Number(targetChapterNumber) : Infinity;
+        const records = this.novelData.extra_character_records && typeof this.novelData.extra_character_records === "object"
+            ? this.novelData.extra_character_records
+            : {};
+        const extras = [];
+        const seen = new Set();
+
+        Object.entries(records)
+            .filter(([key]) => this.extractSnapshotChapterNumber(key) <= target)
+            .sort((left, right) => this.extractSnapshotChapterNumber(left[0]) - this.extractSnapshotChapterNumber(right[0]))
+            .forEach(([, record]) => {
+                (Array.isArray(record?.characters) ? record.characters : []).forEach((name) => {
+                    const text = String(name || "").trim();
+                    if (!text || seen.has(text)) {
+                        return;
+                    }
+                    seen.add(text);
+                    extras.push(text);
+                });
+            });
+
+        this.novelData.used_extras_characters = extras;
+        return extras;
+    }
+
+    extractExtraCharacters(chapterNumber, block, cleanedContent = "") {
+        let characters = 0;
+        let subplots = 0;
+        const chapterKey = `chapter_${Number(chapterNumber || 0)}`;
+        this.novelData.extra_character_records = this.novelData.extra_character_records && typeof this.novelData.extra_character_records === "object"
+            ? this.novelData.extra_character_records
+            : {};
+        const previousRecord = this.novelData.extra_character_records[chapterKey];
+        const previousCharacters = Array.isArray(previousRecord?.characters) ? previousRecord.characters : [];
+
+        if (!block) {
+            delete this.novelData.extra_character_records[chapterKey];
+            this.rebuildUsedExtraCharacters();
+            return { characters, subplots };
+        }
+
+        const tempSubplots = this.novelData.used_temp_subplots;
+        const record = {
+            chapter: Number(chapterNumber || 0),
+            characters: [],
+            raw: block
+        };
+        const seenCharacters = new Set();
+
+        block.split(/\r?\n/).forEach((line) => {
+            const text = line.trim();
+            if (!text) {
+                return;
+            }
+
+            if (/^(龙套角色|榫欏瑙掕壊)[:：]/.test(text)) {
+                const payload = text.replace(/^(龙套角色|榫欏瑙掕壊)[:：]\s*/, "");
+                this.splitExtraCharacterPayload(payload).forEach((item) => {
+                    const name = this.resolveKnownCharacterName(this.normalizeExtraCharacterNameCandidate(item));
+                    if (!name || seenCharacters.has(name) || this.isExtraCharacterNameConflict(name)) {
+                        return;
+                    }
+                    if (cleanedContent && !String(cleanedContent).includes(name)) {
+                        return;
+                    }
+                    seenCharacters.add(name);
+                    record.characters.push(name);
+                });
+            }
+
+            if (/^(临时支线|涓存椂鏀嚎)[:：]/.test(text)) {
+                const subplot = text.replace(/^(临时支线|涓存椂鏀嚎)[:：]\s*/, "").trim();
+                if (subplot && !tempSubplots.includes(subplot)) {
+                    tempSubplots.push(subplot);
+                    subplots += 1;
+                }
+            }
+        });
+
+        if (record.characters.length) {
+            this.novelData.extra_character_records[chapterKey] = record;
+        } else {
+            delete this.novelData.extra_character_records[chapterKey];
+        }
+
+        this.rebuildUsedExtraCharacters();
+        characters = record.characters.filter((name) => !previousCharacters.includes(name)).length;
         return { characters, subplots };
     }
 

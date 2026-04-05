@@ -99,6 +99,9 @@ class StorageManager {
         );
         merged.chapters = merged.chapters || {};
         merged.generatedChapterTexts = merged.generatedChapterTexts || {};
+        merged.extra_character_records = merged.extra_character_records && typeof merged.extra_character_records === "object"
+            ? merged.extra_character_records
+            : {};
         merged.used_extras_characters = Array.isArray(merged.used_extras_characters) ? merged.used_extras_characters : [];
         merged.used_temp_subplots = Array.isArray(merged.used_temp_subplots) ? merged.used_temp_subplots : [];
         merged.foreshadows = Array.isArray(merged.foreshadows) ? merged.foreshadows : [];

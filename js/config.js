@@ -410,6 +410,7 @@ const DEFAULT_NOVEL_DATA = {
         volume_synopsis: "",
         chapter_synopsis: ""
     },
+    extra_character_records: {},
     used_extras_characters: [],
     used_temp_subplots: [],
     chapters: {},
