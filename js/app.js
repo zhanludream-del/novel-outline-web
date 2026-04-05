@@ -3871,7 +3871,18 @@ ${(detailedOutline || concept || "未填写").slice(0, 2200)}`;
                 chapter,
                 onDebugInfo: (debugInfo) => this.logChapterGenerationDebugInfo(debugInfo)
             });
-            const processed = await this.processGeneratedChapterResponse(rawContent, volume, chapter);
+            let processed;
+            try {
+                processed = await this.processGeneratedChapterResponse(rawContent, volume, chapter);
+            } catch (error) {
+                const fallbackContent = this.stripGeneratedMarkers(rawContent).trim();
+                const message = `章节状态回写失败，已保留正文内容：${error?.message || error}`;
+                Utils.log(message, "error");
+                processed = {
+                    cleanedContent: fallbackContent,
+                    logs: ["状态回写失败，本次已跳过部分追踪更新，但正文内容已保留。"]
+                };
+            }
             let finalContent = processed.cleanedContent;
             if (this.novelData.prompt_state?.ai_filter_enabled !== false) {
                 Utils.log("🔍 正在进行AI深度去味（LLM润色）...", "info");
@@ -5579,6 +5590,66 @@ ${(detailedOutline || concept || "未填写").slice(0, 2200)}`;
         return stats;
     }
 
+    normalizeWorldTrackerTextEntry(entry, keyCandidates = []) {
+        if (typeof entry === "string") {
+            return entry.trim();
+        }
+        if (!entry || typeof entry !== "object") {
+            return String(entry || "").trim();
+        }
+
+        for (const key of keyCandidates) {
+            const value = entry[key];
+            if (typeof value === "string" && value.trim()) {
+                return value.trim();
+            }
+        }
+
+        return JSON.stringify(entry);
+    }
+
+    parseWorldTrackerMovementEntry(entry) {
+        if (typeof entry === "string") {
+            const [name, position] = String(entry)
+                .split(/->|→|：|:/)
+                .map((part) => part.trim());
+            return { name: name || "", position: position || "" };
+        }
+        if (!entry || typeof entry !== "object") {
+            return { name: "", position: "" };
+        }
+
+        const name = [
+            entry.name,
+            entry.character,
+            entry.role,
+            entry.person,
+            entry.actor,
+            entry["角色"],
+            entry["人物"],
+            entry["姓名"],
+            entry["名字"]
+        ].find((value) => typeof value === "string" && value.trim());
+        const position = [
+            entry.position,
+            entry.location,
+            entry.to,
+            entry.destination,
+            entry.target_location,
+            entry.current_location,
+            entry["位置"],
+            entry["地点"],
+            entry["去向"],
+            entry["目标地点"],
+            entry["当前位置"]
+        ].find((value) => typeof value === "string" && value.trim());
+
+        return {
+            name: String(name || "").trim(),
+            position: String(position || "").trim()
+        };
+    }
+
     recordWorldTrackerUpdate(chapterNumber, stateData) {
         const tracker = this.novelData.world_tracker || {
             locations: {},
@@ -5590,13 +5661,26 @@ ${(detailedOutline || concept || "未填写").slice(0, 2200)}`;
         const worldChanges = stateData.world_changes || {};
 
         Utils.ensureArrayFromText(worldChanges.new_locations).forEach((location) => {
-            tracker.locations[location] = {
-                ...(tracker.locations[location] || {}),
+            const locationName = this.normalizeWorldTrackerTextEntry(location, [
+                "name", "location", "title", "label", "地点", "位置", "名称"
+            ]);
+            if (!locationName) {
+                return;
+            }
+            tracker.locations[locationName] = {
+                ...(tracker.locations[locationName] || {}),
                 last_chapter: chapterNumber
             };
         });
 
         Utils.ensureArrayFromText(worldChanges.character_movements).forEach((movement) => {
+            if (movement && typeof movement === "object") {
+                const parsedMovement = this.parseWorldTrackerMovementEntry(movement);
+                if (parsedMovement.name && parsedMovement.position) {
+                    tracker.character_positions[parsedMovement.name] = parsedMovement.position;
+                }
+                return;
+            }
             const [name, position] = movement.split(/->|→|：|:/).map((part) => part.trim());
             if (name && position) {
                 tracker.character_positions[name] = position;
@@ -5604,6 +5688,16 @@ ${(detailedOutline || concept || "未填写").slice(0, 2200)}`;
         });
 
         Utils.ensureArrayFromText(worldChanges.offscreen_status).forEach((status) => {
+            if (status && typeof status === "object") {
+                const statusText = this.normalizeWorldTrackerTextEntry(status, [
+                    "text", "summary", "detail", "status", "内容", "描述", "状态"
+                ]);
+                const [name, detail] = statusText.split(/：|:/).map((part) => part.trim());
+                if (name) {
+                    tracker.offscreen_status[name] = detail || statusText;
+                }
+                return;
+            }
             const [name, detail] = status.split(/：|:/).map((part) => part.trim());
             if (name) {
                 tracker.offscreen_status[name] = detail || status;
@@ -5611,6 +5705,20 @@ ${(detailedOutline || concept || "未填写").slice(0, 2200)}`;
         });
 
         Utils.ensureArrayFromText(worldChanges.org_changes).forEach((change) => {
+            if (change && typeof change === "object") {
+                const changeText = this.normalizeWorldTrackerTextEntry(change, [
+                    "text", "summary", "detail", "name", "organization", "org", "内容", "描述", "势力", "组织", "名称"
+                ]);
+                const orgName = changeText.split(/：|:/)[0]?.trim();
+                if (orgName) {
+                    tracker.organizations[orgName] = {
+                        ...(tracker.organizations[orgName] || {}),
+                        latest_change: changeText,
+                        last_chapter: chapterNumber
+                    };
+                }
+                return;
+            }
             const orgName = change.split(/：|:/)[0]?.trim();
             if (orgName) {
                 tracker.organizations[orgName] = {
