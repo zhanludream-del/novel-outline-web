@@ -1643,9 +1643,22 @@ ${(detailedOutline || concept || "未填写").slice(0, 2200)}`;
                     .join("；")
             }))
         ].slice(0, 8);
+        const prioritizedAssetItems = [
+            ...rewards.slice(0, 3).map((item) => ({
+                title: item.reward || item.name || "奖励记录",
+                detail: [item.owner ? `归属=${item.owner}` : "", item.status ? `状态=${item.status}` : "", item.source ? `来源=${item.source}` : ""]
+                    .filter(Boolean)
+                    .join("；")
+            })),
+            ...assetItems
+        ]
+            .filter((item, index, list) =>
+                list.findIndex((entry) => entry.title === item.title && entry.detail === item.detail) === index
+            )
+            .slice(0, 8);
         if (this.elements.worldStateAssetList) {
-            this.elements.worldStateAssetList.innerHTML = assetItems.length
-                ? assetItems.map((item) => `
+            this.elements.worldStateAssetList.innerHTML = prioritizedAssetItems.length
+                ? prioritizedAssetItems.map((item) => `
                     <article class="insight-item">
                         <strong>${Utils.escapeHTML(item.title)}</strong>
                         <p>${Utils.escapeHTML(Utils.summarizeText(item.detail || "待补资产/奖励状态", 88))}</p>
@@ -1736,6 +1749,90 @@ ${(detailedOutline || concept || "未填写").slice(0, 2200)}`;
             .split(/[\n,，、；;\/]/)
             .map((item) => item.trim())
             .filter(Boolean);
+    }
+
+    getWorldStatePrimaryRewardOwner() {
+        const synopsisData = this.novelData.synopsisData || this.novelData.synopsis_data || {};
+        const candidates = [
+            synopsisData.main_characters?.女主,
+            synopsisData.main_characters?.主角,
+            synopsisData.main_characters?.男主,
+            ...(this.novelData.outline?.characters || [])
+                .filter((character) => character?.is_protagonist || character?.is_main)
+                .map((character) => character?.name || ""),
+            (this.novelData.outline?.characters || [])[0]?.name || ""
+        ];
+        return candidates
+            .map((name) => this.resolveKnownCharacterName(name))
+            .find(Boolean) || "";
+    }
+
+    normalizeWorldStateRewardName(value) {
+        return String(value || "")
+            .replace(/^获得(?:物品|奖励|道具|礼包|权限|资格|名额)?[：:]\s*/u, "")
+            .replace(/^(?:宿主将获得|将获得|获得)/u, "")
+            .replace(/[“”"'‘’【】\[\]]/g, "")
+            .replace(/(?:一份|一瓶|一项|一个|一张|一枚|一套|一本|一把)$/u, "")
+            .replace(/[。！？!?]+$/u, "")
+            .trim();
+    }
+
+    extractWorldStateRewardsFromContent(content = "", chapterNumber = 0) {
+        const text = String(content || "");
+        if (!text.trim()) {
+            return [];
+        }
+
+        const owner = this.getWorldStatePrimaryRewardOwner();
+        const rewards = [];
+        const seen = new Set();
+        const pushReward = (name, detail = "", status = "", source = "正文系统提示") => {
+            const rewardName = this.normalizeWorldStateRewardName(name);
+            if (!rewardName) {
+                return;
+            }
+            const key = `${rewardName}|${owner}|${status}|${source}`;
+            if (seen.has(key)) {
+                return;
+            }
+            seen.add(key);
+            rewards.push({
+                reward: rewardName,
+                name: rewardName,
+                owner,
+                status: status || "已获得",
+                source,
+                detail: String(detail || "").trim() || rewardName,
+                chapter: Number(chapterNumber || 0)
+            });
+        };
+
+        const lines = text.split(/\r?\n/).map((line) => String(line || "").trim()).filter(Boolean);
+        lines.forEach((line) => {
+            const giftMatch = line.match(/(?:特发放|发放)([^。！？\]】\n]*?(?:礼包|奖励|资格|权限|名额))/u);
+            if (giftMatch?.[1]) {
+                pushReward(giftMatch[1], line, /是否开启|待开启/u.test(line) ? "待开启" : "已发放");
+            }
+
+            const itemMatch = line.match(/获得(?:物品|奖励|道具|礼包|权限|资格|名额)?[：:]\s*([^\]】。！？\n]+)/u);
+            if (itemMatch?.[1]) {
+                pushReward(itemMatch[1], line, "已获得");
+            }
+
+            if (/附加奖励/u.test(line) || /将获得/u.test(line) || /系统商城/u.test(line)) {
+                if (/寿命延长/u.test(line)) {
+                    pushReward("寿命延长", line, "待结算");
+                }
+                if (/气运加成/u.test(line)) {
+                    pushReward("气运加成", line, "待结算");
+                }
+                if (/系统商城/u.test(line)) {
+                    pushReward("系统商城高级物品解锁", line, /解锁/u.test(line) ? "待解锁" : "待开启");
+                }
+            }
+        });
+
+        return rewards;
     }
 
     mergeWorldStateText(...values) {
@@ -1853,9 +1950,9 @@ ${(detailedOutline || concept || "未填写").slice(0, 2200)}`;
         const relationships = this.buildWorldStateRelationshipRegistry();
         const factions = this.buildWorldStateFactionRegistry(characters);
         const locations = this.buildWorldStateLocationRegistry(characters, chapterMeta);
-        const items = this.buildWorldStateItemRegistry(chapterMeta);
+        const items = this.buildWorldStateItemRegistry(chapterMeta, characters);
         const abilities = this.buildWorldStateAbilityRegistry(characters);
-        const rewards = this.buildWorldStateRewardRegistry(items);
+        const rewards = this.buildWorldStateRewardRegistry(items, chapterMeta);
         const plotThreads = this.buildWorldStatePlotThreadRegistry(chapterMeta);
 
         let activePlotUnit = "";
@@ -2338,7 +2435,7 @@ ${(detailedOutline || concept || "未填写").slice(0, 2200)}`;
         return locations;
     }
 
-    buildWorldStateItemRegistry(chapterMeta = {}) {
+    buildWorldStateItemRegistry(chapterMeta = {}, characters = {}) {
         const items = {};
         const upsertItem = (rawName, source = {}, sourceLabel = "") => {
             const name = String(rawName || source.name || source.item || source["名称"] || source["物品"] || "").trim();
@@ -2430,6 +2527,20 @@ ${(detailedOutline || concept || "未填写").slice(0, 2200)}`;
             });
         });
 
+        Object.values(characters || {}).forEach((character) => {
+            this.extractStructuredPossessions(character?.possessions || [], character?.name || "").forEach((item) => {
+                upsertItem(item.name, {
+                    type: item.type || "物品",
+                    holder: item.holder || character?.name || "",
+                    status: item.status || "持有",
+                    source: item.source || "character_possession",
+                    description: item.description || item.name,
+                    acquire_chapter: Number(character?.last_seen_chapter || 0),
+                    last_updated_chapter: Number(character?.last_seen_chapter || 0)
+                }, "character_possession");
+            });
+        });
+
         return items;
     }
 
@@ -2515,7 +2626,7 @@ ${(detailedOutline || concept || "未填写").slice(0, 2200)}`;
         return abilities;
     }
 
-    buildWorldStateRewardRegistry(items = {}) {
+    buildWorldStateRewardRegistry(items = {}, chapterMeta = {}) {
         const rewards = [];
         const seen = new Set();
         const rewardPattern = /(系统|任务|奖励|机缘|签到|礼包|抽奖|成就|掉落|赐|赏|奖金|奖学金|offer|录取|编制|资格|权限|名额)/;
@@ -2555,6 +2666,17 @@ ${(detailedOutline || concept || "未填写").slice(0, 2200)}`;
                 detail: event?.detail || "",
                 chapter: Number(event?.chapter || 0)
             }, "genre_progress");
+        });
+        (this.novelData.outline?.volumes || []).forEach((volume) => {
+            (volume?.chapters || []).forEach((chapter) => {
+                const chapterNumber = Number(chapter?.number || 0);
+                if (!String(chapter?.content || "").trim()) {
+                    return;
+                }
+                this.extractWorldStateRewardsFromContent(chapter.content, chapterNumber).forEach((reward) => {
+                    pushReward(reward, reward.source || "正文系统提示");
+                });
+            });
         });
 
         return rewards.sort((left, right) => Number(right.chapter || 0) - Number(left.chapter || 0)).slice(0, 20);
