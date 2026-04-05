@@ -3596,7 +3596,16 @@ class NovelGenerator {
             .find(([term, mappedName]) => term !== cleanVagueTerm && mappedName === cleanName);
         if (sameNameOwner) {
             const [existingTerm] = sameNameOwner;
-            if (!(role && aliasToRole[existingTerm] === role)) {
+            const canShareAliasOwner = Boolean(
+                (role && aliasToRole[existingTerm] === role)
+                || this.isPseudoConcreteCharacterAlias(cleanVagueTerm)
+                || this.isPseudoConcreteCharacterAlias(existingTerm)
+                || this.matchesGenericRolePattern(cleanVagueTerm)
+                || this.matchesGenericRolePattern(existingTerm)
+                || cleanVagueTerm.includes(existingTerm)
+                || existingTerm.includes(cleanVagueTerm)
+            );
+            if (!canShareAliasOwner) {
                 return false;
             }
         }
@@ -3646,6 +3655,53 @@ class NovelGenerator {
             }
         });
         return true;
+    }
+
+    syncGeneratedCharacterMappings(project, characters = [], volumeNumber = 1) {
+        if (!project || !Array.isArray(characters) || !characters.length) {
+            return 0;
+        }
+
+        const synopsisData = this.restoreSynopsisMainCharacters(project);
+        synopsisData.vague_to_name_mapping = synopsisData.vague_to_name_mapping && typeof synopsisData.vague_to_name_mapping === "object"
+            ? synopsisData.vague_to_name_mapping
+            : {};
+
+        let changed = 0;
+        characters.forEach((character) => {
+            const realName = this.normalizeOutlineCharacterLabel(character?.name || "");
+            if (!realName || this.isGenericCharacterCandidateName(realName) || !this.isLikelySynopsisPersonName(realName)) {
+                return;
+            }
+
+            const isMainCharacter = Object.values(synopsisData.main_characters || {}).includes(realName);
+            if (this.lockSynopsisCharacterName(
+                project,
+                realName,
+                isMainCharacter ? "主角" : "配角",
+                isMainCharacter ? "主角" : (String(character?.identity || "").trim() || "未知"),
+                volumeNumber
+            )) {
+                changed += 1;
+            }
+
+            Utils.ensureArrayFromText(character?.aliases || character?.["别名"] || "")
+                .map((alias) => this.normalizeOutlineCharacterLabel(alias))
+                .filter((alias) => alias && alias !== realName)
+                .forEach((alias) => {
+                    if (!this.isSafeSynopsisMapping(project, alias, realName)) {
+                        return;
+                    }
+                    if (synopsisData.vague_to_name_mapping[alias] === realName) {
+                        return;
+                    }
+                    synopsisData.vague_to_name_mapping[alias] = realName;
+                    changed += 1;
+                });
+        });
+
+        project.synopsis_data = JSON.parse(JSON.stringify(synopsisData));
+        return changed;
     }
 
     extractExplicitVagueNameMappings(text, vagueTerms) {
@@ -5307,6 +5363,7 @@ class NovelGenerator {
             .trim();
 
         normalized = normalized.replace(/^(给|对|向|跟|和|把|被)(?=[\u4e00-\u9fa5]{2,8}$)/u, "");
+        normalized = normalized.replace(/^(?:\u5979\u7684|\u4ed6\u7684|\u6211\u7684|\u4f60\u7684|\u8fd9\u4e2a|\u90a3\u4e2a|\u8fd9\u4f4d|\u90a3\u4f4d|\u8fd9\u540d|\u90a3\u540d)/u, "");
         return normalized.trim();
     }
 
@@ -5590,12 +5647,36 @@ class NovelGenerator {
         return aliasMap;
     }
 
+    isPseudoConcreteCharacterAlias(name) {
+        const cleanName = this.normalizeOutlineCharacterLabel(name);
+        if (!cleanName) {
+            return false;
+        }
+
+        if (/^(?:\u8001|\u5c0f)[\u4e00-\u9fa5]{1,3}$/u.test(cleanName)) {
+            return true;
+        }
+
+        if (/^[\u4e00-\u9fa5]{1,4}(?:\u4e3b\u4efb|\u79d1\u957f|\u5904\u957f|\u5382\u957f|\u961f\u957f|\u8fde\u957f|\u8425\u957f|\u6392\u957f|\u73ed\u957f|\u5e72\u4e8b|\u4ee3\u8868|\u533b\u751f|\u62a4\u58eb|\u8001\u5e08|\u8001\u677f|\u7ecf\u7406|\u603b\u76d1|\u7ec4\u957f|\u6821\u957f|\u9662\u957f|\u638c\u67dc|\u5e08\u5085|\u5e08\u7236|\u79d8\u4e66|\u52a9\u7406|\u4fdd\u5b89|\u53f8\u673a|\u8b66\u5b98|\u6cd5\u5b98|\u5927\u592b|\u53d4|\u53d4\u53d4|\u963f\u59e8|\u5a76\u5b50|\u5ac2\u5b50|\u5927\u59d0|\u5927\u5988|\u5927\u7237|\u5927\u53d4|\u4f2f\u7236|\u4f2f\u6bcd|\u59e8\u5988|\u59e8\u7236|\u59d1\u5988|\u59d1\u7236|\u8205\u8205|\u8205\u5988)$/u.test(cleanName)) {
+            return true;
+        }
+
+        if (/^(?:\u4e3b\u4efb|\u79d1\u957f|\u5904\u957f|\u5382\u957f|\u961f\u957f|\u8fde\u957f|\u8425\u957f|\u6392\u957f|\u73ed\u957f|\u5e72\u4e8b|\u4ee3\u8868|\u533b\u751f|\u62a4\u58eb|\u8001\u5e08|\u8001\u677f|\u7ecf\u7406|\u603b\u76d1|\u7ec4\u957f|\u6821\u957f|\u9662\u957f|\u638c\u67dc|\u5e08\u5085|\u5e08\u7236|\u79d8\u4e66|\u52a9\u7406|\u4fdd\u5b89|\u53f8\u673a|\u8b66\u5b98|\u6cd5\u5b98|\u5927\u592b)[\u4e00-\u9fa5]{1,4}$/u.test(cleanName)) {
+            return true;
+        }
+
+        return false;
+    }
+
     isGenericCharacterCandidateName(name) {
         const cleanName = String(name || "").trim();
         if (!cleanName) {
             return true;
         }
         if (this.getOutlineCharacterExcludedNames().has(cleanName)) {
+            return true;
+        }
+        if (this.isPseudoConcreteCharacterAlias(cleanName)) {
             return true;
         }
         const aliasToRole = this.buildSynopsisAliasToRoleMap();

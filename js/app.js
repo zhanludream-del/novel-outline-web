@@ -10057,6 +10057,7 @@ ${(detailedOutline || concept || "未填写").slice(0, 2200)}`;
                 detail: `本次共生成 ${generatedCharacters.length} 条人设`
             });
             const added = this.mergeGeneratedCharacters(generatedCharacters);
+            this.generator.syncGeneratedCharacterMappings(this.novelData, generatedCharacters, volumeNumber);
             this.persist(true);
             this.renderCharacterList();
             this.renderDashboard();
