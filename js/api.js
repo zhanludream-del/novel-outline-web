@@ -131,20 +131,51 @@ class AIAPIClient {
             url.searchParams.set(key, String(value));
         });
 
-        const response = await fetch(url.toString(), {
-            method: "GET",
-            headers: {
-                Accept: "application/json"
-            }
-        });
+        const timeoutMs = Math.max(5000, Number(config.rankApiTimeoutMs || 15000) || 15000);
+        const retryCount = Math.max(1, Number(config.rankApiRetryCount || 2) || 2);
+        let lastError = null;
 
-        const rawText = await response.text();
-        const data = this.safeParseJSON(rawText) || {};
-        if (!response.ok) {
-            throw new Error(data?.error || data?.message || `榜单接口请求失败：${response.status}`);
+        for (let attempt = 1; attempt <= retryCount; attempt += 1) {
+            const controller = new AbortController();
+            const timer = window.setTimeout(() => controller.abort(), timeoutMs);
+            try {
+                const response = await fetch(url.toString(), {
+                    method: "GET",
+                    headers: {
+                        Accept: "application/json"
+                    },
+                    signal: controller.signal
+                });
+
+                const rawText = await response.text();
+                const data = this.safeParseJSON(rawText) || {};
+                if (!response.ok) {
+                    throw new Error(data?.error || data?.message || `榜单接口请求失败：${response.status}`);
+                }
+                if (data && typeof data === "object" && data.ok === false) {
+                    throw new Error(data?.error || data?.message || "榜单接口返回失败。");
+                }
+
+                return data;
+            } catch (error) {
+                lastError = this.normalizeError(error);
+                const canRetry = attempt < retryCount;
+                if (!canRetry) {
+                    break;
+                }
+                if (typeof Utils !== "undefined" && typeof Utils.log === "function") {
+                    Utils.log(
+                        `榜单接口请求失败，正在重试第 ${attempt + 1}/${retryCount} 次：${lastError.message}`,
+                        "warning"
+                    );
+                }
+                await this.delay(this.getRetryDelay(attempt));
+            } finally {
+                window.clearTimeout(timer);
+            }
         }
 
-        return data;
+        throw lastError || new Error("榜单接口请求失败。");
     }
 
     buildUrl(config) {

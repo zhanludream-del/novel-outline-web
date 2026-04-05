@@ -1,6 +1,11 @@
 const FANQIE_ORIGIN = "https://fanqienovel.com";
 const DEFAULT_LIMIT = 10;
 const FANQIE_APP_ID = "1967";
+const CACHE_TTL_SECONDS = 900;
+const HTML_FETCH_TIMEOUT_MS = 7000;
+const API_FETCH_TIMEOUT_MS = 6000;
+const FETCH_RETRY_COUNT = 2;
+const MAX_CATEGORY_TARGETS = 2;
 const FANQIE_GLYPH_MAP = {
     "58670": "0", "58413": "1", "58678": "2", "58371": "3", "58353": "4", "58480": "5", "58359": "6", "58449": "7", "58540": "8", "58692": "9",
     "58712": "a", "58542": "b", "58575": "c", "58626": "d", "58691": "e", "58561": "f", "58362": "g", "58619": "h", "58430": "i", "58531": "j",
@@ -42,7 +47,7 @@ const FANQIE_GLYPH_MAP = {
 };
 
 export default {
-    async fetch(request) {
+    async fetch(request, env, ctx) {
         if (request.method === "OPTIONS") {
             return new Response(null, {
                 status: 204,
@@ -61,6 +66,22 @@ export default {
             );
         }
 
+        const refresh = url.searchParams.get("refresh") === "1";
+        const cacheKey = new Request(url.toString(), {
+            method: "GET",
+            headers: request.headers
+        });
+        const cache = caches.default;
+
+        if (!refresh) {
+            const cached = await cache.match(cacheKey);
+            if (cached) {
+                return withResponseHeaders(cached, {
+                    "X-Worker-Cache": "HIT"
+                });
+            }
+        }
+
         try {
             const keyword = url.searchParams.get("keyword") || "";
             const genre = url.searchParams.get("genre") || "";
@@ -69,18 +90,25 @@ export default {
 
             const rankIndexHtml = await fetchHtml(`${FANQIE_ORIGIN}/rank/all`);
             const categories = parseCategoryLinks(rankIndexHtml);
-            const selectedCategories = pickBestCategories(categories, { keyword, genre, subgenre }).slice(0, 3);
+            const selectedCategories = pickBestCategories(categories, { keyword, genre, subgenre }).slice(0, MAX_CATEGORY_TARGETS);
             const categoryTargets = selectedCategories.length
                 ? selectedCategories
                 : [{ name: "总榜参考", href: "/rank/all" }];
 
             const itemMap = new Map();
             for (const category of categoryTargets) {
+                if (itemMap.size >= limit) {
+                    break;
+                }
+
                 let books = [];
                 if (category.categoryId) {
                     books = await fetchRankCategoryBooks(category, limit);
                 }
-                if (!books.length) {
+                if (!books.length && category.href === "/rank/all") {
+                    books = parseRankBooks(rankIndexHtml, category.name).slice(0, limit);
+                }
+                if (!books.length && itemMap.size === 0 && category.href && category.href !== "/rank/all") {
                     const categoryHtml = category.href === "/rank/all"
                         ? rankIndexHtml
                         : await fetchHtml(new URL(category.href, FANQIE_ORIGIN).toString());
@@ -118,7 +146,13 @@ export default {
                 diagnostics,
                 summary,
                 fetchedAt: new Date().toISOString()
+            }, 200, {
+                "Cache-Control": `public, max-age=${CACHE_TTL_SECONDS}, s-maxage=${CACHE_TTL_SECONDS}`,
+                "X-Worker-Cache": "MISS"
             });
+
+            ctx?.waitUntil(cache.put(cacheKey, response.clone()));
+            return response;
         } catch (error) {
             return json(
                 {
@@ -140,20 +174,63 @@ function corsHeaders() {
     };
 }
 
-function json(data, status = 200) {
+function json(data, status = 200, extraHeaders = {}) {
     return new Response(JSON.stringify(data, null, 2), {
         status,
-        headers: corsHeaders()
+        headers: {
+            ...corsHeaders(),
+            ...extraHeaders
+        }
     });
 }
 
+function withResponseHeaders(response, extraHeaders = {}) {
+    const next = new Response(response.body, response);
+    Object.entries(extraHeaders || {}).forEach(([key, value]) => {
+        if (value !== undefined && value !== null && value !== "") {
+            next.headers.set(key, String(value));
+        }
+    });
+    return next;
+}
+
+async function fetchWithTimeout(url, init = {}, timeoutMs = HTML_FETCH_TIMEOUT_MS, retryCount = FETCH_RETRY_COUNT) {
+    let lastError = null;
+    for (let attempt = 1; attempt <= retryCount; attempt += 1) {
+        const controller = new AbortController();
+        const timer = setTimeout(() => controller.abort(`timeout:${timeoutMs}`), timeoutMs);
+        try {
+            return await fetch(url, {
+                ...init,
+                signal: controller.signal
+            });
+        } catch (error) {
+            lastError = error;
+            if (attempt >= retryCount) {
+                break;
+            }
+        } finally {
+            clearTimeout(timer);
+        }
+    }
+    throw normalizeFetchError(lastError, url, timeoutMs);
+}
+
+function normalizeFetchError(error, url, timeoutMs) {
+    const message = String(error?.message || error || "请求失败");
+    if (/abort|timeout/i.test(message)) {
+        return new Error(`抓取超时：${url}（>${timeoutMs}ms）`);
+    }
+    return error instanceof Error ? error : new Error(message);
+}
+
 async function fetchHtml(url) {
-    const response = await fetch(url, {
+    const response = await fetchWithTimeout(url, {
         headers: {
             "User-Agent": "Mozilla/5.0 (compatible; NovelOutlineWeb/1.0; +https://github.com/zhanludream-del/novel-outline-web)",
             "Accept-Language": "zh-CN,zh;q=0.9"
         }
-    });
+    }, HTML_FETCH_TIMEOUT_MS);
     if (!response.ok) {
         throw new Error(`抓取番茄榜单失败：${response.status}`);
     }
@@ -171,15 +248,20 @@ async function fetchRankCategoryBooks(category, limit) {
     endpoint.searchParams.set("gender", String(category.gender || "1"));
     endpoint.searchParams.set("rankMold", String(category.rankMold || "2"));
 
-    const response = await fetch(endpoint.toString(), {
-        headers: {
-            "User-Agent": "Mozilla/5.0 (compatible; NovelOutlineWeb/1.0; +https://github.com/zhanludream-del/novel-outline-web)",
-            "Accept": "application/json, text/plain, */*",
-            "Accept-Language": "zh-CN,zh;q=0.9",
-            "Referer": new URL(category.href || "/rank/all", FANQIE_ORIGIN).toString()
-        }
-    });
-    if (!response.ok) {
+    let response = null;
+    try {
+        response = await fetchWithTimeout(endpoint.toString(), {
+            headers: {
+                "User-Agent": "Mozilla/5.0 (compatible; NovelOutlineWeb/1.0; +https://github.com/zhanludream-del/novel-outline-web)",
+                "Accept": "application/json, text/plain, */*",
+                "Accept-Language": "zh-CN,zh;q=0.9",
+                "Referer": new URL(category.href || "/rank/all", FANQIE_ORIGIN).toString()
+            }
+        }, API_FETCH_TIMEOUT_MS);
+    } catch (error) {
+        return [];
+    }
+    if (!response || !response.ok) {
         return [];
     }
 
