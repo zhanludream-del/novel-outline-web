@@ -948,6 +948,7 @@
             chapter.number || 0
         );
         const promptTemplate = project.prompt_state?.current_prompt || "";
+        const openingRelayPacket = this.buildOpeningRelayPacket(project, volume, chapter);
         const prevContent = this.getPreviousChapterContents(project, volume, chapter, 5);
         const previousOutlineContext = this.buildPreviousOutlineSummary(project, volume, chapter);
         const nextOutline = this.getNextChapterOutline(project, volume, chapter);
@@ -986,6 +987,7 @@
             "正文字数默认目标为3000-6000字，至少不要少于2500字；如果本章大纲信息很多，就要一次性充分展开，不要压缩成一千多字的短章。",
             "必须完成本章结尾铺垫任务，但绝对不能把下一章核心事件提前写出来。",
             "正文必须紧接前文最后一个有效场景和状态展开，不准平地重开，不准把已经发生的事再写成预告。",
+            "前文五章原文只用于继承事实、名词、状态、对白口吻和动作延续，不是给你当作前情回顾模板。",
             "如果本章大纲或前文衔接略显生硬，你要在正文里自然补足因果与过桥动作，让读者读起来顺，但不能篡改主线结果。",
             "拒绝AI味：不要堆砌嘴角、眼神、瞳孔、喉结、指节等模板化微表情；不要写空泛比喻、总结腔和文绉绉的抽象抒情。",
             "短句优先，动词优先，口语化，少副词，少形容词，少套路比喻。",
@@ -999,6 +1001,7 @@
             volume,
             chapter,
             promptTemplate,
+            openingRelayPacket,
             prevContent,
             nextOutline,
             characterDigest,
@@ -1034,6 +1037,11 @@
                         label: "本章大纲",
                         length: String(chapter.summary || "").trim().length,
                         preview: this.limitContext(chapter.summary || "", 160)
+                    },
+                    {
+                        label: "开篇接力棒",
+                        length: String(openingRelayPacket || "").trim().length,
+                        preview: this.limitContext(openingRelayPacket || "", 160)
                     },
                     {
                         label: "前文五章",
@@ -1651,6 +1659,24 @@
         return paragraphs.slice(-count).join("\n\n").slice(-limit);
     }
 
+    extractLastMeaningfulSentence(content, limit = 100) {
+        const paragraphs = String(content || "")
+            .split(/\r?\n+/)
+            .map((item) => item.trim())
+            .filter((item) => item.length >= 8);
+        if (!paragraphs.length) {
+            return "";
+        }
+
+        const tailText = paragraphs.slice(-3).join(" ");
+        const sentences = tailText
+            .split(/(?<=[。！？!?…])/)
+            .map((item) => item.trim())
+            .filter((item) => item.length >= 8);
+        const lastSentence = sentences[sentences.length - 1] || paragraphs[paragraphs.length - 1] || "";
+        return Utils.summarizeText(lastSentence, limit);
+    }
+
     describeNextChapterSetup(setup) {
         if (!setup || typeof setup !== "object") {
             return "";
@@ -1663,6 +1689,51 @@
             setup.countdown ? `倒计时：${setup.countdown}` : ""
         ].filter(Boolean);
         return parts.join("；");
+    }
+
+    getSnapshotByChapter(project, chapterNumber) {
+        const key = `chapter_${Number(chapterNumber || 0)}`;
+        return project?.chapter_snapshot?.snapshots?.[key]
+            || project?.outline?.state_snapshots?.[key]
+            || null;
+    }
+
+    buildOpeningRelayPacket(project, currentVolume, currentChapter) {
+        const volumeNumber = this.getVolumeNumber(project, currentVolume);
+        const chapterNumber = Number(currentChapter?.number || currentChapter?.chapter_number || 0);
+        const previousChapter = this.getLatestChapterBefore(project, volumeNumber, chapterNumber);
+        if (!previousChapter) {
+            return "";
+        }
+
+        const snapshot = this.getSnapshotByChapter(project, previousChapter.number)
+            || this.getSnapshotBeforeChapter(project, chapterNumber).snapshot
+            || {};
+        const previousCore = previousChapter.keyEvent
+            || Utils.summarizeText(previousChapter.summary || "", 120)
+            || previousChapter.title
+            || "";
+        const tailAction = this.extractLastMeaningfulSentence(previousChapter.content || "", 100);
+        const hook = this.describeNextChapterSetup(previousChapter.nextChapterSetup || previousChapter.next_chapter_setup || {});
+        const unresolved = snapshot.pending_plots || previousChapter.nextChapterSetup?.state_setup || "";
+        const scene = snapshot.current_location || snapshot["位置"] || "";
+        const timeline = snapshot.timeline || snapshot["时间"] || "";
+
+        return [
+            "【开篇接力棒】",
+            `承接来源：第${previousChapter.number}章《${previousChapter.title || "未命名章节"}》`,
+            "这里只提供结果、现场和未完事项，不提供可复述原句；本章开头必须继续往前写。",
+            previousCore ? `- 上章已完成结果：${Utils.summarizeText(previousCore, 110)}` : "",
+            scene ? `- 当前现场地点：${Utils.summarizeText(scene, 40)}` : "",
+            timeline ? `- 当前现场时间：${Utils.summarizeText(timeline, 40)}` : "",
+            tailAction ? `- 上章最后动作/画面：${tailAction}` : "",
+            unresolved ? `- 当前仍未处理：${Utils.summarizeText(unresolved, 90)}` : "",
+            hook ? `- 本章必须立刻接住：${Utils.summarizeText(hook, 110)}` : "",
+            "硬规则：",
+            "1. 第一段直接进入现场动作、对白或即时反应，不要先写前情回顾。",
+            "2. 不要把上一章已完成结果再写成调查、解释、推理或大段复盘。",
+            "3. 如果需要过桥，只能用很短的动作过渡，不能整段复述上一章。"
+        ].filter(Boolean).join("\n");
     }
 
     buildOpeningAntiRepeatGuard(project, currentVolume, currentChapter) {
@@ -1678,7 +1749,7 @@
             || previousChapter.title
             || "";
         const previousHook = this.describeNextChapterSetup(previousChapter.nextChapterSetup || previousChapter.next_chapter_setup || {});
-        const endingFocus = this.extractEndingParagraphs(previousChapter.content || "", 2, 620);
+        const endingFocus = this.extractLastMeaningfulSentence(previousChapter.content || "", 100);
 
         const lines = [
             "【开头防重复硬约束】",
@@ -1694,7 +1765,7 @@
             lines.push(`上一章留给本章的承接钩子：${Utils.summarizeText(previousHook, 120)}`);
         }
         if (endingFocus) {
-            lines.push(`上一章结尾原文锚点：\n${endingFocus}`);
+            lines.push(`上一章结尾动作锚点：${endingFocus}`);
         }
         lines.push("本章开头要从这些已知结果继续往前写，而不是再讲一遍它们是怎么发生的。");
 
@@ -3430,6 +3501,7 @@
         volume,
         chapter,
         promptTemplate,
+        openingRelayPacket,
         prevContent,
         nextOutline,
         characterDigest,
@@ -3473,6 +3545,8 @@
                 "【本章大纲】",
                 "{{outline}}",
                 "",
+                "{{opening_relay_packet}}",
+                "",
                 "【前文大纲摘要】",
                 "{{previous_outline_context}}",
                 "",
@@ -3485,6 +3559,7 @@
                 "{{relevant_characters}}",
                 "",
                 "【前文五章】",
+                "用途：只用于继承名词、状态、口吻和动作延续，不要拿它当作本章开头的复述模板。",
                 "{{prev_content}}",
                 "",
                 "【全局设定提醒】",
@@ -3541,6 +3616,7 @@
             outline: chapter.summary || "",
             chapter_number: chapter.number || "",
             chapter_title: chapter.title || "",
+            opening_relay_packet: openingRelayPacket || "【开篇接力棒】\n本章开头直接承接上一章的结果与现场，不要复述前情。",
             previous_outline_context: previousOutlineContext || "暂无前文大纲",
             story_state_summary: storyStateSummary || "暂无明确前文状态摘要",
             narrative_bridge_plan: narrativeBridgePlan || "【本章节奏执行骨架】\n先接上章结果，再推进本章主事件，中段形成波折，结尾停在下一步张力点。",
@@ -3573,6 +3649,11 @@
             "",
             "【本章大纲（必须逐条落实）】",
             chapter.summary || "暂无本章大纲",
+            "",
+            openingRelayPacket || "",
+            "",
+            "【前文原文使用规则】",
+            "前五章原文继续完整提供给模型，但只能用来继承事实、名词、状态和语气，不允许把其中已完成内容改写成新章开头。",
             "",
             "【前文五章（重点看最后一章结尾）】",
             prevContent || "暂无前文",
@@ -3797,6 +3878,8 @@
                     chapterId: chapter.id || chapter.uuid || "",
                     number: Number(chapter.number || chapter.chapter_number || 0),
                     title: chapter.title || "",
+                    summary: chapter.summary || "",
+                    keyEvent: chapter.key_event || chapter.keyEvent || "",
                     content: chapter.content || (chapter.uuid ? project.chapters?.[chapter.uuid] : "") || ""
                 });
             });
@@ -3811,11 +3894,8 @@
         }
         const previousItems = all.slice(Math.max(0, index - maxChapters), index);
         return previousItems
-            .map((item, itemIndex) => {
-                const isLatest = itemIndex === previousItems.length - 1;
-                const contentText = isLatest
-                    ? this.extractEndingParagraphs(item.content, 3, 1100) || Utils.summarizeText(item.content, 1100)
-                    : Utils.summarizeText(item.content, 360);
+            .map((item) => {
+                const contentText = String(item.content || item.summary || item.keyEvent || "").trim();
                 return `【第${item.number}章 ${item.title}】\n${contentText}`;
             })
             .join("\n\n");
