@@ -231,6 +231,14 @@ class NovelOutlineWebApp {
     init() {
         this.ensureBaseData();
         this.rehydrateDerivedChapterArtifacts();
+        const startupCleanup = this.cleanupOrphanedCharacterArtifacts({ reason: "startup" });
+        if (startupCleanup.changed) {
+            this.persist(true);
+            Utils.log(
+                `已按剩余章节清理历史残留角色 ${startupCleanup.removedCount} 个${startupCleanup.removedNames.length ? `：${startupCleanup.removedNames.slice(0, 8).join("、")}` : ""}。`,
+                "info"
+            );
+        }
         this.renderAppVersion();
         this.applyStoredGenreExtensions();
         this.populateGenreOptions();
@@ -3519,10 +3527,16 @@ ${(detailedOutline || concept || "未填写").slice(0, 2200)}`;
         }
 
         const deleteSet = new Set();
+        const cleanupCandidates = new Set();
         volume.chapters.forEach((chapter) => {
             const number = Number(chapter.number || 0);
             if (number >= start && number <= end) {
                 deleteSet.add(chapter.id);
+                this.collectCharacterNamesFromChapterArtifacts(chapter, {
+                    includeOutline: true,
+                    includeContent: true,
+                    includeStoredExtras: true
+                }).forEach((name) => cleanupCandidates.add(name));
                 if (chapter.uuid && this.novelData.chapters?.[chapter.uuid]) {
                     delete this.novelData.chapters[chapter.uuid];
                 }
@@ -3546,6 +3560,9 @@ ${(detailedOutline || concept || "未填写").slice(0, 2200)}`;
 
         volume.chapters = volume.chapters.filter((chapter) => !deleteSet.has(chapter.id));
         this.rollbackStateSystemsToChapter(start - 1);
+        const cleanupResult = this.cleanupOrphanedCharacterArtifacts({
+            candidateNames: cleanupCandidates
+        });
         if (this.state.selectedChapterId && deleteSet.has(this.state.selectedChapterId)) {
             this.state.selectedChapterId = null;
             this.clearChapterEditor();
@@ -3555,6 +3572,9 @@ ${(detailedOutline || concept || "未填写").slice(0, 2200)}`;
         this.renderChapterList();
         this.renderDashboard();
         this.renderAdvancedState();
+        if (cleanupResult.changed) {
+            Utils.log(`已同步清理旧角色残留 ${cleanupResult.removedCount} 个。`, "info");
+        }
         Utils.log(`状态系统已回滚到第 ${Math.max(0, start - 1)} 章结束时的状态。`, "info");
         Utils.showMessage(`已删除 ${deleteSet.size} 个章节。`, "success");
         Utils.log(`已批量删除第 ${start}-${end} 章范围内的 ${deleteSet.size} 个章节。`, "success");
@@ -4637,6 +4657,7 @@ ${(detailedOutline || concept || "未填写").slice(0, 2200)}`;
 
     deleteOutlineRangeInternal({ volume, start, end, silent = false }) {
         const deleteSet = new Set();
+        const cleanupCandidates = new Set();
         let deletedCount = 0;
 
         volume.chapters.forEach((chapter) => {
@@ -4645,6 +4666,11 @@ ${(detailedOutline || concept || "未填写").slice(0, 2200)}`;
                 return;
             }
             deleteSet.add(chapter.id);
+            this.collectCharacterNamesFromChapterArtifacts(chapter, {
+                includeOutline: true,
+                includeContent: true,
+                includeStoredExtras: true
+            }).forEach((name) => cleanupCandidates.add(name));
             deletedCount += 1;
             if (chapter.uuid && this.novelData.chapters?.[chapter.uuid]) {
                 delete this.novelData.chapters[chapter.uuid];
@@ -4664,6 +4690,9 @@ ${(detailedOutline || concept || "未填写").slice(0, 2200)}`;
 
         volume.chapters = volume.chapters.filter((chapter) => !deleteSet.has(chapter.id));
         this.rollbackStateSystemsToChapter(start - 1);
+        const cleanupResult = this.cleanupOrphanedCharacterArtifacts({
+            candidateNames: cleanupCandidates
+        });
         if (this.state.selectedChapterId && deleteSet.has(this.state.selectedChapterId)) {
             this.state.selectedChapterId = null;
             this.clearChapterEditor();
@@ -4674,6 +4703,9 @@ ${(detailedOutline || concept || "未填写").slice(0, 2200)}`;
             this.renderChapterList();
             this.renderDashboard();
             this.renderAdvancedState();
+            if (cleanupResult.changed) {
+                Utils.log(`已同步清理旧角色残留 ${cleanupResult.removedCount} 个。`, "info");
+            }
             Utils.log(`状态系统已回滚到第 ${Math.max(0, start - 1)} 章结束时的状态。`, "info");
             Utils.showMessage(`已删除第 ${start}-${end} 章范围内的 ${deletedCount} 个章纲。`, "success");
         }
@@ -4962,14 +4994,25 @@ ${(detailedOutline || concept || "未填写").slice(0, 2200)}`;
 
         const deletedChapter = volume.chapters.find((chapter) => chapter.id === this.state.selectedChapterId);
         const deletedChapterNumber = Number(deletedChapter?.number || 0);
+        const cleanupCandidates = new Set(this.collectCharacterNamesFromChapterArtifacts(deletedChapter, {
+            includeOutline: true,
+            includeContent: true,
+            includeStoredExtras: true
+        }));
         volume.chapters = volume.chapters.filter((chapter) => chapter.id !== this.state.selectedChapterId);
         this.rollbackStateSystemsToChapter(deletedChapterNumber - 1);
+        const cleanupResult = this.cleanupOrphanedCharacterArtifacts({
+            candidateNames: cleanupCandidates
+        });
         this.state.selectedChapterId = null;
         this.clearChapterEditor();
         this.persist(true);
         this.renderChapterList();
         this.renderDashboard();
         this.renderAdvancedState();
+        if (cleanupResult.changed) {
+            Utils.log(`已同步清理旧角色残留 ${cleanupResult.removedCount} 个。`, "info");
+        }
         Utils.log(`状态系统已回滚到第 ${Math.max(0, deletedChapterNumber - 1)} 章结束时的状态。`, "info");
         Utils.showMessage("章节已删除。", "success");
     }
@@ -4993,6 +5036,11 @@ ${(detailedOutline || concept || "未填写").slice(0, 2200)}`;
         }
 
         const chapterNumber = Number(chapter.number || 0);
+        const cleanupCandidates = new Set(this.collectCharacterNamesFromChapterArtifacts(chapter, {
+            includeOutline: false,
+            includeContent: true,
+            includeStoredExtras: true
+        }));
         chapter.content = "";
         chapter.updatedAt = new Date().toISOString();
 
@@ -5006,12 +5054,18 @@ ${(detailedOutline || concept || "未填写").slice(0, 2200)}`;
         delete this.novelData.chapter_emotions?.[`chapter_${chapterNumber}`];
 
         this.rollbackStateSystemsToChapter(chapterNumber - 1);
+        const cleanupResult = this.cleanupOrphanedCharacterArtifacts({
+            candidateNames: cleanupCandidates
+        });
         this.elements.chapterContentInput.value = "";
         this.persist(true);
         this.renderChapterList();
         this.renderDashboard();
         this.renderAdvancedState();
         this.selectChapter(chapter.id);
+        if (cleanupResult.changed) {
+            Utils.log(`已同步清理旧角色残留 ${cleanupResult.removedCount} 个。`, "info");
+        }
         Utils.log(`已清空第 ${chapterNumber} 章正文，状态系统已回滚到第 ${Math.max(0, chapterNumber - 1)} 章。`, "info");
         Utils.showMessage("当前章节正文已清空。", "success");
     }
@@ -6098,6 +6152,410 @@ ${(detailedOutline || concept || "未填写").slice(0, 2200)}`;
                 }
                 return Number(left.chapter?.number || 0) - Number(right.chapter?.number || 0);
             });
+    }
+
+    collectReferencedFormalCharacterNamesFromText(text = "", registry = this.getWorldStateFormalCharacterRegistry()) {
+        const names = new Set();
+        const source = String(text || "");
+        if (!source.trim()) {
+            return names;
+        }
+
+        registry.forEach((entry, name) => {
+            const aliases = Array.from(entry?.aliases || [])
+                .map((alias) => this.normalizeCharacterReferenceLabel(alias))
+                .filter((alias) => alias && alias.length >= 2)
+                .sort((left, right) => right.length - left.length);
+            if (aliases.some((alias) => source.includes(alias))) {
+                names.add(name);
+            }
+        });
+
+        return names;
+    }
+
+    collectCharacterNamesFromChapterArtifacts(chapter = {}, options = {}) {
+        const registry = options.registry || this.getWorldStateFormalCharacterRegistry();
+        const includeOutline = options.includeOutline !== false;
+        const includeContent = options.includeContent !== false;
+        const includeStoredExtras = options.includeStoredExtras !== false;
+        const rawContent = Object.prototype.hasOwnProperty.call(options, "rawContent")
+            ? String(options.rawContent || "")
+            : this.getStoredChapterContent(chapter);
+        const cleanedContent = Object.prototype.hasOwnProperty.call(options, "cleanedContent")
+            ? String(options.cleanedContent || "").trim()
+            : this.stripGeneratedMarkers(rawContent).trim();
+        const chapterNumber = Number(chapter?.number || chapter?.chapter_number || 0);
+        const names = new Set();
+        const addName = (value) => {
+            const normalized = this.normalizeExtraCharacterNameCandidate(value)
+                || this.normalizeCharacterReferenceLabel(value)
+                || String(value || "").trim();
+            const resolved = this.resolveKnownCharacterName(normalized || value);
+            if (resolved) {
+                names.add(resolved);
+            }
+        };
+
+        if (includeOutline) {
+            Utils.ensureArrayFromText(chapter?.characters || "").forEach(addName);
+            this.extractCharacterSeedsFromSummary(chapter?.summary || "", chapterNumber).forEach((item) => addName(item.name));
+            this.collectReferencedFormalCharacterNamesFromText(
+                `${chapter?.title || ""}\n${chapter?.summary || ""}`,
+                registry
+            ).forEach(addName);
+        }
+
+        if (includeContent && cleanedContent) {
+            this.collectReferencedFormalCharacterNamesFromText(cleanedContent, registry).forEach(addName);
+        }
+
+        if (includeStoredExtras) {
+            const extraRecord = Object.prototype.hasOwnProperty.call(options, "extraRecord")
+                ? options.extraRecord
+                : this.novelData.extra_character_records?.[`chapter_${chapterNumber}`];
+            (Array.isArray(extraRecord?.characters) ? extraRecord.characters : []).forEach((value) => {
+                const normalized = this.normalizeExtraCharacterNameCandidate(value)
+                    || this.normalizeCharacterReferenceLabel(value)
+                    || String(value || "").trim();
+                const resolved = this.resolveKnownCharacterName(normalized || value);
+                if (!resolved) {
+                    return;
+                }
+                if (includeContent && cleanedContent && !cleanedContent.includes(resolved)) {
+                    return;
+                }
+                names.add(resolved);
+            });
+        }
+
+        return Array.from(names);
+    }
+
+    buildCharacterCleanupReferenceSnapshot(options = {}) {
+        const excludedChapterIds = options.excludedChapterIds instanceof Set
+            ? options.excludedChapterIds
+            : new Set(options.excludedChapterIds || []);
+        const registry = options.registry || this.getWorldStateFormalCharacterRegistry();
+        const chapterNames = new Set();
+        const planNames = new Set();
+        const chapterTexts = [];
+        const planTexts = [];
+        const addChapterName = (value) => {
+            const resolved = this.resolveKnownCharacterName(this.normalizeCharacterReferenceLabel(value) || value);
+            if (resolved) {
+                chapterNames.add(resolved);
+            }
+        };
+        const addPlanName = (value) => {
+            const resolved = this.resolveKnownCharacterName(this.normalizeCharacterReferenceLabel(value) || value);
+            if (resolved) {
+                planNames.add(resolved);
+            }
+        };
+        const pushText = (bucket, value) => {
+            const text = String(value || "").trim();
+            if (text) {
+                bucket.push(text);
+            }
+        };
+
+        this.iterateAllChapters((chapter) => {
+            if (excludedChapterIds.has(chapter?.id)) {
+                return;
+            }
+
+            const rawContent = this.getStoredChapterContent(chapter);
+            const cleanedContent = this.stripGeneratedMarkers(rawContent).trim();
+            this.collectCharacterNamesFromChapterArtifacts(chapter, {
+                registry,
+                rawContent,
+                cleanedContent,
+                includeOutline: true,
+                includeContent: true,
+                includeStoredExtras: true
+            }).forEach(addChapterName);
+            pushText(chapterTexts, chapter?.title);
+            pushText(chapterTexts, chapter?.summary);
+            pushText(chapterTexts, cleanedContent);
+        });
+
+        const synopsisData = this.novelData.synopsisData || this.novelData.synopsis_data || {};
+        pushText(planTexts, this.novelData.outline?.detailed_outline);
+        pushText(planTexts, this.novelData.outline?.worldbuilding);
+        pushText(planTexts, this.novelData.outline?.user_context);
+        pushText(planTexts, synopsisData.story_concept || synopsisData.storyConcept);
+        pushText(planTexts, synopsisData.volume_synopsis || synopsisData.volumeSynopsis);
+        pushText(planTexts, synopsisData.synopsis_output || synopsisData.synopsisOutput);
+        (this.novelData.outline?.volumes || []).forEach((volume) => {
+            pushText(planTexts, volume?.title);
+            pushText(planTexts, volume?.summary);
+            pushText(planTexts, volume?.chapterSynopsis || volume?.chapter_synopsis);
+        });
+        planTexts.forEach((text) => {
+            this.collectReferencedFormalCharacterNamesFromText(text, registry).forEach(addPlanName);
+        });
+
+        return {
+            registry,
+            chapterNames,
+            planNames,
+            referencedNames: new Set([...chapterNames, ...planNames]),
+            projectTexts: [...chapterTexts, ...planTexts]
+        };
+    }
+
+    isCharacterSourceRich(source = {}) {
+        if (!source || typeof source !== "object") {
+            return String(source || "").trim().length >= 20;
+        }
+
+        const identity = String(source.identity || source.role || source["身份"] || source.type || "").trim();
+        const background = String(source.background || source["背景故事"] || "").trim();
+        let score = [
+            identity,
+            source.age,
+            source.gender,
+            source.personality,
+            source["性格特点"],
+            background,
+            source.appearance,
+            source["外貌描述"],
+            source.abilities,
+            source["能力特长"],
+            source.goals,
+            source["目标动机"],
+            source.relationships,
+            source["人物关系"]
+        ].map((item) => String(item || "").trim()).filter(Boolean).length;
+
+        if (identity && /^(章纲出场角色|待补人物状态)$/u.test(identity)) {
+            score -= 1;
+        }
+        if (background && /(?:第\s*\d+\s*章|章节|章纲).*(?:提及角色|出场角色)|后续可补充背景/u.test(background)) {
+            score -= 1;
+        }
+
+        return score >= 3;
+    }
+
+    buildProtectedCharacterNameSet() {
+        const protectedNames = new Set();
+        const addName = (value) => {
+            const resolved = this.resolveKnownCharacterName(this.normalizeCharacterReferenceLabel(value) || value);
+            if (resolved) {
+                protectedNames.add(resolved);
+            }
+        };
+
+        Object.values((this.novelData.synopsisData || this.novelData.synopsis_data || {}).main_characters || {})
+            .forEach(addName);
+        (this.novelData.outline?.characters || []).forEach((character) => {
+            if (this.isCharacterSourceRich(character)) {
+                addName(character?.name || character?.["角色名"] || "");
+            }
+        });
+        Object.entries(this.novelData.supporting_characters || {}).forEach(([name, value]) => {
+            const source = value && typeof value === "object" ? value : { identity: String(value || "") };
+            if (this.isCharacterSourceRich(source)) {
+                addName(source?.name || name);
+            }
+        });
+        Object.entries((this.novelData.synopsisData || this.novelData.synopsis_data || {}).locked_character_names || {}).forEach(([name, value]) => {
+            if (this.isCharacterSourceRich(value || {})) {
+                addName(name);
+            }
+        });
+
+        return protectedNames;
+    }
+
+    isCharacterNameReferencedInCleanupSnapshot(name, snapshot) {
+        const cleanName = this.resolveKnownCharacterName(this.normalizeCharacterReferenceLabel(name) || name);
+        if (!cleanName) {
+            return false;
+        }
+        if (snapshot?.referencedNames?.has(cleanName)) {
+            return true;
+        }
+        return (snapshot?.projectTexts || []).some((text) => String(text || "").includes(cleanName));
+    }
+
+    cleanupOrphanedCharacterArtifacts(options = {}) {
+        const synopsisData = this.novelData.synopsisData || this.novelData.synopsis_data || {};
+        const referenceSnapshot = options.referenceSnapshot || this.buildCharacterCleanupReferenceSnapshot({
+            excludedChapterIds: options.excludedChapterIds
+        });
+        const protectedNames = options.protectedNames || this.buildProtectedCharacterNameSet();
+        const candidateSet = new Set();
+        const explicitCandidates = options.candidateNames instanceof Set
+            ? Array.from(options.candidateNames)
+            : Array.isArray(options.candidateNames)
+                ? options.candidateNames
+                : [];
+        const aliasOwners = new Map();
+        referenceSnapshot.registry?.forEach((entry, name) => {
+            Array.from(entry?.aliases || []).forEach((alias) => {
+                const normalizedAlias = this.normalizeCharacterReferenceLabel(alias);
+                if (!normalizedAlias) {
+                    return;
+                }
+                if (!aliasOwners.has(normalizedAlias)) {
+                    aliasOwners.set(normalizedAlias, new Set());
+                }
+                aliasOwners.get(normalizedAlias).add(name);
+            });
+        });
+        const uniqueAliasMap = new Map(
+            Array.from(aliasOwners.entries())
+                .filter(([, owners]) => owners.size === 1)
+                .map(([alias, owners]) => [alias, Array.from(owners)[0]])
+        );
+        const canonicalizeName = (value) => {
+            const normalized = this.normalizeExtraCharacterNameCandidate(value)
+                || this.normalizeCharacterReferenceLabel(value)
+                || String(value || "").trim();
+            if (!normalized) {
+                return "";
+            }
+            if (uniqueAliasMap.has(normalized)) {
+                return uniqueAliasMap.get(normalized);
+            }
+            return String(this.resolveKnownCharacterName(normalized || value) || normalized).trim();
+        };
+        const addCandidate = (value) => {
+            const canonical = canonicalizeName(value);
+            if (canonical) {
+                candidateSet.add(canonical);
+            }
+        };
+        const filterCharacterMap = (value) => Object.fromEntries(
+            Object.entries(value || {}).filter(([name]) => !removedNames.has(canonicalizeName(name)))
+        );
+        const filterRelationshipMap = (value) => Object.fromEntries(
+            Object.entries(value || {}).filter(([key]) => {
+                const parts = String(key || "").split("|").map((item) => canonicalizeName(item)).filter(Boolean);
+                return !parts.some((name) => removedNames.has(name));
+            })
+        );
+
+        if (explicitCandidates.length) {
+            explicitCandidates.forEach(addCandidate);
+        } else {
+            (this.novelData.outline?.characters || []).forEach((character) => addCandidate(character?.name || character?.["角色名"] || ""));
+            Object.entries(this.novelData.supporting_characters || {}).forEach(([name, value]) => {
+                addCandidate(name);
+                addCandidate(value?.name || value?.["角色名"] || "");
+            });
+            Object.keys(synopsisData.locked_character_names || {}).forEach(addCandidate);
+            Object.values(synopsisData.vague_to_name_mapping || {}).forEach(addCandidate);
+            Object.keys(this.novelData.outline?.story_state?.characters || {}).forEach(addCandidate);
+            Object.keys(this.novelData.dynamic_tracker?.character_states || {}).forEach(addCandidate);
+            Object.keys(this.novelData.dynamic_tracker?.appearances || {}).forEach(addCandidate);
+            Object.keys(this.novelData.character_checker?.character_states || {}).forEach(addCandidate);
+            Object.keys(this.novelData.character_appearance_tracker?.appearances || {}).forEach(addCandidate);
+            Object.keys(this.novelData.world_tracker?.character_positions || {}).forEach(addCandidate);
+            Object.keys(this.novelData.world_tracker?.offscreen_status || {}).forEach(addCandidate);
+            Object.keys(this.novelData.genre_progress_tracker?.rank_progress || {}).forEach(addCandidate);
+            Object.keys(this.novelData.genre_progress_tracker?.status_progress || {}).forEach(addCandidate);
+            Object.keys(this.novelData.genre_progress_tracker?.pregnancy_progress || {}).forEach(addCandidate);
+            Object.keys(this.novelData.character_appearance_tracker?.relationships || {}).forEach((key) => {
+                String(key || "").split("|").forEach(addCandidate);
+            });
+            Object.entries(this.novelData.extra_character_records || {}).forEach(([, record]) => {
+                (Array.isArray(record?.characters) ? record.characters : []).forEach(addCandidate);
+            });
+        }
+
+        const removedNames = new Set();
+        candidateSet.forEach((name) => {
+            if (protectedNames.has(name)) {
+                return;
+            }
+            if (this.isCharacterNameReferencedInCleanupSnapshot(name, referenceSnapshot)) {
+                return;
+            }
+            removedNames.add(name);
+        });
+
+        if (!removedNames.size) {
+            return {
+                changed: false,
+                removedCount: 0,
+                removedNames: []
+            };
+        }
+
+        const originalOutlineCount = (this.novelData.outline?.characters || []).length;
+        this.novelData.outline.characters = (this.novelData.outline?.characters || []).filter((character) => {
+            const name = canonicalizeName(character?.name || character?.["角色名"] || "");
+            return !removedNames.has(name);
+        });
+
+        const nextSupportingCharacters = {};
+        Object.entries(this.novelData.supporting_characters || {}).forEach(([name, value]) => {
+            const canonical = canonicalizeName(value?.name || value?.["角色名"] || name);
+            if (!removedNames.has(canonical)) {
+                nextSupportingCharacters[name] = value;
+            }
+        });
+        this.novelData.supporting_characters = nextSupportingCharacters;
+
+        synopsisData.locked_character_names = Object.fromEntries(
+            Object.entries(synopsisData.locked_character_names || {}).filter(([name]) => !removedNames.has(canonicalizeName(name)))
+        );
+        synopsisData.vague_to_name_mapping = Object.fromEntries(
+            Object.entries(synopsisData.vague_to_name_mapping || {}).filter(([, realName]) => !removedNames.has(canonicalizeName(realName)))
+        );
+
+        this.novelData.outline.story_state = this.novelData.outline.story_state || {};
+        this.novelData.outline.story_state.characters = filterCharacterMap(this.novelData.outline.story_state.characters || {});
+
+        if (this.novelData.dynamic_tracker && typeof this.novelData.dynamic_tracker === "object") {
+            this.novelData.dynamic_tracker.character_states = filterCharacterMap(this.novelData.dynamic_tracker.character_states || {});
+            this.novelData.dynamic_tracker.appearances = filterCharacterMap(this.novelData.dynamic_tracker.appearances || {});
+            this.novelData.dynamic_tracker.relationships = filterRelationshipMap(this.novelData.dynamic_tracker.relationships || {});
+        }
+        if (this.novelData.character_checker && typeof this.novelData.character_checker === "object") {
+            this.novelData.character_checker.character_states = filterCharacterMap(this.novelData.character_checker.character_states || {});
+        }
+        if (this.novelData.character_appearance_tracker && typeof this.novelData.character_appearance_tracker === "object") {
+            this.novelData.character_appearance_tracker.appearances = filterCharacterMap(this.novelData.character_appearance_tracker.appearances || {});
+            this.novelData.character_appearance_tracker.relationships = filterRelationshipMap(this.novelData.character_appearance_tracker.relationships || {});
+        }
+        if (this.novelData.world_tracker && typeof this.novelData.world_tracker === "object") {
+            this.novelData.world_tracker.character_positions = filterCharacterMap(this.novelData.world_tracker.character_positions || {});
+            this.novelData.world_tracker.offscreen_status = filterCharacterMap(this.novelData.world_tracker.offscreen_status || {});
+        }
+        if (this.novelData.genre_progress_tracker && typeof this.novelData.genre_progress_tracker === "object") {
+            this.novelData.genre_progress_tracker.rank_progress = filterCharacterMap(this.novelData.genre_progress_tracker.rank_progress || {});
+            this.novelData.genre_progress_tracker.status_progress = filterCharacterMap(this.novelData.genre_progress_tracker.status_progress || {});
+            this.novelData.genre_progress_tracker.pregnancy_progress = filterCharacterMap(this.novelData.genre_progress_tracker.pregnancy_progress || {});
+        }
+
+        Object.entries(this.novelData.extra_character_records || {}).forEach(([key, record]) => {
+            const nextCharacters = (Array.isArray(record?.characters) ? record.characters : [])
+                .filter((name) => !removedNames.has(canonicalizeName(name)));
+            this.novelData.extra_character_records[key] = {
+                ...(record && typeof record === "object" ? record : {}),
+                characters: nextCharacters
+            };
+        });
+        this.novelData.used_extras_characters = (this.novelData.used_extras_characters || [])
+            .filter((name) => !removedNames.has(canonicalizeName(name)));
+
+        this.novelData.synopsisData = synopsisData;
+        this.novelData.synopsis_data = JSON.parse(JSON.stringify(synopsisData));
+        this.rebuildUsedExtraCharacters();
+        this.ensureWorldStateManager();
+        this.syncWorldStateManager();
+
+        return {
+            changed: originalOutlineCount !== this.novelData.outline.characters.length
+                || removedNames.size > 0,
+            removedCount: removedNames.size,
+            removedNames: Array.from(removedNames)
+        };
     }
 
     sanitizeHistoricalExtraCharacterRecords(records = {}) {
