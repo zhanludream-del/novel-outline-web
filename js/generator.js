@@ -3081,17 +3081,89 @@ class NovelGenerator {
             return [];
         }
         const aliases = new Set([cleanName]);
-        if (cleanName.length === 2) {
+        if (cleanName.length === 3) {
             aliases.add(cleanName.slice(1));
-        } else if (cleanName.length === 3) {
-            aliases.add(cleanName.slice(1));
-            aliases.add(cleanName.charAt(1));
-            aliases.add(cleanName.charAt(2));
         } else if (cleanName.length === 4) {
             aliases.add(cleanName.slice(2));
-            aliases.add(cleanName.slice(1));
         }
         return Array.from(aliases).filter(Boolean).sort((left, right) => right.length - left.length);
+    }
+
+    isTrustedSynopsisConcreteName(project, name) {
+        const cleanName = String(name || "").trim();
+        if (!/^[\u4e00-\u9fa5]{2,4}$/.test(cleanName)) {
+            return false;
+        }
+        const knownConcreteNames = new Set(
+            [
+                ...Object.values(this.getSynopsisData(project)?.main_characters || {}),
+                ...(project?.outline?.characters || []).flatMap((character) => [
+                    character?.name || "",
+                    ...Utils.ensureArrayFromText(character?.aliases || character?.["别名"] || "")
+                ])
+            ]
+                .map((item) => String(item || "").trim())
+                .filter(Boolean)
+        );
+        if (knownConcreteNames.has(cleanName)) {
+            return true;
+        }
+        if (this.containsObfuscatedText(cleanName)) {
+            return false;
+        }
+        if (this.isGenericCharacterCandidateName(cleanName) || this.isLikelyActionLikeCharacterCandidate(cleanName)) {
+            return false;
+        }
+        if (Array.from(knownConcreteNames).some((knownName) =>
+            knownName
+            && knownName.length >= 2
+            && cleanName !== knownName
+            && (cleanName.startsWith(knownName) || cleanName.endsWith(knownName))
+        )) {
+            return false;
+        }
+        if (/(国师|质子|太医|尚书|侍郎|首领|总管|宫女|刺客|党羽|系统|皇孙|男宝|女宝|太女|王爷|宗令|掌门|师尊|长老)/.test(cleanName)) {
+            return false;
+        }
+        if (cleanName.length >= 3 && /[多只察都差来稳武爹危知地们者后前内外上下时]/.test(cleanName.slice(-1))) {
+            return false;
+        }
+        const compoundSurnames = [
+            "欧阳", "上官", "司马", "慕容", "诸葛", "南宫", "夏侯", "令狐", "皇甫", "轩辕",
+            "宇文", "长孙", "司徒", "司空", "西门", "东方", "独孤", "北冥", "公孙", "尉迟",
+            "澹台", "拓跋", "百里", "钟离", "东郭", "闻人"
+        ];
+        const hasCompoundSurname = compoundSurnames.some((surname) => cleanName.startsWith(surname));
+        if (cleanName.length === 4 && !hasCompoundSurname && !/^[阿小老][\u4e00-\u9fa5]{3}$/.test(cleanName)) {
+            return false;
+        }
+        if (this.isLikelyChinesePersonName(cleanName)) {
+            return true;
+        }
+        if (/^[阿小老][\u4e00-\u9fa5]{1,2}$/.test(cleanName)) {
+            return true;
+        }
+        return false;
+    }
+
+    sanitizeSynopsisNameAliases(project, name, aliases = []) {
+        const cleanName = String(name || "").trim();
+        const seen = new Set();
+        return [cleanName, ...Utils.ensureArrayFromText(aliases)]
+            .map((alias) => String(alias || "").trim())
+            .filter(Boolean)
+            .filter((alias) => alias === cleanName || alias.length >= 2)
+            .filter((alias) => !this.containsObfuscatedText(alias))
+            .filter((alias) => alias === cleanName || !this.isLikelyActionLikeCharacterCandidate(alias))
+            .filter((alias) => alias === cleanName || !this.isGenericCharacterCandidateName(alias))
+            .filter((alias) => {
+                if (seen.has(alias)) {
+                    return false;
+                }
+                seen.add(alias);
+                return true;
+            })
+            .sort((left, right) => right.length - left.length);
     }
 
     restoreSynopsisMainCharacters(project) {
@@ -3102,6 +3174,70 @@ class NovelGenerator {
         synopsisData.locked_character_names = synopsisData.locked_character_names && typeof synopsisData.locked_character_names === "object"
             ? synopsisData.locked_character_names
             : {};
+        synopsisData.vague_to_name_mapping = synopsisData.vague_to_name_mapping && typeof synopsisData.vague_to_name_mapping === "object"
+            ? synopsisData.vague_to_name_mapping
+            : {};
+
+        const cleanedLockedNames = {};
+        Object.entries(synopsisData.locked_character_names).forEach(([name, info]) => {
+            const cleanName = String(name || "").trim();
+            if (!this.isTrustedSynopsisConcreteName(project, cleanName)) {
+                return;
+            }
+            cleanedLockedNames[cleanName] = {
+                ...(info && typeof info === "object" ? info : {}),
+                aliases: this.sanitizeSynopsisNameAliases(
+                    project,
+                    cleanName,
+                    [
+                        ...this.buildSynopsisNameAliases(cleanName),
+                        ...Utils.ensureArrayFromText(info?.aliases || [])
+                    ]
+                )
+            };
+        });
+
+        Object.entries(synopsisData.main_characters).forEach(([role, name]) => {
+            const cleanName = String(name || "").trim();
+            if (!this.isTrustedSynopsisConcreteName(project, cleanName)) {
+                return;
+            }
+            const existing = cleanedLockedNames[cleanName] || {};
+            cleanedLockedNames[cleanName] = {
+                ...existing,
+                type: "主角",
+                identity: role,
+                locked_volume: existing.locked_volume || 1,
+                aliases: this.sanitizeSynopsisNameAliases(
+                    project,
+                    cleanName,
+                    [
+                        ...this.buildSynopsisNameAliases(cleanName),
+                        ...Utils.ensureArrayFromText(existing.aliases || [])
+                    ]
+                )
+            };
+        });
+
+        synopsisData.locked_character_names = cleanedLockedNames;
+
+        const aliasToRole = this.buildSynopsisAliasToRoleMap();
+        synopsisData.vague_to_name_mapping = Object.fromEntries(
+            Object.entries(synopsisData.vague_to_name_mapping)
+                .map(([alias, realName]) => [String(alias || "").trim(), String(realName || "").trim()])
+                .filter(([alias, realName]) => {
+                    if (!alias || !realName || this.containsObfuscatedText(alias)) {
+                        return false;
+                    }
+                    if (!this.isTrustedSynopsisConcreteName(project, realName)) {
+                        return false;
+                    }
+                    if (aliasToRole[alias]) {
+                        return true;
+                    }
+                    return alias.length >= 2 && !this.isLikelyActionLikeCharacterCandidate(alias);
+                })
+        );
 
         Object.entries(synopsisData.locked_character_names).forEach(([name, info]) => {
             if (info?.type === "主角" && info?.identity && !synopsisData.main_characters[info.identity]) {
@@ -3473,7 +3609,7 @@ class NovelGenerator {
         const addCandidates = (matches = []) => {
             matches.forEach((name) => {
                 const cleanName = String(name || "").trim();
-                if (this.isLikelySynopsisPersonName(cleanName)) {
+                if (this.isLikelySynopsisPersonName(cleanName) && this.isLikelyChinesePersonName(cleanName)) {
                     candidates.add(cleanName);
                 }
             });
@@ -5133,6 +5269,23 @@ class NovelGenerator {
         return false;
     }
 
+    isLikelyOutlineRoleLabel(name) {
+        const cleanName = String(name || "").trim();
+        if (!/^[\u4e00-\u9fa5]{2,8}$/.test(cleanName)) {
+            return false;
+        }
+        if (this.isLikelyActionLikeCharacterCandidate(cleanName)) {
+            return false;
+        }
+        if (/系统|空间|面板|任务|奖励|提示|雷达|通知/.test(cleanName)) {
+            return false;
+        }
+        if (/^(男宝|女宝)$/.test(cleanName)) {
+            return true;
+        }
+        return /(王爷|王妃|国师|质子|太医令|太医|侍郎|尚书|统领|首领|总管|宗令|宫女|嬷嬷|刺客|党羽|护卫|暗卫|侍卫|侍从|军师|知府|县令|公主|郡主|世子|皇子|皇女|皇孙|太子|太女|太后|皇后|掌柜|伙计|先生|姑娘|公子|王|令|官|使|卫|将|帅|师|医)$/.test(cleanName);
+    }
+
     isPlausibleOutlineCharacterLabel(name) {
         const cleanName = this.normalizeOutlineCharacterLabel(name);
         if (!cleanName || cleanName.length < 2 || cleanName.length > 12) {
@@ -5145,6 +5298,10 @@ class NovelGenerator {
 
         if (this.isLikelyActionLikeCharacterCandidate(cleanName)) {
             return false;
+        }
+
+        if (this.isLikelyOutlineRoleLabel(cleanName)) {
+            return true;
         }
 
         if (this.isLikelyChinesePersonName(cleanName)) {
@@ -5271,15 +5428,25 @@ class NovelGenerator {
             aliasMap[cleanAlias] = cleanName;
         };
 
-        const synopsisData = this.getSynopsisData(project) || {};
+        const synopsisData = this.restoreSynopsisMainCharacters(project) || {};
         Object.entries(synopsisData.vague_to_name_mapping || {}).forEach(([alias, realName]) => addAlias(alias, realName));
         Object.entries(synopsisData.main_characters || {}).forEach(([role, realName]) => {
             addAlias(role, realName);
             (this.getSynopsisRoleAliases()[role] || []).forEach((alias) => addAlias(alias, realName));
         });
         Object.entries(synopsisData.locked_character_names || {}).forEach(([name, info]) => {
+            if (!this.isTrustedSynopsisConcreteName(project, name)) {
+                return;
+            }
             addAlias(name, name);
-            Utils.ensureArrayFromText(info?.aliases || []).forEach((alias) => addAlias(alias, name));
+            this.sanitizeSynopsisNameAliases(
+                project,
+                name,
+                [
+                    ...this.buildSynopsisNameAliases(name),
+                    ...Utils.ensureArrayFromText(info?.aliases || [])
+                ]
+            ).forEach((alias) => addAlias(alias, name));
         });
         (project.outline?.characters || []).forEach((character) => {
             const primaryName = String(character.name || "").trim();
@@ -5288,6 +5455,7 @@ class NovelGenerator {
             }
             addAlias(primaryName, primaryName);
             Utils.ensureArrayFromText(character.aliases || character["别名"] || "")
+                .filter((alias) => String(alias || "").trim().length >= 2)
                 .forEach((alias) => addAlias(alias, primaryName));
         });
 
