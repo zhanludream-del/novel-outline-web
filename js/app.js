@@ -196,6 +196,7 @@ class NovelOutlineWebApp {
             btnApplyPromptTemplate: document.getElementById("btnApplyPromptTemplate"),
             btnDeletePromptTemplate: document.getElementById("btnDeletePromptTemplate"),
             btnRefreshSystemEditors: document.getElementById("btnRefreshSystemEditors"),
+            btnRebuildHistoricalState: document.getElementById("btnRebuildHistoricalState"),
             btnSaveSystemEditors: document.getElementById("btnSaveSystemEditors"),
             btnToggleLog: document.getElementById("btnToggleLog"),
             btnHideLog: document.getElementById("btnHideLog"),
@@ -676,6 +677,9 @@ class NovelOutlineWebApp {
         this.elements.btnApplyPromptTemplate.addEventListener("click", () => this.applySelectedPromptTemplate());
         this.elements.btnDeletePromptTemplate.addEventListener("click", () => this.deletePromptTemplate());
         this.elements.btnRefreshSystemEditors.addEventListener("click", () => this.renderSystemEditors());
+        if (this.elements.btnRebuildHistoricalState) {
+            this.elements.btnRebuildHistoricalState.addEventListener("click", () => this.safeAsync(() => this.rebuildHistoricalStateFromChapters()));
+        }
         this.elements.btnSaveSystemEditors.addEventListener("click", () => this.saveSystemEditors());
 
         this.elements.btnShowLog.addEventListener("click", () => this.toggleLogDrawerVisibility());
@@ -6067,6 +6071,254 @@ ${(detailedOutline || concept || "未填写").slice(0, 2200)}`;
         });
 
         this.rebuildUsedExtraCharacters();
+    }
+
+    getStoredChapterContent(chapter = {}) {
+        return String(chapter.content || (chapter.uuid ? this.novelData.chapters?.[chapter.uuid] : "") || "").trim();
+    }
+
+    getOrderedChapterRecords(includeEmpty = false) {
+        return (this.novelData.outline.volumes || [])
+            .flatMap((volume, volumeIndex) => (volume.chapters || []).map((chapter) => {
+                const volumeNumber = Number(volume.volume_number || volumeIndex + 1);
+                const rawContent = this.getStoredChapterContent(chapter);
+                const cleanedContent = this.stripGeneratedMarkers(rawContent).trim();
+                return {
+                    volume,
+                    volumeNumber,
+                    chapter,
+                    rawContent,
+                    cleanedContent
+                };
+            }))
+            .filter((item) => includeEmpty || item.cleanedContent)
+            .sort((left, right) => {
+                if (left.volumeNumber !== right.volumeNumber) {
+                    return left.volumeNumber - right.volumeNumber;
+                }
+                return Number(left.chapter?.number || 0) - Number(right.chapter?.number || 0);
+            });
+    }
+
+    sanitizeHistoricalExtraCharacterRecords(records = {}) {
+        const chapterContentMap = new Map(
+            this.getOrderedChapterRecords(true).map((item) => [
+                Number(item.chapter?.number || 0),
+                item.cleanedContent || ""
+            ])
+        );
+        const sanitized = {};
+
+        Object.entries(records || {}).forEach(([key, record]) => {
+            const chapterNumber = this.extractSnapshotChapterNumber(key);
+            const cleanedContent = String(chapterContentMap.get(chapterNumber) || "");
+            const seen = new Set();
+            const nextCharacters = (Array.isArray(record?.characters) ? record.characters : [])
+                .map((name) => this.resolveKnownCharacterName(this.normalizeExtraCharacterNameCandidate(name)))
+                .filter((name) => {
+                    if (!name || seen.has(name) || this.isExtraCharacterNameConflict(name)) {
+                        return false;
+                    }
+                    if (cleanedContent && !cleanedContent.includes(name)) {
+                        return false;
+                    }
+                    seen.add(name);
+                    return true;
+                });
+
+            if (!nextCharacters.length) {
+                return;
+            }
+
+            sanitized[key] = {
+                ...(record && typeof record === "object" ? record : {}),
+                chapter: chapterNumber || Number(record?.chapter || 0) || 0,
+                characters: nextCharacters
+            };
+        });
+
+        return sanitized;
+    }
+
+    buildHistoricalStateFallbackFromSnapshot(snapshot = {}) {
+        const keyMemories = Array.isArray(snapshot?.["关键信息"]) ? snapshot["关键信息"] : [];
+        return {
+            timeline: this.pickWorldStateText(snapshot.timeline, snapshot["时间"]),
+            current_location: this.pickWorldStateText(snapshot.current_location, snapshot["位置"]),
+            important_items: this.pickWorldStateText(snapshot.important_items, snapshot["重要物品"]),
+            pending_plots: this.pickWorldStateText(snapshot.pending_plots, snapshot["待推进事项"]),
+            key_event: this.pickWorldStateText(snapshot.key_event, keyMemories[0]),
+            characters: {}
+        };
+    }
+
+    hasMeaningfulHistoricalStateFallback(stateData = {}) {
+        return Boolean(
+            stateData.timeline
+            || stateData.current_location
+            || stateData.important_items
+            || stateData.pending_plots
+            || stateData.key_event
+        );
+    }
+
+    resetHistoricalStateRebuildTargets(extraCharacterRecords = {}, usedTempSubplots = [], manualWorldState = {}) {
+        this.novelData.outline.story_state = this.deepClone(DEFAULT_NOVEL_DATA.outline.story_state);
+        this.novelData.story_state = this.deepClone(DEFAULT_NOVEL_DATA.story_state);
+        this.novelData.dynamic_tracker = this.deepClone(DEFAULT_NOVEL_DATA.dynamic_tracker);
+        this.novelData.timeline_tracker = this.deepClone(DEFAULT_NOVEL_DATA.timeline_tracker);
+        this.novelData.chapter_snapshot = this.deepClone(DEFAULT_NOVEL_DATA.chapter_snapshot);
+        this.novelData.character_checker = this.deepClone(DEFAULT_NOVEL_DATA.character_checker);
+        this.novelData.character_appearance_tracker = this.deepClone(DEFAULT_NOVEL_DATA.character_appearance_tracker);
+        this.novelData.world_tracker = this.deepClone(DEFAULT_NOVEL_DATA.world_tracker);
+        this.novelData.genre_progress_tracker = this.deepClone(DEFAULT_NOVEL_DATA.genre_progress_tracker);
+        this.novelData.world_state_manager = this.deepClone(DEFAULT_NOVEL_DATA.world_state_manager);
+        this.novelData.chapter_rhythms = {};
+        this.novelData.chapter_emotions = {};
+        this.novelData.outline.state_snapshots = {};
+        this.novelData.extra_character_records = this.deepClone(extraCharacterRecords || {});
+        this.novelData.used_temp_subplots = Array.isArray(usedTempSubplots) ? this.deepClone(usedTempSubplots) : [];
+        this.novelData.used_extras_characters = [];
+        this.rebuildUsedExtraCharacters();
+        const manager = this.ensureWorldStateManager();
+        manager.manual_state = this.deepClone(manualWorldState || DEFAULT_NOVEL_DATA.world_state_manager.manual_state || {});
+        this.syncWorldStateManager();
+    }
+
+    async rebuildHistoricalStateFromChapters() {
+        const chapterRecords = this.getOrderedChapterRecords(false);
+        if (!chapterRecords.length) {
+            Utils.showMessage("当前还没有可用于重建的章节正文。", "info");
+            return;
+        }
+
+        const ok = window.confirm(
+            `这会按现有正文逐章重提取状态，共 ${chapterRecords.length} 章。\n\n`
+            + "会覆盖：故事状态、动态追踪、时间线、章末快照、人物状态/出场、世界状态总表、题材进度、状态快照。\n"
+            + "不会改动：正文、大纲、人物设定、伏笔、秘密矩阵、手动世界状态。\n\n"
+            + "过程中会调用 AI 补提取状态，可能耗时并消耗接口额度。确定继续吗？"
+        );
+        if (!ok) {
+            return;
+        }
+
+        const manualWorldState = this.deepClone(this.ensureWorldStateManager().manual_state || DEFAULT_NOVEL_DATA.world_state_manager.manual_state);
+        const extraRecordsBackup = this.deepClone(this.novelData.extra_character_records || {});
+        const usedTempSubplotsBackup = this.deepClone(this.novelData.used_temp_subplots || []);
+        const chapterSnapshotBackup = this.deepClone(this.novelData.chapter_snapshot?.snapshots || {});
+        const analysisReportBackup = this.deepClone(this.novelData.chapter_analysis_reports || {});
+        const qcReportBackup = this.deepClone(this.novelData.chapter_qc_reports || {});
+        const nameLockerBackup = this.deepClone(this.novelData.name_locker || {});
+        const foreshadowManagerBackup = this.deepClone(this.novelData.foreshadow_manager || {});
+        const foreshadowTrackerBackup = this.deepClone(this.novelData.foreshadow_tracker || {});
+        const secretMatrixBackup = this.deepClone(this.novelData.secret_matrix || {});
+        const personalityEnforcerBackup = this.deepClone(this.novelData.personality_enforcer || {});
+        const dialogueTrackerBackup = this.deepClone(this.novelData.dialogue_tracker || {});
+        const sanitizedExtraRecords = this.sanitizeHistoricalExtraCharacterRecords(extraRecordsBackup);
+
+        await this.runWithLoading("正在按正文重建历史状态...", async () => {
+            Utils.updateLoading("正在清理旧状态并准备重建...", {
+                progress: 10,
+                detail: `共 ${chapterRecords.length} 章需要处理`,
+                appendLog: true
+            });
+
+            this.resetHistoricalStateRebuildTargets(
+                sanitizedExtraRecords,
+                usedTempSubplotsBackup,
+                manualWorldState
+            );
+            this.novelData.chapter_analysis_reports = analysisReportBackup;
+            this.novelData.chapter_qc_reports = qcReportBackup;
+            this.novelData.name_locker = nameLockerBackup;
+            this.novelData.foreshadow_manager = foreshadowManagerBackup;
+            this.novelData.foreshadow_tracker = foreshadowTrackerBackup;
+            this.novelData.secret_matrix = secretMatrixBackup;
+            this.novelData.personality_enforcer = personalityEnforcerBackup;
+            this.novelData.dialogue_tracker = dialogueTrackerBackup;
+
+            let rebuiltCount = 0;
+            let fallbackCount = 0;
+            let skippedCount = 0;
+            const failedChapters = [];
+
+            for (let index = 0; index < chapterRecords.length; index += 1) {
+                const { volume, chapter, cleanedContent } = chapterRecords[index];
+                const chapterNumber = Number(chapter?.number || 0);
+                const progress = 12 + Math.round(((index + 1) / Math.max(1, chapterRecords.length)) * 82);
+                const chapterLabel = `第${chapterNumber || "?"}章`;
+
+                Utils.updateLoading(`正在重建 ${chapterLabel}`, {
+                    progress,
+                    detail: `第 ${index + 1}/${chapterRecords.length} 章`,
+                    appendLog: true
+                });
+
+                if (!cleanedContent) {
+                    skippedCount += 1;
+                    Utils.log(`${chapterLabel} 没有正文，已跳过历史状态重建。`, "info");
+                    continue;
+                }
+
+                let stateData = null;
+                let effectiveStateData = {};
+                try {
+                    const recovered = await this.recoverMissingChapterStateData(volume, chapter, cleanedContent, "");
+                    stateData = recovered.stateData;
+                } catch (error) {
+                    Utils.log(`${chapterLabel} 历史状态补提取失败：${error.message}`, "error");
+                }
+
+                if (stateData) {
+                    this.applyStateUpdate(chapterNumber, chapter.title || `第${chapterNumber}章`, stateData, chapter, {
+                        cleanedContent
+                    });
+                    effectiveStateData = stateData;
+                    rebuiltCount += 1;
+                } else {
+                    const fallbackState = this.buildHistoricalStateFallbackFromSnapshot(chapterSnapshotBackup[`chapter_${chapterNumber}`] || {});
+                    if (this.hasMeaningfulHistoricalStateFallback(fallbackState)) {
+                        this.applyStateUpdate(chapterNumber, chapter.title || `第${chapterNumber}章`, fallbackState, chapter, {
+                            cleanedContent
+                        });
+                        effectiveStateData = fallbackState;
+                        fallbackCount += 1;
+                        Utils.log(`${chapterLabel} 状态补提取失败，已回退为旧快照的基础字段。`, "warning");
+                    } else {
+                        failedChapters.push(chapterNumber);
+                        Utils.log(`${chapterLabel} 没有可用的状态回退数据，本章只保留正文和现有龙套记录。`, "warning");
+                    }
+                }
+
+                const scanStats = this.scanChapterStateSignals(chapterNumber, chapter, cleanedContent, effectiveStateData);
+                if (scanStats.appearances || scanStats.items) {
+                    Utils.log(`${chapterLabel} 正文补扫：人物/形象 ${scanStats.appearances} 条，物品 ${scanStats.items} 条。`, "info");
+                }
+                this.recordChapterAnalysisTags(chapterNumber, chapter, cleanedContent, effectiveStateData);
+
+                if ((index + 1) % 5 === 0) {
+                    this.persist(true);
+                }
+            }
+
+            this.syncWorldStateManager();
+            this.renderAll();
+            this.persist(true);
+
+            const summary = `历史状态重建完成：成功补提取 ${rebuiltCount} 章，快照回退 ${fallbackCount} 章，跳过 ${skippedCount} 章。`;
+            Utils.updateLoading(summary, {
+                progress: 100,
+                detail: failedChapters.length
+                    ? `仍有 ${failedChapters.length} 章未拿到状态数据：第 ${failedChapters.join("、")} 章`
+                    : "所有可处理章节都已完成重建",
+                appendLog: true
+            });
+            Utils.showMessage(summary, failedChapters.length ? "info" : "success");
+            Utils.log(summary, failedChapters.length ? "warning" : "success");
+            if (failedChapters.length) {
+                Utils.log(`以下章节仍未拿到状态数据：第 ${failedChapters.join("、")} 章。`, "warning");
+            }
+        });
     }
 
     applyStateUpdate(chapterNumber, chapterTitle, stateData, chapter = null, options = {}) {
