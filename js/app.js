@@ -1904,10 +1904,14 @@ ${(detailedOutline || concept || "未填写").slice(0, 2200)}`;
     }
 
     buildWorldStateCharacterRoster(chapterMeta = {}) {
+        const rosterEvidence = this.buildWorldStateCharacterEvidence(
+            Number(chapterMeta?.chapterNumber || 0),
+            chapterMeta?.chapter || null
+        );
         const roster = {};
         const upsertCharacter = (rawName, source = {}, sourceLabel = "") => {
             const fallbackName = source.name || source.character || source.character_name || source["角色名"] || source["角色"] || source["姓名"] || source["名字"] || source["人物"] || "";
-            const name = this.resolveKnownCharacterName(rawName || fallbackName);
+            const name = this.resolveWorldStateCharacterByEvidence(rawName || fallbackName, rosterEvidence, "roster");
             if (!name) {
                 return;
             }
@@ -2017,6 +2021,17 @@ ${(detailedOutline || concept || "未填写").slice(0, 2200)}`;
 
         Object.values((this.novelData.synopsisData || this.novelData.synopsis_data || {}).main_characters || {}).forEach((name) => {
             upsertCharacter(name, {}, "synopsis_main");
+        });
+        Object.entries(this.novelData.extra_character_records || {}).forEach(([key, value]) => {
+            const recordChapter = this.extractSnapshotChapterNumber(key);
+            if (Number(chapterMeta?.chapterNumber || 0) && recordChapter > Number(chapterMeta.chapterNumber || 0)) {
+                return;
+            }
+            (Array.isArray(value?.characters) ? value.characters : []).forEach((name) => {
+                upsertCharacter(name, {
+                    chapter: recordChapter || 0
+                }, "extra_record");
+            });
         });
 
         Object.entries(this.novelData.dynamic_tracker?.character_states || {}).forEach(([name, value]) => {
@@ -5122,7 +5137,10 @@ ${(detailedOutline || concept || "未填写").slice(0, 2200)}`;
             }
         }
         if (stateData) {
-            this.applyStateUpdate(chapterNumber, chapter.title || `第${chapterNumber}章`, stateData, chapter);
+            this.applyStateUpdate(chapterNumber, chapter.title || `第${chapterNumber}章`, stateData, chapter, {
+                cleanedContent,
+                extraCharactersBlock
+            });
             logs.push("已回写状态 JSON 到故事状态/动态追踪/时间线/章末快照。");
         }
 
@@ -6051,26 +6069,33 @@ ${(detailedOutline || concept || "未填写").slice(0, 2200)}`;
         this.rebuildUsedExtraCharacters();
     }
 
-    applyStateUpdate(chapterNumber, chapterTitle, stateData, chapter = null) {
+    applyStateUpdate(chapterNumber, chapterTitle, stateData, chapter = null, options = {}) {
+        const evidence = this.buildWorldStateCharacterEvidence(
+            chapterNumber,
+            chapter,
+            options.cleanedContent || "",
+            options.extraCharactersBlock || ""
+        );
+        const sanitizedStateData = this.sanitizeStateDataWithCharacterEvidence(stateData, evidence);
         const outlineState = this.novelData.outline.story_state || {};
-        outlineState.timeline = stateData.timeline || outlineState.timeline || "";
-        outlineState.current_location = stateData.current_location || outlineState.current_location || "";
-        outlineState.important_items = stateData.important_items || outlineState.important_items || "";
-        outlineState.pending_plots = stateData.pending_plots || outlineState.pending_plots || "";
+        outlineState.timeline = sanitizedStateData.timeline || outlineState.timeline || "";
+        outlineState.current_location = sanitizedStateData.current_location || outlineState.current_location || "";
+        outlineState.important_items = sanitizedStateData.important_items || outlineState.important_items || "";
+        outlineState.pending_plots = sanitizedStateData.pending_plots || outlineState.pending_plots || "";
         outlineState.characters = outlineState.characters || {};
 
-        Object.entries(stateData.characters || {}).forEach(([name, state]) => {
+        Object.entries(sanitizedStateData.characters || {}).forEach(([name, state]) => {
             outlineState.characters[name] = {
                 ...(outlineState.characters[name] || {}),
                 ...state
             };
         });
 
-        if (stateData.key_event) {
+        if (sanitizedStateData.key_event) {
             outlineState.key_memories = Array.isArray(outlineState.key_memories) ? outlineState.key_memories : [];
             outlineState.key_memories.push({
                 chapter: chapterNumber,
-                event: stateData.key_event
+                event: sanitizedStateData.key_event
             });
             outlineState.key_memories = outlineState.key_memories.slice(-30);
         }
@@ -6079,15 +6104,397 @@ ${(detailedOutline || concept || "未填写").slice(0, 2200)}`;
         this.novelData.story_state.current_location = outlineState.current_location || "";
         this.novelData.story_state.current_time = outlineState.timeline || "";
 
-        this.recordChapterSnapshot(chapterNumber, chapterTitle, stateData, chapter);
-        this.recordTimelineUpdate(chapterNumber, stateData);
-        this.recordDynamicStateUpdateRich(chapterNumber, stateData);
-        this.recordWorldTrackerUpdate(chapterNumber, stateData);
-        this.recordCharacterCheckerState(chapterNumber, stateData);
-        this.recordAppearanceStateUpdate(chapterNumber, stateData);
-        this.recordGenreProgressUpdate(chapterNumber, stateData);
-        this.recordPendingSubplots(chapterNumber, stateData);
+        this.recordChapterSnapshot(chapterNumber, chapterTitle, sanitizedStateData, chapter);
+        this.recordTimelineUpdate(chapterNumber, sanitizedStateData);
+        this.recordDynamicStateUpdateRich(chapterNumber, sanitizedStateData);
+        this.recordWorldTrackerUpdate(chapterNumber, sanitizedStateData);
+        this.recordCharacterCheckerState(chapterNumber, sanitizedStateData);
+        this.recordAppearanceStateUpdate(chapterNumber, sanitizedStateData);
+        this.recordGenreProgressUpdate(chapterNumber, sanitizedStateData);
+        this.recordPendingSubplots(chapterNumber, sanitizedStateData);
         this.recordFullStateSnapshot(chapterNumber, chapterTitle);
+    }
+
+    getWorldStateFormalCharacterRegistry() {
+        const registry = new Map();
+        const upsert = (rawName, source = {}) => {
+            const fallbackName = source?.name || source?.character || source?.character_name || source?.["角色名"] || source?.["角色"] || "";
+            const name = this.resolveKnownCharacterName(rawName || fallbackName);
+            if (!name) {
+                return;
+            }
+
+            const existing = registry.get(name) || {
+                name,
+                aliases: new Set([name]),
+                identityTokens: new Set()
+            };
+
+            Utils.ensureArrayFromText(source?.aliases || source?.["别名"] || "").forEach((alias) => {
+                const normalizedAlias = this.normalizeCharacterReferenceLabel(alias);
+                if (normalizedAlias) {
+                    existing.aliases.add(normalizedAlias);
+                }
+            });
+
+            this.extractWorldStateIdentityTokens(
+                this.pickWorldStateText(
+                    source?.identity,
+                    source?.role,
+                    source?.["身份"],
+                    source?.["角色身份"],
+                    source?.tags,
+                    source?.["标签"]
+                )
+            ).forEach((token) => existing.identityTokens.add(token));
+
+            registry.set(name, existing);
+        };
+
+        (this.novelData.outline?.characters || []).forEach((character) => {
+            upsert(character?.name || character?.["角色名"] || "", character || {});
+        });
+
+        Object.entries(this.novelData.supporting_characters || {}).forEach(([name, value]) => {
+            const source = value && typeof value === "object" ? value : { identity: String(value || "") };
+            upsert(name, source);
+        });
+
+        Object.values((this.novelData.synopsisData || this.novelData.synopsis_data || {}).main_characters || {}).forEach((name) => {
+            upsert(name, { name });
+        });
+
+        Object.entries((this.novelData.synopsisData || this.novelData.synopsis_data || {}).locked_character_names || {}).forEach(([name, value]) => {
+            const source = value && typeof value === "object" ? value : {};
+            upsert(name, {
+                ...source,
+                name,
+                aliases: source?.aliases || []
+            });
+        });
+
+        return registry;
+    }
+
+    extractWorldStateIdentityTokens(text) {
+        const tokens = new Set();
+        String(text || "")
+            .split(/[\r\n,\uFF0C\u3001\/|\uFF1B;]+/)
+            .map((item) => String(item || "").trim())
+            .filter((item) => this.isUsableWorldStateIdentityToken(item))
+            .forEach((item) => tokens.add(item));
+        return Array.from(tokens);
+    }
+
+    isUsableWorldStateIdentityToken(token) {
+        const text = String(token || "").trim();
+        if (!text || text.length < 3 || text.length > 24) {
+            return false;
+        }
+        if (!/[\u4e00-\u9fa5A-Za-z]/u.test(text)) {
+            return false;
+        }
+        return !/^(主角|男主|女主|反派|路人|众人|学徒工|工人|学生|老师|主任|科长|干部|家庭妇女|待业青年|师兄|师姐|师弟|师妹|父亲|母亲|哥哥|姐姐|妹妹|弟弟|老板|上司|同事|邻居|室友)$/u.test(text);
+    }
+
+    collectWorldStateExtraCharacterNames(chapterNumber = 0, block = "", cleanedContent = "", includeStored = true) {
+        const names = new Set();
+        const targetChapter = Number(chapterNumber || 0);
+        const maxChapter = targetChapter > 0 ? targetChapter : Infinity;
+
+        if (includeStored) {
+            Object.entries(this.novelData.extra_character_records || {})
+                .filter(([key]) => this.extractSnapshotChapterNumber(key) <= maxChapter)
+                .forEach(([, record]) => {
+                    (Array.isArray(record?.characters) ? record.characters : []).forEach((name) => {
+                        const text = String(name || "").trim();
+                        if (text) {
+                            names.add(text);
+                        }
+                    });
+                });
+        }
+
+        const content = String(cleanedContent || "");
+        if (!block) {
+            return names;
+        }
+
+        block.split(/\r?\n/).forEach((line) => {
+            const text = line.trim();
+            if (!/^(?:\u9F99\u5957\u89D2\u8272|\u65B0\u589E\u9F99\u5957)[:\uFF1A]/u.test(text)) {
+                return;
+            }
+            const payload = text.replace(/^(?:\u9F99\u5957\u89D2\u8272|\u65B0\u589E\u9F99\u5957)[:\uFF1A]\s*/u, "");
+            this.splitExtraCharacterPayload(payload).forEach((item) => {
+                const name = this.resolveKnownCharacterName(this.normalizeExtraCharacterNameCandidate(item));
+                if (!name || this.isExtraCharacterNameConflict(name)) {
+                    return;
+                }
+                if (content && !content.includes(name)) {
+                    return;
+                }
+                names.add(name);
+            });
+        });
+
+        return names;
+    }
+
+    buildWorldStateCharacterEvidence(chapterNumber = 0, chapter = null, cleanedContent = "", extraCharactersBlock = "") {
+        const formalRegistry = this.getWorldStateFormalCharacterRegistry();
+        const formalNames = new Set(formalRegistry.keys());
+        const aliasOwners = new Map();
+        const outlineNames = new Set([
+            ...Utils.ensureArrayFromText(chapter?.characters || "")
+                .map((name) => this.resolveKnownCharacterName(name))
+                .filter((name) => formalNames.has(name)),
+            ...this.extractCharacterSeedsFromSummary(chapter?.summary || "", Number(chapterNumber || 0))
+                .map((item) => item.name)
+                .filter((name) => formalNames.has(name))
+        ]);
+        const matchedFormalNames = new Set();
+        const content = String(cleanedContent || "");
+
+        formalRegistry.forEach((entry, name) => {
+            Array.from(entry.aliases || []).forEach((alias) => {
+                const normalizedAlias = this.normalizeCharacterReferenceLabel(alias);
+                if (!normalizedAlias) {
+                    return;
+                }
+                if (!aliasOwners.has(normalizedAlias)) {
+                    aliasOwners.set(normalizedAlias, new Set());
+                }
+                aliasOwners.get(normalizedAlias).add(name);
+            });
+        });
+        const formalAliasMap = new Map(
+            Array.from(aliasOwners.entries())
+                .filter(([, owners]) => owners.size === 1)
+                .map(([alias, owners]) => [alias, Array.from(owners)[0]])
+        );
+
+        if (content) {
+            formalRegistry.forEach((entry, name) => {
+                const aliases = Array.from(entry.aliases || [])
+                    .map((alias) => String(alias || "").trim())
+                    .filter((alias) => alias.length >= 2)
+                    .sort((left, right) => right.length - left.length);
+                if (aliases.some((alias) => content.includes(alias))) {
+                    matchedFormalNames.add(name);
+                }
+            });
+
+            const identityOwnerMap = new Map();
+            formalRegistry.forEach((entry, name) => {
+                Array.from(entry.identityTokens || []).forEach((token) => {
+                    if (!identityOwnerMap.has(token)) {
+                        identityOwnerMap.set(token, new Set());
+                    }
+                    identityOwnerMap.get(token).add(name);
+                });
+            });
+
+            identityOwnerMap.forEach((owners, token) => {
+                if (owners.size === 1 && content.includes(token)) {
+                    matchedFormalNames.add(Array.from(owners)[0]);
+                }
+            });
+        }
+
+        const extraNames = this.collectWorldStateExtraCharacterNames(
+            chapterNumber,
+            extraCharactersBlock,
+            cleanedContent,
+            true
+        );
+
+        return {
+            formalNames,
+            formalAliasMap,
+            outlineNames,
+            matchedFormalNames,
+            extraNames,
+            allowedStateNames: new Set([...outlineNames, ...matchedFormalNames, ...extraNames]),
+            allowedRosterNames: new Set([...formalNames, ...extraNames])
+        };
+    }
+
+    resolveWorldStateCharacterByEvidence(name, evidence = null, mode = "state") {
+        const proof = evidence || this.buildWorldStateCharacterEvidence();
+        const allowedNames = mode === "roster" ? proof.allowedRosterNames : proof.allowedStateNames;
+        const cleanName = this.normalizeCharacterReferenceLabel(name);
+        if (!cleanName) {
+            return "";
+        }
+
+        const exactAliasMatch = proof.formalAliasMap?.get(cleanName) || "";
+        if (exactAliasMatch && allowedNames.has(exactAliasMatch)) {
+            return exactAliasMatch;
+        }
+        if (allowedNames.has(cleanName)) {
+            return cleanName;
+        }
+
+        const resolvedName = this.resolveKnownCharacterName(cleanName);
+        if (resolvedName && allowedNames.has(resolvedName)) {
+            if (resolvedName === cleanName) {
+                return resolvedName;
+            }
+            if (/^(主角|男主|女主|反派|男二|女二|师尊)$/u.test(cleanName)) {
+                return resolvedName;
+            }
+        }
+
+        const extraCandidate = this.normalizeExtraCharacterNameCandidate(name);
+        if (extraCandidate && allowedNames.has(extraCandidate)) {
+            return extraCandidate;
+        }
+
+        return "";
+    }
+
+    extractWorldStateProgressRoleName(entry) {
+        if (typeof entry === "string") {
+            const text = String(entry || "").trim();
+            if (!text) {
+                return "";
+            }
+            if (text.includes("\uFF08")) {
+                return text.split("\uFF08", 2)[0].trim();
+            }
+            if (text.includes("(")) {
+                return text.split("(", 2)[0].trim();
+            }
+            if (text.includes("\uFF1A")) {
+                return text.split("\uFF1A", 2)[0].trim();
+            }
+            if (text.includes(":")) {
+                return text.split(":", 2)[0].trim();
+            }
+            return text.split(/[\uFF0C,]/, 2)[0].trim();
+        }
+
+        if (!entry || typeof entry !== "object") {
+            return "";
+        }
+
+        return String(
+            entry.role
+            || entry.name
+            || entry.character
+            || entry.character_name
+            || entry["角色名"]
+            || entry["角色"]
+            || ""
+        ).trim();
+    }
+
+    sanitizeStateDataWithCharacterEvidence(stateData, evidence) {
+        const source = stateData && typeof stateData === "object" ? stateData : {};
+        const sanitized = {
+            ...source,
+            characters: {}
+        };
+
+        Object.entries(source.characters || {}).forEach(([rawName, value]) => {
+            const fallbackName = value && typeof value === "object"
+                ? value.name || value.character || value.character_name || value["角色名"] || value["角色"] || ""
+                : "";
+            const name = this.resolveWorldStateCharacterByEvidence(rawName || fallbackName, evidence, "state");
+            if (!name) {
+                return;
+            }
+            sanitized.characters[name] = {
+                ...(sanitized.characters[name] || {}),
+                ...(value && typeof value === "object" ? value : {})
+            };
+        });
+
+        const worldChangesSource = source.world_changes && typeof source.world_changes === "object" && !Array.isArray(source.world_changes)
+            ? source.world_changes
+            : {};
+        const worldChanges = {
+            ...worldChangesSource,
+            character_movements: this.coerceStateArray(worldChangesSource.character_movements).flatMap((movement) => {
+                const parsed = this.parseWorldTrackerMovementEntry(movement);
+                const name = this.resolveWorldStateCharacterByEvidence(parsed.name, evidence, "roster");
+                if (!name || !parsed.position) {
+                    return [];
+                }
+                if (movement && typeof movement === "object") {
+                    return [{
+                        ...movement,
+                        name
+                    }];
+                }
+                return [`${name}->${parsed.position}`];
+            }),
+            offscreen_status: this.coerceStateArray(worldChangesSource.offscreen_status).flatMap((status) => {
+                if (status && typeof status === "object") {
+                    const rawName = status.name || status.character || status.role || status.person || status["角色"] || status["人物"] || "";
+                    const name = this.resolveWorldStateCharacterByEvidence(rawName, evidence, "roster");
+                    if (!name) {
+                        return [];
+                    }
+                    return [{
+                        ...status,
+                        name
+                    }];
+                }
+
+                const text = String(status || "").trim();
+                if (!text.includes("\uFF1A") && !text.includes(":")) {
+                    return [];
+                }
+                const [rawName, detail] = text.split(/[\uFF1A:]/, 2).map((part) => part.trim());
+                const name = this.resolveWorldStateCharacterByEvidence(rawName, evidence, "roster");
+                if (!name) {
+                    return [];
+                }
+                return [`${name}\uFF1A${detail || ""}`.trim()];
+            })
+        };
+        sanitized.world_changes = worldChanges;
+
+        sanitized.appearance_changes = this.coerceStateArray(source.appearance_changes).flatMap((item) => {
+            const rawName = typeof item === "string"
+                ? this.extractWorldStateProgressRoleName(item)
+                : item?.name || item?.character || item?.character_name || item?.["角色名"] || item?.["角色"] || "";
+            const name = this.resolveWorldStateCharacterByEvidence(rawName, evidence, "roster");
+            if (!name) {
+                return [];
+            }
+            if (item && typeof item === "object") {
+                return [{
+                    ...item,
+                    name
+                }];
+            }
+            return [item];
+        });
+
+        sanitized.genre_progress = this.coerceStateArray(source.genre_progress).flatMap((item) => {
+            const rawName = this.extractWorldStateProgressRoleName(item);
+            const name = this.resolveWorldStateCharacterByEvidence(rawName, evidence, "roster");
+            if (!name) {
+                return [];
+            }
+            if (item && typeof item === "object") {
+                const detail = this.pickWorldStateText(
+                    item.detail,
+                    item.description,
+                    item.progress,
+                    item.status,
+                    item["描述"],
+                    item["内容"]
+                ) || JSON.stringify(item);
+                return [`${name}：${detail}`];
+            }
+            return [item];
+        });
+
+        return sanitized;
     }
 
     recordChapterSnapshot(chapterNumber, chapterTitle, stateData, chapter = null) {
@@ -6943,6 +7350,7 @@ ${(detailedOutline || concept || "未填写").slice(0, 2200)}`;
     }
 
     recordGenreProgressUpdate(chapterNumber, stateData) {
+        const evidence = this.buildWorldStateCharacterEvidence(chapterNumber);
         const tracker = this.novelData.genre_progress_tracker || (this.novelData.genre_progress_tracker = {
             current_genre: "",
             current_subgenre: "",
@@ -6970,6 +7378,10 @@ ${(detailedOutline || concept || "未填写").slice(0, 2200)}`;
                 [roleName, detail] = text.split("：", 2).map((item) => item.trim());
             } else if (text.includes(":")) {
                 [roleName, detail] = text.split(":", 2).map((item) => item.trim());
+            }
+            roleName = this.resolveWorldStateCharacterByEvidence(roleName, evidence, "roster");
+            if (!roleName) {
+                return;
             }
 
             if (/怀孕|孕|胎/.test(detail)) {
