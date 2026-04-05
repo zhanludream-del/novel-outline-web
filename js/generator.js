@@ -1,4 +1,4 @@
-﻿class NovelGenerator {
+class NovelGenerator {
     constructor(apiClient) {
         this.api = apiClient;
     }
@@ -5269,4 +5269,3 @@
         return Utils.summarizeText(text, max);
     }
 }
-

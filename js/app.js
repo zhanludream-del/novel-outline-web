@@ -3876,12 +3876,32 @@ ${(detailedOutline || concept || "未填写").slice(0, 2200)}`;
                 processed = await this.processGeneratedChapterResponse(rawContent, volume, chapter);
             } catch (error) {
                 const fallbackContent = this.stripGeneratedMarkers(rawContent).trim();
-                const message = `章节状态回写失败，已保留正文内容：${error?.message || error}`;
-                Utils.log(message, "error");
-                processed = {
-                    cleanedContent: fallbackContent,
-                    logs: ["状态回写失败，本次已跳过部分追踪更新，但正文内容已保留。"]
-                };
+                const errorMessage = error?.message || error;
+                const shouldRetry = window.confirm(
+                    `章节状态回写失败：${errorMessage}\n\n是否立即重试一次？`
+                );
+                if (shouldRetry) {
+                    Utils.log("章节状态回写失败，用户已选择重试。", "info");
+                    try {
+                        processed = await this.processGeneratedChapterResponse(rawContent, volume, chapter, {
+                            allowRetryPrompt: false
+                        });
+                    } catch (retryError) {
+                        const message = `章节状态回写重试失败，已保留正文内容：${retryError?.message || retryError}`;
+                        Utils.log(message, "error");
+                        processed = {
+                            cleanedContent: fallbackContent,
+                            logs: ["状态回写重试失败，本次已跳过部分追踪更新，但正文内容已保留。"]
+                        };
+                    }
+                } else {
+                    const message = `章节状态回写失败，已保留正文内容：${errorMessage}`;
+                    Utils.log(message, "error");
+                    processed = {
+                        cleanedContent: fallbackContent,
+                        logs: ["状态回写失败，本次已跳过部分追踪更新，但正文内容已保留。"]
+                    };
+                }
             }
             let finalContent = processed.cleanedContent;
             if (this.novelData.prompt_state?.ai_filter_enabled !== false) {
@@ -3927,8 +3947,9 @@ ${(detailedOutline || concept || "未填写").slice(0, 2200)}`;
         });
     }
 
-    async processGeneratedChapterResponse(rawContent, volume, chapter) {
+    async processGeneratedChapterResponse(rawContent, volume, chapter, options = {}) {
         const chapterNumber = Number(chapter.number || chapter.chapter_number || 0);
+        const { allowRetryPrompt = true } = options;
         const logs = [];
         const stateBlock = this.extractDelimitedBlock(rawContent, "<<<STATE_JSON>>>", [
             "<<<EXTRA_CHARACTERS>>>",
