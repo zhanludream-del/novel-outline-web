@@ -329,6 +329,54 @@ const DEFAULT_NOVEL_DATA = {
         offscreen_status: {},
         world_events: []
     },
+    world_state_manager: {
+        meta: {
+            schema_version: "1.0.0",
+            genre_profile: "",
+            genre_modules: [],
+            last_synced_at: "",
+            last_synced_chapter: 0,
+            last_synced_volume: 0
+        },
+        auto_state: {
+            overview: {
+                current_time: "",
+                current_location: "",
+                latest_chapter: 0,
+                latest_volume: 0,
+                pending_plots: [],
+                active_plot_unit: "",
+                unresolved_foreshadows: [],
+                recent_world_events: []
+            },
+            characters: {},
+            relationships: {},
+            factions: {},
+            locations: {},
+            items: {},
+            abilities: {},
+            rewards: [],
+            plot_threads: {
+                active: [],
+                temporary: [],
+                unresolved_foreshadows: []
+            },
+            continuity_risks: []
+        },
+        manual_state: {
+            overview_notes: [],
+            characters: {},
+            relationships: {},
+            factions: {},
+            locations: {},
+            items: {},
+            abilities: {},
+            rewards: [],
+            hard_rules: [],
+            continuity_risks: [],
+            custom_modules: {}
+        }
+    },
     genre_progress_tracker: {
         current_genre: "",
         current_subgenre: "",

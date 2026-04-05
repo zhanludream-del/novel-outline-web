@@ -748,6 +748,38 @@
                     <div class="panel">
                         <div class="panel-head">
                             <div>
+                                <p class="section-kicker">世界状态管理器</p>
+                                <h3>总控设定与防崩坏总表</h3>
+                            </div>
+                        </div>
+
+                        <p class="panel-note">这里会自动汇总人物、关系、地点、势力/部门、物品、能力/位阶、系统/任务奖励、主线支线和连续性风险。修仙、都市、校园、悬疑、言情、年代等题材都会共用这套骨架，再按题材给出额外关注点。</p>
+
+                        <div class="insight-grid" id="worldStateSummaryCards"></div>
+
+                        <div class="insight-columns">
+                            <section class="insight-card">
+                                <h4>人物状态总表</h4>
+                                <div class="insight-list" id="worldStateCharacterList"></div>
+                            </section>
+                            <section class="insight-card">
+                                <h4>势力 / 部门 / 宗门</h4>
+                                <div class="insight-list" id="worldStateFactionList"></div>
+                            </section>
+                            <section class="insight-card">
+                                <h4>关键物品 / 奖励 / 能力</h4>
+                                <div class="insight-list" id="worldStateAssetList"></div>
+                            </section>
+                            <section class="insight-card">
+                                <h4>连续性风险 / 手动规则</h4>
+                                <div class="insight-list" id="worldStateRiskList"></div>
+                            </section>
+                        </div>
+                    </div>
+
+                    <div class="panel">
+                        <div class="panel-head">
+                            <div>
                                 <p class="section-kicker">系统数据</p>
                                 <h3>桌面版追踪器 JSON 面板</h3>
                             </div>
@@ -813,6 +845,10 @@
                             <label class="field">
                                 <span>`world_tracker`</span>
                                 <textarea class="input textarea code-textarea system-editor" id="editorWorldTracker" rows="10"></textarea>
+                            </label>
+                            <label class="field field-full">
+                                <span>`world_state_manager`</span>
+                                <textarea class="input textarea code-textarea system-editor" id="editorWorldStateManager" rows="14"></textarea>
                             </label>
                             <label class="field">
                                 <span>`supporting_characters`</span>

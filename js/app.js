@@ -133,6 +133,11 @@ class NovelOutlineWebApp {
             trackerForeshadowList: document.getElementById("trackerForeshadowList"),
             trackerConsistencyList: document.getElementById("trackerConsistencyList"),
             trackerWorldEventList: document.getElementById("trackerWorldEventList"),
+            worldStateSummaryCards: document.getElementById("worldStateSummaryCards"),
+            worldStateCharacterList: document.getElementById("worldStateCharacterList"),
+            worldStateFactionList: document.getElementById("worldStateFactionList"),
+            worldStateAssetList: document.getElementById("worldStateAssetList"),
+            worldStateRiskList: document.getElementById("worldStateRiskList"),
 
             btnShowLog: document.getElementById("btnShowLog"),
             btnOpenSettings: document.getElementById("btnOpenSettings"),
@@ -212,6 +217,7 @@ class NovelOutlineWebApp {
             appearanceTracker: document.getElementById("editorAppearanceTracker"),
             dialogueTracker: document.getElementById("editorDialogueTracker"),
             worldTracker: document.getElementById("editorWorldTracker"),
+            worldStateManager: document.getElementById("editorWorldStateManager"),
             supportingCharacters: document.getElementById("editorSupportingCharacters"),
             legacyForeshadows: document.getElementById("editorLegacyForeshadows"),
             chapterRhythms: document.getElementById("editorChapterRhythms"),
@@ -352,6 +358,7 @@ class NovelOutlineWebApp {
         if (!this.novelData.supporting_characters || typeof this.novelData.supporting_characters !== "object") {
             this.novelData.supporting_characters = {};
         }
+        this.ensureWorldStateManager();
         if (!this.novelData.genre_progress_tracker || typeof this.novelData.genre_progress_tracker !== "object") {
             this.novelData.genre_progress_tracker = {
                 current_genre: "",
@@ -386,6 +393,7 @@ class NovelOutlineWebApp {
         this.novelData.outline_plot_unit_manager.next_id = Number(this.novelData.outline_plot_unit_manager.next_id || 1);
         this.ensureVolumeCount(Number(this.novelData.synopsisData.volumeCount || 5), false);
         this.rebuildPlotUnitManager(false);
+        this.syncWorldStateManager();
     }
 
     bindEvents() {
@@ -1390,8 +1398,10 @@ ${(detailedOutline || concept || "未填写").slice(0, 2200)}`;
     }
 
     renderAdvancedState() {
+        this.syncWorldStateManager();
         this.renderPromptLibrary();
         this.renderTrackerInsights();
+        this.renderWorldStateManagerInsights();
         this.renderSystemEditors();
     }
 
@@ -1502,6 +1512,1119 @@ ${(detailedOutline || concept || "未填写").slice(0, 2200)}`;
                 </article>
             `)
         ].join("") || '<div class="empty-state compact">世界状态和龙套记录还没有回写内容。</div>';
+    }
+
+    renderWorldStateManagerInsights() {
+        const manager = this.ensureWorldStateManager();
+        const autoState = manager.auto_state || {};
+        const manualState = manager.manual_state || {};
+        const overview = autoState.overview || {};
+        const characters = autoState.characters || {};
+        const factions = autoState.factions || {};
+        const locations = autoState.locations || {};
+        const items = autoState.items || {};
+        const abilities = autoState.abilities || {};
+        const rewards = Array.isArray(autoState.rewards) ? autoState.rewards : [];
+        const hardRules = this.normalizeWorldStateTextList(manualState.hard_rules);
+        const riskList = [
+            ...(Array.isArray(autoState.continuity_risks) ? autoState.continuity_risks : []),
+            ...this.normalizeWorldStateTextList(manualState.continuity_risks)
+        ].slice(0, 8);
+
+        const cards = [
+            { label: "人物档案", value: Object.keys(characters).length, note: "状态 / 位置 / 身份 / 位阶" },
+            { label: "势力部门", value: Object.keys(factions).length, note: "宗门 / 公司 / 班级 / 组织" },
+            { label: "地点记录", value: Object.keys(locations).length, note: "占位 / 控制 / 近期事件" },
+            { label: "关键物品", value: Object.keys(items).length, note: "持有者 / 状态 / 来源" },
+            { label: "能力位阶", value: Object.keys(abilities).length, note: "功法 / 技能 / 修为 / 身份权限" },
+            { label: "奖励记录", value: rewards.length + this.normalizeWorldStateTextList(manualState.rewards).length, note: "系统 / 任务 / 资源回报" },
+            { label: "风险提醒", value: riskList.length, note: "最容易吃书的地方" },
+            { label: "手动规则", value: hardRules.length, note: "你额外锁死的红线" }
+        ];
+
+        if (this.elements.worldStateSummaryCards) {
+            this.elements.worldStateSummaryCards.innerHTML = cards.map((item) => `
+                <article class="insight-stat-card">
+                    <span>${Utils.escapeHTML(item.label)}</span>
+                    <strong>${Utils.escapeHTML(String(item.value))}</strong>
+                    <p>${Utils.escapeHTML(item.note)}</p>
+                </article>
+            `).join("");
+        }
+
+        const characterEntries = Object.entries(characters)
+            .sort((left, right) => Number(right[1]?.last_seen_chapter || 0) - Number(left[1]?.last_seen_chapter || 0))
+            .slice(0, 8);
+        if (this.elements.worldStateCharacterList) {
+            this.elements.worldStateCharacterList.innerHTML = characterEntries.length
+                ? characterEntries.map(([name, data]) => {
+                    const parts = [
+                        data.identity ? `身份=${data.identity}` : "",
+                        data.location ? `位置=${data.location}` : "",
+                        data.status ? `状态=${data.status}` : "",
+                        data.cultivation ? `位阶=${data.cultivation}` : "",
+                        data.organization ? `归属=${data.organization}` : ""
+                    ].filter(Boolean);
+                    return `
+                        <article class="insight-item">
+                            <strong>${Utils.escapeHTML(name)}</strong>
+                            <p>${Utils.escapeHTML(Utils.summarizeText(parts.join("；") || "待补人物状态", 88))}</p>
+                        </article>
+                    `;
+                }).join("")
+                : '<div class="empty-state compact">还没有可用的人物总控状态。</div>';
+        }
+
+        const factionEntries = Object.entries(factions)
+            .sort((left, right) => (right[1]?.members || []).length - (left[1]?.members || []).length)
+            .slice(0, 8);
+        if (this.elements.worldStateFactionList) {
+            this.elements.worldStateFactionList.innerHTML = factionEntries.length
+                ? factionEntries.map(([name, data]) => `
+                    <article class="insight-item">
+                        <strong>${Utils.escapeHTML(name)}</strong>
+                        <p>${Utils.escapeHTML(Utils.summarizeText(
+                            [
+                                data.type ? `类型=${data.type}` : "",
+                                data.leader ? `核心=${data.leader}` : "",
+                                Array.isArray(data.members) && data.members.length ? `成员=${data.members.slice(0, 6).join("、")}` : "",
+                                data.latest_change ? `最近变化=${data.latest_change}` : ""
+                            ].filter(Boolean).join("；") || "待补势力/部门状态",
+                            92
+                        ))}</p>
+                    </article>
+                `).join("")
+                : '<div class="empty-state compact">还没有势力、部门或宗门总表。</div>';
+        }
+
+        const assetItems = [
+            ...Object.entries(items).slice(0, 5).map(([name, data]) => ({
+                title: name,
+                detail: [data.持有者 ? `持有者=${data.持有者}` : "", data.当前状态 ? `状态=${data.当前状态}` : "", data.类型 ? `类型=${data.类型}` : ""]
+                    .filter(Boolean)
+                    .join("；")
+            })),
+            ...Object.entries(abilities).slice(0, 2).map(([name, data]) => ({
+                title: name,
+                detail: [data.owner ? `归属=${data.owner}` : "", data.level ? `位阶=${data.level}` : "", data.type ? `类型=${data.type}` : ""]
+                    .filter(Boolean)
+                    .join("；")
+            })),
+            ...rewards.slice(0, 3).map((item) => ({
+                title: item.reward || item.name || "奖励记录",
+                detail: [item.owner ? `归属=${item.owner}` : "", item.status ? `状态=${item.status}` : "", item.source ? `来源=${item.source}` : ""]
+                    .filter(Boolean)
+                    .join("；")
+            }))
+        ].slice(0, 8);
+        if (this.elements.worldStateAssetList) {
+            this.elements.worldStateAssetList.innerHTML = assetItems.length
+                ? assetItems.map((item) => `
+                    <article class="insight-item">
+                        <strong>${Utils.escapeHTML(item.title)}</strong>
+                        <p>${Utils.escapeHTML(Utils.summarizeText(item.detail || "待补资产/奖励状态", 88))}</p>
+                    </article>
+                `).join("")
+                : '<div class="empty-state compact">还没有关键物品、奖励或能力记录。</div>';
+        }
+
+        const riskEntries = [
+            ...riskList.map((text) => ({ title: "自动风险", detail: text })),
+            ...hardRules.slice(0, 4).map((text) => ({ title: "手动红线", detail: text })),
+            ...(manager.meta?.genre_modules || []).slice(0, 3).map((text) => ({ title: "题材重点", detail: text }))
+        ].slice(0, 10);
+        if (this.elements.worldStateRiskList) {
+            this.elements.worldStateRiskList.innerHTML = riskEntries.length
+                ? riskEntries.map((item) => `
+                    <article class="insight-item">
+                        <strong>${Utils.escapeHTML(item.title)}</strong>
+                        <p>${Utils.escapeHTML(Utils.summarizeText(item.detail || "待补规则", 88))}</p>
+                    </article>
+                `).join("")
+                : '<div class="empty-state compact">目前没有风险提醒，可在手动规则里继续加红线。</div>';
+        }
+    }
+
+    ensureWorldStateManager() {
+        const fallback = JSON.parse(JSON.stringify(DEFAULT_NOVEL_DATA.world_state_manager));
+        const manager = this.novelData.world_state_manager && typeof this.novelData.world_state_manager === "object"
+            ? this.novelData.world_state_manager
+            : fallback;
+
+        manager.meta = manager.meta && typeof manager.meta === "object" ? manager.meta : fallback.meta;
+        manager.auto_state = manager.auto_state && typeof manager.auto_state === "object" ? manager.auto_state : fallback.auto_state;
+        manager.manual_state = manager.manual_state && typeof manager.manual_state === "object" ? manager.manual_state : fallback.manual_state;
+
+        manager.meta.genre_modules = Array.isArray(manager.meta.genre_modules) ? manager.meta.genre_modules : [];
+        manager.auto_state.overview = manager.auto_state.overview && typeof manager.auto_state.overview === "object"
+            ? manager.auto_state.overview
+            : fallback.auto_state.overview;
+        manager.auto_state.characters = manager.auto_state.characters && typeof manager.auto_state.characters === "object" ? manager.auto_state.characters : {};
+        manager.auto_state.relationships = manager.auto_state.relationships && typeof manager.auto_state.relationships === "object" ? manager.auto_state.relationships : {};
+        manager.auto_state.factions = manager.auto_state.factions && typeof manager.auto_state.factions === "object" ? manager.auto_state.factions : {};
+        manager.auto_state.locations = manager.auto_state.locations && typeof manager.auto_state.locations === "object" ? manager.auto_state.locations : {};
+        manager.auto_state.items = manager.auto_state.items && typeof manager.auto_state.items === "object" ? manager.auto_state.items : {};
+        manager.auto_state.abilities = manager.auto_state.abilities && typeof manager.auto_state.abilities === "object" ? manager.auto_state.abilities : {};
+        manager.auto_state.rewards = Array.isArray(manager.auto_state.rewards) ? manager.auto_state.rewards : [];
+        manager.auto_state.plot_threads = manager.auto_state.plot_threads && typeof manager.auto_state.plot_threads === "object"
+            ? manager.auto_state.plot_threads
+            : fallback.auto_state.plot_threads;
+        manager.auto_state.continuity_risks = Array.isArray(manager.auto_state.continuity_risks) ? manager.auto_state.continuity_risks : [];
+
+        manager.manual_state.overview_notes = this.normalizeWorldStateTextList(manager.manual_state.overview_notes);
+        manager.manual_state.characters = manager.manual_state.characters && typeof manager.manual_state.characters === "object" ? manager.manual_state.characters : {};
+        manager.manual_state.relationships = manager.manual_state.relationships && typeof manager.manual_state.relationships === "object" ? manager.manual_state.relationships : {};
+        manager.manual_state.factions = manager.manual_state.factions && typeof manager.manual_state.factions === "object" ? manager.manual_state.factions : {};
+        manager.manual_state.locations = manager.manual_state.locations && typeof manager.manual_state.locations === "object" ? manager.manual_state.locations : {};
+        manager.manual_state.items = manager.manual_state.items && typeof manager.manual_state.items === "object" ? manager.manual_state.items : {};
+        manager.manual_state.abilities = manager.manual_state.abilities && typeof manager.manual_state.abilities === "object" ? manager.manual_state.abilities : {};
+        manager.manual_state.rewards = Array.isArray(manager.manual_state.rewards) ? manager.manual_state.rewards : [];
+        manager.manual_state.hard_rules = this.normalizeWorldStateTextList(manager.manual_state.hard_rules);
+        manager.manual_state.continuity_risks = this.normalizeWorldStateTextList(manager.manual_state.continuity_risks);
+        manager.manual_state.custom_modules = manager.manual_state.custom_modules && typeof manager.manual_state.custom_modules === "object"
+            ? manager.manual_state.custom_modules
+            : {};
+
+        this.novelData.world_state_manager = manager;
+        return manager;
+    }
+
+    normalizeWorldStateTextList(value) {
+        return Utils.ensureArrayFromText(value)
+            .map((item) => String(item || "").trim())
+            .filter(Boolean);
+    }
+
+    pickWorldStateText(...values) {
+        for (const value of values) {
+            const text = String(value || "").trim();
+            if (text) {
+                return text;
+            }
+        }
+        return "";
+    }
+
+    splitWorldStateLabels(value) {
+        return String(value || "")
+            .split(/[\n,，、；;\/]/)
+            .map((item) => item.trim())
+            .filter(Boolean);
+    }
+
+    mergeWorldStateText(...values) {
+        const merged = [];
+        const seen = new Set();
+        values.forEach((value) => {
+            this.normalizeWorldStateTextList(value).forEach((item) => {
+                const text = String(item || "").trim();
+                if (!text || seen.has(text)) {
+                    return;
+                }
+                seen.add(text);
+                merged.push(text);
+            });
+        });
+        return merged.join("；");
+    }
+
+    getLatestWorldStateChapterMeta() {
+        let latest = { chapterNumber: 0, volumeNumber: 0, chapter: null };
+        (this.novelData.outline?.volumes || []).forEach((volume, volumeIndex) => {
+            const volumeNumber = Number(volume.volume_number || volumeIndex + 1);
+            (volume.chapters || []).forEach((chapter) => {
+                const chapterNumber = Number(chapter.number || 0);
+                const hasUsefulContent = Boolean(
+                    String(chapter.content || "").trim()
+                    || String(chapter.summary || "").trim()
+                    || this.novelData.chapter_snapshot?.snapshots?.[`chapter_${chapterNumber}`]
+                );
+                if (!hasUsefulContent) {
+                    return;
+                }
+                if (volumeNumber > latest.volumeNumber || (volumeNumber === latest.volumeNumber && chapterNumber >= latest.chapterNumber)) {
+                    latest = { chapterNumber, volumeNumber, chapter };
+                }
+            });
+        });
+        return latest;
+    }
+
+    describeWorldStateGenreProfile() {
+        const genre = this.novelData.outline?.genre || this.novelData.genre || "";
+        const subgenre = this.novelData.outline?.subgenre || this.novelData.subgenre || "";
+        return [genre, subgenre].filter(Boolean).join(" / ") || "通用长篇连载";
+    }
+
+    detectWorldStateGenreModules() {
+        const genreText = `${this.novelData.outline?.genre || ""} ${this.novelData.outline?.subgenre || ""}`.trim();
+        const modules = [
+            "人物状态与知情范围",
+            "地点、时间与场上占位",
+            "关键物品与资源去向",
+            "势力/部门/家庭/组织名单",
+            "主线、支线与伏笔压力",
+            "连续性红线与不可吃书项"
+        ];
+
+        if (/(玄幻|仙侠|高武|修真|修仙|洪荒)/.test(genreText)) {
+            modules.push("修为/境界/功法/法宝", "宗门/门派/师承关系", "系统奖励/机缘归属");
+        }
+        if (/(都市|现实|职场|商战|年代)/.test(genreText)) {
+            modules.push("单位/公司/部门岗位", "家庭关系与社会身份", "资金/票据/资源流向");
+        }
+        if (/(校园|青春)/.test(genreText)) {
+            modules.push("班级/宿舍/社团名单", "课程/考试/比赛时间点");
+        }
+        if (/(悬疑|刑侦|探案|推理)/.test(genreText)) {
+            modules.push("线索链与证据状态", "嫌疑人/受害者/警方知情范围");
+        }
+        if (/(言情|婚恋|甜宠|虐恋)/.test(genreText)) {
+            modules.push("关系阶段与公开/隐瞒状态", "婚约/孩子/家庭压力");
+        }
+        if (/(科幻|星际|末世)/.test(genreText)) {
+            modules.push("科技等级与权限", "基地/舰队/能源/库存");
+        }
+        if (/(宫斗|宅斗|权谋|历史|古代)/.test(genreText)) {
+            modules.push("官职/爵位/府邸结构", "侍从/亲信/阵营站位");
+        }
+
+        return Array.from(new Set(modules));
+    }
+
+    syncWorldStateManager() {
+        const manager = this.ensureWorldStateManager();
+        const chapterMeta = this.getLatestWorldStateChapterMeta();
+        const nextGenreProfile = this.describeWorldStateGenreProfile();
+        const nextGenreModules = this.detectWorldStateGenreModules();
+        const nextAutoState = this.buildAutoWorldStateManager(chapterMeta);
+        const autoChanged = JSON.stringify(manager.auto_state || {}) !== JSON.stringify(nextAutoState);
+        const modulesChanged = JSON.stringify(manager.meta.genre_modules || []) !== JSON.stringify(nextGenreModules);
+        const metaChanged = manager.meta.genre_profile !== nextGenreProfile
+            || Number(manager.meta.last_synced_chapter || 0) !== Number(chapterMeta.chapterNumber || 0)
+            || Number(manager.meta.last_synced_volume || 0) !== Number(chapterMeta.volumeNumber || 0)
+            || modulesChanged;
+
+        manager.meta.schema_version = DEFAULT_NOVEL_DATA.world_state_manager?.meta?.schema_version || "1.0.0";
+        manager.meta.genre_profile = nextGenreProfile;
+        manager.meta.genre_modules = nextGenreModules;
+        manager.meta.last_synced_chapter = Number(chapterMeta.chapterNumber || 0);
+        manager.meta.last_synced_volume = Number(chapterMeta.volumeNumber || 0);
+        if (autoChanged) {
+            manager.auto_state = nextAutoState;
+        }
+        if (autoChanged || metaChanged || !manager.meta.last_synced_at) {
+            manager.meta.last_synced_at = new Date().toISOString();
+        }
+        return manager;
+    }
+
+    buildAutoWorldStateManager(chapterMeta = this.getLatestWorldStateChapterMeta()) {
+        const latestChapter = Number(chapterMeta?.chapterNumber || 0);
+        const latestVolume = Number(chapterMeta?.volumeNumber || 0);
+        const latestSnapshot = this.novelData.chapter_snapshot?.snapshots?.[`chapter_${latestChapter}`] || {};
+        const characters = this.buildWorldStateCharacterRoster(chapterMeta);
+        const relationships = this.buildWorldStateRelationshipRegistry();
+        const factions = this.buildWorldStateFactionRegistry(characters);
+        const locations = this.buildWorldStateLocationRegistry(characters, chapterMeta);
+        const items = this.buildWorldStateItemRegistry(chapterMeta);
+        const abilities = this.buildWorldStateAbilityRegistry(characters);
+        const rewards = this.buildWorldStateRewardRegistry(items);
+        const plotThreads = this.buildWorldStatePlotThreadRegistry(chapterMeta);
+
+        let activePlotUnit = "";
+        if (latestChapter && latestVolume && this.generator?.getPlotUnitForChapter) {
+            const plotUnitInfo = this.generator.getPlotUnitForChapter(this.novelData, latestVolume, latestChapter);
+            if (plotUnitInfo?.unit) {
+                activePlotUnit = [
+                    `第${plotUnitInfo.unitNumber || "?"}剧情单元`,
+                    plotUnitInfo.unit.current_phase || "",
+                    plotUnitInfo.unit.core_conflict || plotUnitInfo.unit.suspense_hook || ""
+                ].filter(Boolean).join("｜");
+            }
+        }
+
+        const overview = {
+            current_time: this.pickWorldStateText(
+                latestSnapshot.timeline,
+                latestSnapshot["时间"],
+                this.novelData.story_state?.current_time,
+                this.novelData.outline?.story_state?.timeline,
+                this.novelData.timeline_tracker?.current_time
+            ),
+            current_location: this.pickWorldStateText(
+                latestSnapshot.current_location,
+                latestSnapshot["位置"],
+                this.novelData.story_state?.current_location,
+                this.novelData.outline?.story_state?.current_location
+            ),
+            latest_chapter: latestChapter,
+            latest_volume: latestVolume,
+            pending_plots: plotThreads.active.slice(0, 10),
+            active_plot_unit: activePlotUnit,
+            unresolved_foreshadows: plotThreads.unresolved_foreshadows.slice(0, 8),
+            recent_world_events: (this.novelData.world_tracker?.world_events || [])
+                .slice(-6)
+                .map((item) => this.pickWorldStateText(item.event, item.detail, item.content, item["内容"]))
+                .filter(Boolean)
+        };
+
+        const continuityRisks = this.buildWorldStateContinuityRiskList({
+            chapterMeta,
+            overview,
+            characters,
+            factions,
+            locations,
+            items,
+            rewards,
+            plotThreads
+        });
+
+        return {
+            overview,
+            characters,
+            relationships,
+            factions,
+            locations,
+            items,
+            abilities,
+            rewards,
+            plot_threads: plotThreads,
+            continuity_risks: continuityRisks
+        };
+    }
+
+    buildWorldStateCharacterRoster(chapterMeta = {}) {
+        const roster = {};
+        const upsertCharacter = (rawName, source = {}, sourceLabel = "") => {
+            const fallbackName = source.name || source.character || source.character_name || source["角色名"] || source["角色"] || source["姓名"] || source["名字"] || source["人物"] || "";
+            const name = this.resolveKnownCharacterName(rawName || fallbackName);
+            if (!name) {
+                return;
+            }
+
+            const existing = roster[name] || {
+                name,
+                aliases: [],
+                identity: "",
+                status: "",
+                location: "",
+                cultivation: "",
+                organization: "",
+                abilities: "",
+                goals: "",
+                appearance: "",
+                real_appearance: "",
+                relationships: "",
+                background: "",
+                personality: "",
+                knowledge_scope: "",
+                possessions: [],
+                last_seen_chapter: 0,
+                last_seen_volume: 0,
+                sources: []
+            };
+
+            const aliases = Utils.ensureArrayFromText(source.aliases || source["别名"] || [])
+                .map((item) => this.normalizeCharacterReferenceLabel(item))
+                .filter((item) => item && item !== name);
+            existing.aliases = Array.from(new Set([...(existing.aliases || []), ...aliases]));
+
+            const identity = this.pickWorldStateText(source.identity, source.role, source["身份"], source["角色身份"]);
+            const status = this.pickWorldStateText(source.status, source.current_status, source.currentStatus, source["状态"], source["当前状态"], source.offscreen_status);
+            const location = this.pickWorldStateText(
+                source.location,
+                source.current_location,
+                source.currentLocation,
+                source.position,
+                source["位置"],
+                source["当前位置"],
+                source["当前地点"],
+                source["所在位置"]
+            );
+            const cultivation = this.pickWorldStateText(source.cultivation, source.rank, source.realm, source.level, source.power, source["修为"], source["境界"], source["实力"]);
+            const organization = this.pickWorldStateText(
+                source.organization,
+                source.org,
+                source.department,
+                source.faction,
+                source["组织"],
+                source["所属组织"],
+                source["阵营"],
+                source["归属"],
+                source["部门"],
+                source["单位"]
+            );
+            const abilities = this.pickWorldStateText(source.abilities, source.skill, source.skills, source["能力"], source["技能"], source["功法"], source["术法"], source["权限"]);
+            const goals = this.pickWorldStateText(source.goals, source.goal, source["目标"], source["当前目标"], source["当前诉求"]);
+            const appearance = this.pickWorldStateText(source.appearance, source.current_appearance, source.currentAppearance, source["当前形象"], source["当前外貌"], source["外貌"]);
+            const realAppearance = this.pickWorldStateText(source.real_appearance, source.realAppearance, source["真实外貌"], source["本貌"], source["原貌"]);
+            const relationships = this.pickWorldStateText(source.relationships, source.relationship, source["关系"], source["关系变化"], source["人物关系"]);
+            const knowledgeScope = this.pickWorldStateText(source.secrets, source.secret, source["秘密"], source["知晓秘密"], source["知情范围"]);
+            const background = this.pickWorldStateText(source.background, source["背景"], source["背景故事"]);
+            const personality = this.pickWorldStateText(source.personality, source["性格"], source["性格特点"]);
+            const possessions = this.normalizeWorldStateTextList(source.possessions || source.items || source["持有物品"] || []);
+            const lastSeenChapter = Math.max(
+                Number(existing.last_seen_chapter || 0),
+                Number(source.last_seen_chapter || 0),
+                Number(source.last_chapter || 0),
+                Number(source.chapter || 0),
+                Number(source["章节"] || 0)
+            );
+            const lastSeenVolume = Math.max(
+                Number(existing.last_seen_volume || 0),
+                Number(source.last_seen_volume || 0),
+                Number(source.volume || 0),
+                Number(source["卷号"] || 0)
+            );
+
+            if (identity) existing.identity = identity;
+            if (location) existing.location = location;
+            if (organization) existing.organization = organization;
+            if (cultivation) existing.cultivation = cultivation;
+            if (status) existing.status = this.mergeWorldStateText(existing.status, status);
+            if (abilities) existing.abilities = this.mergeWorldStateText(existing.abilities, abilities);
+            if (goals) existing.goals = this.mergeWorldStateText(existing.goals, goals);
+            if (appearance) existing.appearance = appearance;
+            if (realAppearance) existing.real_appearance = realAppearance;
+            if (relationships) existing.relationships = this.mergeWorldStateText(existing.relationships, relationships);
+            if (knowledgeScope) existing.knowledge_scope = this.mergeWorldStateText(existing.knowledge_scope, knowledgeScope);
+            if (background && !existing.background) existing.background = background;
+            if (personality && !existing.personality) existing.personality = personality;
+            existing.possessions = Array.from(new Set([...(existing.possessions || []), ...possessions]));
+            existing.last_seen_chapter = lastSeenChapter;
+            existing.last_seen_volume = lastSeenVolume;
+            existing.sources = Array.from(new Set([...(existing.sources || []), sourceLabel].filter(Boolean)));
+            roster[name] = existing;
+        };
+
+        const outlineCharacters = Array.isArray(this.novelData.outline?.characters) ? this.novelData.outline.characters : [];
+        outlineCharacters.forEach((character) => upsertCharacter(character?.name || character?.["角色名"], character, "outline"));
+
+        Object.entries(this.novelData.supporting_characters || {}).forEach(([name, value]) => {
+            const source = value && typeof value === "object" ? value : { identity: String(value || "") };
+            upsertCharacter(name, source, "supporting");
+        });
+
+        Object.values((this.novelData.synopsisData || this.novelData.synopsis_data || {}).main_characters || {}).forEach((name) => {
+            upsertCharacter(name, {}, "synopsis_main");
+        });
+
+        Object.entries(this.novelData.dynamic_tracker?.character_states || {}).forEach(([name, value]) => {
+            upsertCharacter(name, value, "dynamic_state");
+        });
+        Object.entries(this.novelData.character_checker?.character_states || {}).forEach(([name, value]) => {
+            upsertCharacter(name, value, "character_checker");
+        });
+        Object.entries(this.novelData.character_appearance_tracker?.appearances || {}).forEach(([name, value]) => {
+            const chapters = Array.isArray(value?.["出场章节"]) ? value["出场章节"] : [];
+            const volumes = Array.isArray(value?.["出场卷号"]) ? value["出场卷号"] : [];
+            upsertCharacter(name, {
+                identity: value?.["身份"] || value?.identity || "",
+                appearance: value?.["当前形象"] || value?.current_appearance || "",
+                real_appearance: value?.["真实形象"] || value?.real_appearance || "",
+                chapter: chapters.length ? Math.max(...chapters.map((item) => Number(item || 0))) : value?.chapter || 0,
+                volume: volumes.length ? Math.max(...volumes.map((item) => Number(item || 0))) : 0
+            }, "appearance_tracker");
+        });
+        Object.entries(this.novelData.world_tracker?.character_positions || {}).forEach(([name, value]) => {
+            upsertCharacter(name, {
+                location: value,
+                chapter: Number(chapterMeta.chapterNumber || 0),
+                volume: Number(chapterMeta.volumeNumber || 0)
+            }, "world_position");
+        });
+        Object.entries(this.novelData.world_tracker?.offscreen_status || {}).forEach(([name, value]) => {
+            upsertCharacter(name, {
+                status: `场外：${String(value || "").trim()}`,
+                chapter: Number(chapterMeta.chapterNumber || 0),
+                volume: Number(chapterMeta.volumeNumber || 0)
+            }, "offscreen");
+        });
+        Object.entries(this.novelData.genre_progress_tracker?.rank_progress || {}).forEach(([name, value]) => {
+            upsertCharacter(name, {
+                cultivation: value?.rank || value?.detail || "",
+                chapter: value?.chapter || 0
+            }, "genre_rank");
+        });
+        Object.entries(this.novelData.genre_progress_tracker?.status_progress || {}).forEach(([name, value]) => {
+            upsertCharacter(name, {
+                status: value?.detail || "",
+                chapter: value?.chapter || 0
+            }, "genre_status");
+        });
+        Object.entries(this.novelData.genre_progress_tracker?.pregnancy_progress || {}).forEach(([name, value]) => {
+            upsertCharacter(name, {
+                status: `${value?.months ? `${value.months}个月` : ""}${value?.status ? ` ${value.status}` : ""}${value?.detail ? ` ${value.detail}` : ""}`.trim(),
+                chapter: value?.chapter || 0
+            }, "genre_progress");
+        });
+        Utils.ensureArrayFromText(chapterMeta?.chapter?.characters || []).forEach((name) => {
+            upsertCharacter(name, {
+                chapter: Number(chapterMeta.chapterNumber || 0),
+                volume: Number(chapterMeta.volumeNumber || 0)
+            }, "latest_chapter");
+        });
+
+        return Object.fromEntries(
+            Object.entries(roster)
+                .sort((left, right) => Number(right[1]?.last_seen_chapter || 0) - Number(left[1]?.last_seen_chapter || 0))
+        );
+    }
+
+    buildWorldStateRelationshipRegistry() {
+        const registry = {};
+        const upsertRelationship = (leftName, rightName, source = {}, sourceLabel = "") => {
+            const left = this.resolveKnownCharacterName(leftName);
+            const right = this.resolveKnownCharacterName(rightName);
+            if (!left || !right || left === right) {
+                return;
+            }
+            const key = [left, right].sort().join("|");
+            const existing = registry[key] || {
+                characters: [left, right],
+                relation: "",
+                detail: "",
+                first_met_chapter: 0,
+                interaction_chapters: [],
+                last_interaction_chapter: 0,
+                sources: []
+            };
+            const relation = this.pickWorldStateText(source.relation, source.relationship, source["关系"]);
+            const detail = this.pickWorldStateText(source.detail, source.summary, source["描述"], source["内容"]);
+            const firstChapter = Number(source.first_met_chapter || source.first_meeting || source["首次见面"] || source.chapter || source["章节"] || 0);
+            const interactionChapters = Array.isArray(source.interaction_chapters || source["互动章节"])
+                ? (source.interaction_chapters || source["互动章节"]).map((item) => Number(item || 0)).filter(Boolean)
+                : [];
+
+            if (relation) existing.relation = relation;
+            if (detail) existing.detail = this.mergeWorldStateText(existing.detail, detail);
+            if (!existing.first_met_chapter || (firstChapter && firstChapter < existing.first_met_chapter)) {
+                existing.first_met_chapter = firstChapter;
+            }
+            existing.interaction_chapters = Array.from(new Set([
+                ...(existing.interaction_chapters || []),
+                ...interactionChapters,
+                firstChapter || 0
+            ].filter(Boolean))).sort((a, b) => a - b);
+            existing.last_interaction_chapter = Math.max(
+                Number(existing.last_interaction_chapter || 0),
+                ...existing.interaction_chapters
+            );
+            existing.sources = Array.from(new Set([...(existing.sources || []), sourceLabel].filter(Boolean)));
+            registry[key] = existing;
+        };
+
+        Object.entries(this.novelData.character_appearance_tracker?.relationships || {}).forEach(([key, value]) => {
+            const [left, right] = String(key || "").split("|");
+            upsertRelationship(left, right, value, "appearance_tracker");
+        });
+
+        const knownNames = (this.novelData.outline?.characters || [])
+            .map((item) => this.resolveKnownCharacterName(item?.name || item?.["角色名"]))
+            .filter(Boolean);
+        (this.novelData.outline?.characters || []).forEach((character) => {
+            const name = this.resolveKnownCharacterName(character?.name || character?.["角色名"]);
+            const relationships = this.pickWorldStateText(character?.relationships, character?.["人物关系"]);
+            if (!name || !relationships) {
+                return;
+            }
+            const relationInfo = this.extractRelationshipInfoForSeed(name, relationships, knownNames);
+            (relationInfo.relationPairs || []).forEach((pair) => {
+                upsertRelationship(pair.left, pair.right, {
+                    relation: pair.relation,
+                    detail: relationships
+                }, "outline_character");
+            });
+        });
+
+        Object.entries(this.novelData.dynamic_tracker?.relationships || {}).forEach(([key, value]) => {
+            if (key.includes("|")) {
+                const [left, right] = key.split("|");
+                upsertRelationship(left, right, value, "dynamic_relationship");
+                return;
+            }
+            const left = value?.left || value?.source || value?.["左侧"];
+            const right = value?.right || value?.target || value?.["右侧"];
+            upsertRelationship(left, right, value, "dynamic_relationship");
+        });
+
+        return registry;
+    }
+
+    guessWorldStateFactionType(name, detail = "") {
+        const text = `${name || ""} ${detail || ""}`;
+        if (/(宗|门|派|峰|殿|阁|宫|教|谷|圣地|仙府|山庄)/.test(text)) return "宗门";
+        if (/(公司|集团|企业|工作室|品牌|工厂|店|商会)/.test(text)) return "公司";
+        if (/(大学|学院|中学|高中|初中|小学|班|宿舍|社团|学生会|战队)/.test(text)) return "校园";
+        if (/(局|处|厅|署|部|科|队|所|院|站|政府|机关|警|检察|法院)/.test(text)) return "部门";
+        if (/(朝|宫|府|王府|侯府|军|营|卫|司|族|家|会)/.test(text)) return "势力";
+        return "组织";
+    }
+
+    buildWorldStateFactionRegistry(characters = {}) {
+        const factions = {};
+        const upsertFaction = (rawName, source = {}, sourceLabel = "") => {
+            const name = String(rawName || source.name || source.organization || source.org || source["组织"] || source["名称"] || "").trim();
+            if (!name) {
+                return;
+            }
+            const existing = factions[name] || {
+                type: "",
+                leader: "",
+                members: [],
+                locations: [],
+                latest_change: "",
+                last_chapter: 0,
+                sources: []
+            };
+            const detail = this.pickWorldStateText(source.latest_change, source.detail, source.summary, source["描述"], source["内容"]);
+            const type = this.pickWorldStateText(source.type, source["类型"]) || this.guessWorldStateFactionType(name, detail);
+            const leader = this.pickWorldStateText(source.leader, source.owner, source["首领"], source["负责人"]);
+            const members = Utils.ensureArrayFromText(source.members || source["成员"] || [])
+                .map((item) => String(item?.name || item || "").trim())
+                .filter(Boolean);
+            const locations = Utils.ensureArrayFromText(source.locations || source.location || source["地点"] || [])
+                .map((item) => String(item?.name || item || "").trim())
+                .filter(Boolean);
+            const lastChapter = Math.max(
+                Number(existing.last_chapter || 0),
+                Number(source.last_chapter || 0),
+                Number(source.chapter || 0),
+                Number(source["章节"] || 0)
+            );
+
+            if (type) existing.type = type;
+            if (leader) existing.leader = leader;
+            existing.members = Array.from(new Set([...(existing.members || []), ...members].filter(Boolean)));
+            existing.locations = Array.from(new Set([...(existing.locations || []), ...locations].filter(Boolean)));
+            if (detail) existing.latest_change = this.mergeWorldStateText(existing.latest_change, detail);
+            existing.last_chapter = lastChapter;
+            existing.sources = Array.from(new Set([...(existing.sources || []), sourceLabel].filter(Boolean)));
+            factions[name] = existing;
+        };
+
+        Object.entries(this.novelData.world_tracker?.organizations || {}).forEach(([name, value]) => {
+            upsertFaction(name, value, "world_tracker");
+        });
+
+        Object.values(characters || {}).forEach((character) => {
+            this.splitWorldStateLabels(character.organization || "").forEach((organization) => {
+                const leaderHint = `${character.identity || ""} ${character.status || ""}`;
+                upsertFaction(organization, {
+                    members: [character.name],
+                    leader: !/(宗主|掌门|门主|峰主|阁主|宫主|家主|族长|总裁|经理|部长|主任|院长|会长|社长|班长|队长|局长|校长|导师|老师|皇帝|陛下|王爷)/.test(leaderHint)
+                        ? ""
+                        : character.name,
+                    detail: character.status ? `${character.name}：${character.status}` : "",
+                    chapter: character.last_seen_chapter || 0
+                }, "character_roster");
+            });
+        });
+
+        return factions;
+    }
+
+    buildWorldStateLocationRegistry(characters = {}, chapterMeta = {}) {
+        const locations = {};
+        const upsertLocation = (rawName, source = {}, sourceLabel = "") => {
+            const name = String(rawName || source.name || source.location || source["地点"] || source["位置"] || "").trim();
+            if (!name) {
+                return;
+            }
+            const existing = locations[name] || {
+                occupants: [],
+                controlled_by: "",
+                latest_event: "",
+                last_chapter: 0,
+                sources: []
+            };
+            const occupants = Utils.ensureArrayFromText(source.occupants || source.members || source["在场人物"] || [])
+                .map((item) => String(item?.name || item || "").trim())
+                .filter(Boolean);
+            const controlledBy = this.pickWorldStateText(source.controlled_by, source.controller, source.owner, source["控制者"], source["归属"]);
+            const latestEvent = this.pickWorldStateText(source.latest_event, source.latest_change, source.detail, source.summary, source["内容"]);
+            const lastChapter = Math.max(
+                Number(existing.last_chapter || 0),
+                Number(source.last_chapter || 0),
+                Number(source.chapter || 0),
+                Number(source["章节"] || 0)
+            );
+
+            existing.occupants = Array.from(new Set([...(existing.occupants || []), ...occupants].filter(Boolean)));
+            if (controlledBy) existing.controlled_by = controlledBy;
+            if (latestEvent) existing.latest_event = this.mergeWorldStateText(existing.latest_event, latestEvent);
+            existing.last_chapter = lastChapter;
+            existing.sources = Array.from(new Set([...(existing.sources || []), sourceLabel].filter(Boolean)));
+            locations[name] = existing;
+        };
+
+        Object.entries(this.novelData.world_tracker?.locations || {}).forEach(([name, value]) => {
+            upsertLocation(name, value, "world_tracker");
+        });
+
+        const currentLocation = this.pickWorldStateText(
+            this.novelData.story_state?.current_location,
+            this.novelData.outline?.story_state?.current_location
+        );
+        if (currentLocation) {
+            upsertLocation(currentLocation, {
+                latest_event: "当前叙事主场景",
+                chapter: Number(chapterMeta.chapterNumber || 0)
+            }, "story_state");
+        }
+
+        Object.values(characters || {}).forEach((character) => {
+            this.splitWorldStateLabels(character.location || "").forEach((location) => {
+                upsertLocation(location, {
+                    occupants: [character.name],
+                    chapter: Number(character.last_seen_chapter || 0)
+                }, "character_roster");
+            });
+        });
+
+        (this.novelData.world_tracker?.world_events || []).forEach((event) => {
+            const locationName = this.pickWorldStateText(event.location, event.place, event["地点"]);
+            if (!locationName) {
+                return;
+            }
+            upsertLocation(locationName, {
+                latest_event: this.pickWorldStateText(event.event, event.detail, event.content, event["内容"]),
+                chapter: Number(event.chapter || 0)
+            }, "world_event");
+        });
+
+        return locations;
+    }
+
+    buildWorldStateItemRegistry(chapterMeta = {}) {
+        const items = {};
+        const upsertItem = (rawName, source = {}, sourceLabel = "") => {
+            const name = String(rawName || source.name || source.item || source["名称"] || source["物品"] || "").trim();
+            if (!name) {
+                return;
+            }
+            const existing = items[name] || {
+                name,
+                类型: "",
+                type: "",
+                持有者: "",
+                holder: "",
+                当前状态: "",
+                status: "",
+                来源: "",
+                source: "",
+                描述: "",
+                description: "",
+                获得章节: 0,
+                last_updated_chapter: 0,
+                sources: []
+            };
+            const type = this.pickWorldStateText(source.type, source["类型"]);
+            const holder = this.pickWorldStateText(source.holder, source.owner, source["持有者"], source["归属"]);
+            const status = this.pickWorldStateText(source.status, source["当前状态"], source["状态"]);
+            const itemSource = this.pickWorldStateText(source.source, source["来源"], source["获得方式"]);
+            const description = this.pickWorldStateText(source.description, source["描述"]);
+            const acquireChapter = Number(source.acquire_chapter || source["获得章节"] || source.chapter || source["章节"] || 0);
+            const lastUpdatedChapter = Math.max(
+                Number(existing.last_updated_chapter || 0),
+                Number(source.last_updated_chapter || 0),
+                Number(source["最后更新章节"] || 0),
+                acquireChapter
+            );
+
+            if (type) {
+                existing.类型 = type;
+                existing.type = type;
+            }
+            if (holder) {
+                existing.持有者 = holder;
+                existing.holder = holder;
+            }
+            if (status) {
+                existing.当前状态 = status;
+                existing.status = status;
+            }
+            if (itemSource) {
+                existing.来源 = itemSource;
+                existing.source = itemSource;
+            }
+            if (description) {
+                existing.描述 = description;
+                existing.description = description;
+            }
+            existing.获得章节 = existing.获得章节 || acquireChapter;
+            existing.last_updated_chapter = lastUpdatedChapter;
+            existing.sources = Array.from(new Set([...(existing.sources || []), sourceLabel].filter(Boolean)));
+            items[name] = existing;
+        };
+
+        Object.entries(this.novelData.dynamic_tracker?.items || {}).forEach(([name, value]) => {
+            upsertItem(value?.["名称"] || value?.name || name, {
+                type: value?.["类型"] || value?.type,
+                holder: value?.["持有者"] || value?.holder,
+                status: value?.["当前状态"] || value?.status,
+                source: value?.["获得方式"] || value?.source,
+                description: value?.["描述"] || value?.description,
+                acquire_chapter: value?.["获得章节"] || value?.chapter,
+                last_updated_chapter: value?.["最后更新章节"] || value?.last_chapter
+            }, "dynamic_tracker");
+        });
+
+        const importantItemSources = [
+            this.novelData.outline?.story_state?.important_items,
+            this.novelData.story_state?.tracked_items,
+            this.novelData.chapter_snapshot?.snapshots?.[`chapter_${Number(chapterMeta.chapterNumber || 0)}`]?.important_items
+        ];
+        importantItemSources.forEach((source) => {
+            this.extractStructuredPossessions(source, "").forEach((item) => {
+                upsertItem(item.name, {
+                    type: item.type,
+                    holder: item.holder,
+                    status: item.status,
+                    source: item.source,
+                    description: item.description,
+                    acquire_chapter: Number(chapterMeta.chapterNumber || 0)
+                }, "important_items");
+            });
+        });
+
+        return items;
+    }
+
+    buildWorldStateAbilityRegistry(characters = {}) {
+        const abilities = {};
+        const upsertAbility = (rawName, source = {}, sourceLabel = "") => {
+            const name = String(rawName || source.name || source.skill || source["名称"] || source["技能"] || "").trim();
+            if (!name || name.length > 30) {
+                return;
+            }
+            const existing = abilities[name] || {
+                owner: "",
+                type: "",
+                level: "",
+                detail: "",
+                last_chapter: 0,
+                sources: []
+            };
+            const owner = this.pickWorldStateText(source.owner, source.user, source["使用者"], source["归属"]);
+            const type = this.pickWorldStateText(source.type, source["类型"]) || (/位阶|境界|修为/.test(name) ? "位阶" : "能力");
+            const level = this.pickWorldStateText(source.level, source.rank, source.proficiency, source["等级"], source["熟练度"], source["位阶"]);
+            const detail = this.pickWorldStateText(source.detail, source.description, source["描述"]);
+            const lastChapter = Math.max(
+                Number(existing.last_chapter || 0),
+                Number(source.last_chapter || 0),
+                Number(source.chapter || 0),
+                Number(source["章节"] || 0)
+            );
+
+            if (owner) existing.owner = owner;
+            if (type) existing.type = type;
+            if (level) existing.level = level;
+            if (detail) existing.detail = this.mergeWorldStateText(existing.detail, detail);
+            existing.last_chapter = lastChapter;
+            existing.sources = Array.from(new Set([...(existing.sources || []), sourceLabel].filter(Boolean)));
+            abilities[name] = existing;
+        };
+
+        Object.entries(this.novelData.dynamic_tracker?.skills || {}).forEach(([name, value]) => {
+            upsertAbility(value?.["名称"] || value?.name || name, {
+                owner: value?.["使用者"] || value?.user,
+                type: value?.["类型"] || value?.type,
+                level: value?.["熟练度"] || value?.proficiency || value?.level,
+                detail: value?.["描述"] || value?.description,
+                chapter: value?.chapter || value?.["章节"] || 0
+            }, "dynamic_skill");
+        });
+
+        Object.values(characters || {}).forEach((character) => {
+            this.splitWorldStateLabels(character.abilities || "")
+                .filter((item) => item.length >= 2 && item.length <= 24)
+                .slice(0, 6)
+                .forEach((abilityName) => {
+                    upsertAbility(abilityName, {
+                        owner: character.name,
+                        type: "角色能力",
+                        detail: character.cultivation ? `当前位阶=${character.cultivation}` : "",
+                        chapter: Number(character.last_seen_chapter || 0)
+                    }, "character_profile");
+                });
+            if (character.cultivation) {
+                upsertAbility(`${character.name}当前位阶`, {
+                    owner: character.name,
+                    type: "位阶",
+                    level: character.cultivation,
+                    detail: character.cultivation,
+                    chapter: Number(character.last_seen_chapter || 0)
+                }, "character_rank");
+            }
+        });
+
+        Object.entries(this.novelData.genre_progress_tracker?.rank_progress || {}).forEach(([name, value]) => {
+            const resolvedName = this.resolveKnownCharacterName(name);
+            upsertAbility(`${resolvedName}当前位阶`, {
+                owner: resolvedName,
+                type: "位阶",
+                level: value?.rank || "",
+                detail: value?.detail || value?.rank || "",
+                chapter: Number(value?.chapter || 0)
+            }, "genre_rank");
+        });
+
+        return abilities;
+    }
+
+    buildWorldStateRewardRegistry(items = {}) {
+        const rewards = [];
+        const seen = new Set();
+        const rewardPattern = /(系统|任务|奖励|机缘|签到|礼包|抽奖|成就|掉落|赐|赏|奖金|奖学金|offer|录取|编制|资格|权限|名额)/;
+        const pushReward = (source = {}, sourceLabel = "") => {
+            const name = this.pickWorldStateText(source.reward, source.name, source.item, source["名称"]);
+            const detail = this.pickWorldStateText(source.detail, source.description, source["描述"]);
+            const owner = this.pickWorldStateText(source.owner, source.holder, source["持有者"], source["归属"]);
+            const status = this.pickWorldStateText(source.status, source["当前状态"], source["状态"]);
+            const rewardSource = this.pickWorldStateText(source.source, source["来源"]) || sourceLabel;
+            const combinedText = `${name} ${detail} ${rewardSource}`;
+            if (!combinedText.trim() || !rewardPattern.test(combinedText)) {
+                return;
+            }
+            const key = `${name || detail}|${owner}|${rewardSource}`;
+            if (seen.has(key)) {
+                return;
+            }
+            seen.add(key);
+            rewards.push({
+                reward: name || detail || "奖励记录",
+                name: name || detail || "奖励记录",
+                owner,
+                status: status || "待追踪",
+                source: rewardSource,
+                detail,
+                chapter: Number(source.chapter || source.last_updated_chapter || 0)
+            });
+        };
+
+        Object.values(items || {}).forEach((item) => pushReward(item, "item_registry"));
+        (this.novelData.genre_progress_tracker?.progress_events || []).forEach((event) => {
+            pushReward({
+                name: event?.detail || "",
+                owner: event?.role || "",
+                source: "genre_progress",
+                status: "事件推进",
+                detail: event?.detail || "",
+                chapter: Number(event?.chapter || 0)
+            }, "genre_progress");
+        });
+
+        return rewards.sort((left, right) => Number(right.chapter || 0) - Number(left.chapter || 0)).slice(0, 20);
+    }
+
+    buildWorldStatePlotThreadRegistry(chapterMeta = {}) {
+        const latestSnapshot = this.novelData.chapter_snapshot?.snapshots?.[`chapter_${Number(chapterMeta.chapterNumber || 0)}`] || {};
+        const pendingPlots = this.normalizeWorldStateTextList(
+            this.pickWorldStateText(
+                latestSnapshot.pending_plots,
+                this.novelData.outline?.story_state?.pending_plots
+            )
+        );
+        const plotUnitThreads = Object.values(this.novelData.outline_plot_unit_manager?.plot_units || {})
+            .sort((left, right) => {
+                if (Number(left.volume || 0) !== Number(right.volume || 0)) {
+                    return Number(right.volume || 0) - Number(left.volume || 0);
+                }
+                return Number(right.unit_number || 0) - Number(left.unit_number || 0);
+            })
+            .slice(0, 4)
+            .map((unit) => this.pickWorldStateText(unit.core_conflict, unit.connection_to_next, unit.suspense_hook))
+            .filter(Boolean);
+        const unresolvedForeshadows = this.flattenForeshadows()
+            .filter((item) => !String(item.status || item["状态"] || "").includes("回收"))
+            .sort((left, right) => Number(right.chapter || 0) - Number(left.chapter || 0))
+            .map((item) => `第${item.chapter || "?"}章：${Utils.summarizeText(item.content || item["内容"] || "", 50)}`)
+            .slice(0, 10);
+
+        return {
+            active: Array.from(new Set([...pendingPlots, ...plotUnitThreads])).slice(0, 12),
+            temporary: Array.isArray(this.novelData.used_temp_subplots) ? this.novelData.used_temp_subplots.slice(-10) : [],
+            unresolved_foreshadows: unresolvedForeshadows
+        };
+    }
+
+    buildWorldStateContinuityRiskList({
+        chapterMeta = {},
+        overview = {},
+        characters = {},
+        factions = {},
+        locations = {},
+        items = {},
+        rewards = [],
+        plotThreads = {}
+    } = {}) {
+        const risks = [];
+        const pushRisk = (text) => {
+            const normalized = String(text || "").trim();
+            if (!normalized || risks.includes(normalized)) {
+                return;
+            }
+            risks.push(normalized);
+        };
+
+        if (Number(chapterMeta.chapterNumber || 0) > 0 && !overview.current_location) {
+            pushRisk("最新章节还没锁定当前地点，续写时容易平地换景。");
+        }
+        if (Number(chapterMeta.chapterNumber || 0) > 0 && !overview.current_time) {
+            pushRisk("最新章节还没锁定当前时间，续写时容易出现时间跳变。");
+        }
+
+        const focusNames = Object.values((this.novelData.synopsisData || this.novelData.synopsis_data || {}).main_characters || {})
+            .map((name) => this.resolveKnownCharacterName(name))
+            .filter(Boolean);
+        const focusCharacters = (focusNames.length
+            ? focusNames.map((name) => characters[name]).filter(Boolean)
+            : Object.values(characters).sort((left, right) => Number(right.last_seen_chapter || 0) - Number(left.last_seen_chapter || 0)).slice(0, 4)
+        ).slice(0, 4);
+        focusCharacters.forEach((character) => {
+            if (!character.location) {
+                pushRisk(`${character.name} 还没锁定明确位置。`);
+            }
+            if (!character.status) {
+                pushRisk(`${character.name} 还没锁定明确状态。`);
+            }
+        });
+
+        Object.entries(items)
+            .filter(([, value]) => !value?.持有者 || !value?.当前状态)
+            .slice(0, 3)
+            .forEach(([name, value]) => {
+                if (!value?.持有者) {
+                    pushRisk(`关键物品 ${name} 没有锁定持有者。`);
+                }
+                if (!value?.当前状态) {
+                    pushRisk(`关键物品 ${name} 没有锁定当前状态。`);
+                }
+            });
+
+        Object.entries(factions)
+            .filter(([, value]) => !Array.isArray(value?.members) || !value.members.length)
+            .slice(0, 2)
+            .forEach(([name]) => {
+                pushRisk(`${name} 已进入势力表，但成员名单还不明确。`);
+            });
+
+        if ((plotThreads.unresolved_foreshadows || []).length >= 6) {
+            pushRisk("未回收伏笔偏多，续写时需要优先确认哪些要推进。");
+        }
+        if (!(plotThreads.active || []).length && (plotThreads.unresolved_foreshadows || []).length) {
+            pushRisk("主线待推进项偏空，但还有未回收伏笔，容易让正文继续漂到支线上。");
+        }
+        if (Number(chapterMeta.chapterNumber || 0) > 0 && !Object.keys(locations).length) {
+            pushRisk("目前没有可用地点总表，角色移动和场景切换容易错位。");
+        }
+        if ((rewards || []).some((item) => !item.owner)) {
+            pushRisk("存在未锁定归属的奖励或资源，后文容易错配到别的角色。");
+        }
+
+        return risks.slice(0, 10);
     }
 
     flattenForeshadows() {
@@ -1962,6 +3085,8 @@ ${(detailedOutline || concept || "未填写").slice(0, 2200)}`;
             });
         });
 
+        this.ensureWorldStateManager();
+        this.syncWorldStateManager();
         this.syncGeneratedContexts();
     }
 
@@ -4997,6 +6122,7 @@ ${(detailedOutline || concept || "未填写").slice(0, 2200)}`;
             personality_enforcer: this.deepClone(this.novelData.personality_enforcer || {}),
             dialogue_tracker: this.deepClone(this.novelData.dialogue_tracker || {}),
             world_tracker: this.deepClone(this.novelData.world_tracker || {}),
+            world_state_manager: this.deepClone(this.novelData.world_state_manager || {}),
             genre_progress_tracker: this.deepClone(this.novelData.genre_progress_tracker || {}),
             name_locker: this.deepClone(this.novelData.name_locker || {}),
             used_temp_subplots: this.deepClone(this.novelData.used_temp_subplots || [])
@@ -5041,6 +6167,7 @@ ${(detailedOutline || concept || "未填写").slice(0, 2200)}`;
         this.trimStateSystemsAfterChapter(target);
 
         if (target <= 0) {
+            const preservedManualState = this.deepClone(this.ensureWorldStateManager().manual_state || DEFAULT_NOVEL_DATA.world_state_manager.manual_state);
             this.novelData.outline.story_state = this.deepClone(DEFAULT_NOVEL_DATA.outline.story_state);
             this.novelData.story_state = this.deepClone(DEFAULT_NOVEL_DATA.story_state);
             this.novelData.dynamic_tracker = this.deepClone(DEFAULT_NOVEL_DATA.dynamic_tracker);
@@ -5055,8 +6182,12 @@ ${(detailedOutline || concept || "未填写").slice(0, 2200)}`;
             this.novelData.dialogue_tracker = this.deepClone(DEFAULT_NOVEL_DATA.dialogue_tracker);
             this.novelData.name_locker = this.deepClone(DEFAULT_NOVEL_DATA.name_locker);
             this.novelData.world_tracker = this.deepClone(DEFAULT_NOVEL_DATA.world_tracker);
+            this.novelData.world_state_manager = this.deepClone(DEFAULT_NOVEL_DATA.world_state_manager);
+            this.novelData.world_state_manager.manual_state = preservedManualState;
             this.novelData.genre_progress_tracker = this.deepClone(DEFAULT_NOVEL_DATA.genre_progress_tracker);
             this.novelData.used_temp_subplots = [];
+            this.ensureWorldStateManager();
+            this.syncWorldStateManager();
             return;
         }
 
@@ -5075,9 +6206,12 @@ ${(detailedOutline || concept || "未填写").slice(0, 2200)}`;
             this.novelData.personality_enforcer = this.deepClone(snapshot.personality_enforcer || this.novelData.personality_enforcer || {});
             this.novelData.dialogue_tracker = this.deepClone(snapshot.dialogue_tracker || this.novelData.dialogue_tracker || {});
             this.novelData.world_tracker = this.deepClone(snapshot.world_tracker || this.novelData.world_tracker || {});
+            this.novelData.world_state_manager = this.deepClone(snapshot.world_state_manager || this.novelData.world_state_manager || DEFAULT_NOVEL_DATA.world_state_manager);
             this.novelData.genre_progress_tracker = this.deepClone(snapshot.genre_progress_tracker || this.novelData.genre_progress_tracker || {});
             this.novelData.name_locker = this.deepClone(snapshot.name_locker || this.novelData.name_locker || {});
             this.novelData.used_temp_subplots = this.deepClone(snapshot.used_temp_subplots || this.novelData.used_temp_subplots || []);
+            this.ensureWorldStateManager();
+            this.syncWorldStateManager();
             return;
         }
 
@@ -5092,6 +6226,8 @@ ${(detailedOutline || concept || "未填写").slice(0, 2200)}`;
             this.novelData.story_state.current_location = outlineState.current_location || "";
             this.novelData.story_state.current_time = outlineState.timeline || "";
         }
+        this.ensureWorldStateManager();
+        this.syncWorldStateManager();
     }
 
     recordTimelineUpdate(chapterNumber, stateData) {
@@ -7793,6 +8929,7 @@ ${(detailedOutline || concept || "未填写").slice(0, 2200)}`;
             appearanceTracker: { path: ["character_appearance_tracker"], fallback: {} },
             dialogueTracker: { path: ["dialogue_tracker"], fallback: {} },
             worldTracker: { path: ["world_tracker"], fallback: {} },
+            worldStateManager: { path: ["world_state_manager"], fallback: {} },
             genreProgressTracker: { path: ["genre_progress_tracker"], fallback: {} },
             supportingCharacters: { path: ["supporting_characters"], fallback: {} },
             legacyForeshadows: { path: ["foreshadows"], fallback: [] },

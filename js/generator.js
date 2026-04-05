@@ -1387,6 +1387,7 @@ class NovelGenerator {
             this.buildForeshadowGuard(project, chapterNumber),
             this.buildSubplotGuard(project),
             this.buildWorldTrackerGuard(project),
+            this.buildWorldStateManagerGuard(project, chapterNumber, chapter),
             this.buildGenreProgressGuard(project),
             this.buildPersonalityGuard(project, "", chapterNumber),
             this.buildCharacterCheckerGuard(project),
@@ -2557,6 +2558,206 @@ class NovelGenerator {
         }
 
         return lines.length ? `【题材进度追踪】\n${lines.join("\n")}` : "";
+    }
+
+    normalizeWorldStateList(value) {
+        if (!value) {
+            return [];
+        }
+        if (Array.isArray(value)) {
+            return value
+                .map((item) => String(item || "").trim())
+                .filter(Boolean);
+        }
+        return String(value)
+            .split(/[\n,，、；;]/)
+            .map((item) => item.trim())
+            .filter(Boolean);
+    }
+
+    buildWorldStateManagerGuard(project, chapterNumber = 0, chapter = null) {
+        const manager = project.world_state_manager || {};
+        const meta = manager.meta || {};
+        const autoState = manager.auto_state || {};
+        const manualState = manager.manual_state || {};
+        const mergeMap = (base = {}, extra = {}) => {
+            const merged = { ...(base || {}) };
+            Object.entries(extra || {}).forEach(([key, value]) => {
+                if (value && typeof value === "object" && !Array.isArray(value)) {
+                    merged[key] = {
+                        ...(merged[key] && typeof merged[key] === "object" ? merged[key] : {}),
+                        ...value
+                    };
+                    return;
+                }
+                merged[key] = {
+                    ...(merged[key] && typeof merged[key] === "object" ? merged[key] : {}),
+                    note: String(value || "").trim()
+                };
+            });
+            return merged;
+        };
+
+        const overview = autoState.overview || {};
+        const characters = mergeMap(autoState.characters || {}, manualState.characters || {});
+        const factions = mergeMap(autoState.factions || {}, manualState.factions || {});
+        const items = mergeMap(autoState.items || {}, manualState.items || {});
+        const abilities = mergeMap(autoState.abilities || {}, manualState.abilities || {});
+        const rewards = [
+            ...(Array.isArray(autoState.rewards) ? autoState.rewards : []),
+            ...(Array.isArray(manualState.rewards) ? manualState.rewards : [])
+        ];
+        const plotThreads = autoState.plot_threads || {};
+        const genreModules = Array.isArray(meta.genre_modules) ? meta.genre_modules.slice(0, 8) : [];
+        const hardRules = this.normalizeWorldStateList(manualState.hard_rules).slice(0, 8);
+        const riskList = [
+            ...this.normalizeWorldStateList(autoState.continuity_risks),
+            ...this.normalizeWorldStateList(manualState.continuity_risks)
+        ].slice(0, 8);
+        const overviewNotes = this.normalizeWorldStateList(manualState.overview_notes).slice(0, 4);
+        const customModules = Object.entries(manualState.custom_modules || {})
+            .slice(0, 4)
+            .map(([key, value]) => `${key}=${Utils.summarizeText(typeof value === "string" ? value : JSON.stringify(value), 70)}`);
+
+        const chapterFocusNames = chapter?.summary
+            ? this.extractChapterOutlineCharacterNames(chapter.summary || "")
+            : [];
+        const mainNames = Object.values(project.synopsisData?.main_characters || project.synopsis_data?.main_characters || {})
+            .map((item) => String(item || "").trim())
+            .filter(Boolean);
+        const sortedCharacterNames = Object.entries(characters)
+            .sort((left, right) => Number(right[1]?.last_seen_chapter || 0) - Number(left[1]?.last_seen_chapter || 0))
+            .map(([name]) => name);
+        const focusNames = Array.from(new Set([
+            ...chapterFocusNames,
+            ...mainNames,
+            ...sortedCharacterNames
+        ])).slice(0, 8);
+        const characterLines = focusNames
+            .map((name) => {
+                const data = characters[name];
+                if (!data) {
+                    return "";
+                }
+                const parts = [];
+                if (data.identity) parts.push(`身份=${Utils.summarizeText(data.identity, 18)}`);
+                if (data.location) parts.push(`位置=${Utils.summarizeText(data.location, 22)}`);
+                if (data.status) parts.push(`状态=${Utils.summarizeText(data.status, 22)}`);
+                if (data.cultivation) parts.push(`位阶=${Utils.summarizeText(data.cultivation, 18)}`);
+                if (data.organization) parts.push(`归属=${Utils.summarizeText(data.organization, 18)}`);
+                if (data.relationships) parts.push(`关系=${Utils.summarizeText(data.relationships, 22)}`);
+                if (data.note) parts.push(`补充=${Utils.summarizeText(data.note, 20)}`);
+                return parts.length ? `- ${name}：${parts.join("；")}` : "";
+            })
+            .filter(Boolean)
+            .slice(0, 6);
+
+        const focusOrganizations = new Set(
+            focusNames.flatMap((name) => {
+                const text = String(characters[name]?.organization || "").trim();
+                return text ? text.split(/[，、,\/]/).map((item) => item.trim()).filter(Boolean) : [];
+            })
+        );
+        const factionLines = Object.entries(factions)
+            .sort((left, right) => {
+                const leftScore = (focusOrganizations.has(left[0]) ? 100 : 0) + (Array.isArray(left[1]?.members) ? left[1].members.length : 0);
+                const rightScore = (focusOrganizations.has(right[0]) ? 100 : 0) + (Array.isArray(right[1]?.members) ? right[1].members.length : 0);
+                return rightScore - leftScore;
+            })
+            .slice(0, 5)
+            .map(([name, data]) => {
+                const parts = [];
+                if (data.type) parts.push(`类型=${data.type}`);
+                if (data.leader) parts.push(`核心=${data.leader}`);
+                if (Array.isArray(data.members) && data.members.length) parts.push(`成员=${data.members.slice(0, 5).join("、")}`);
+                if (data.latest_change) parts.push(`变化=${Utils.summarizeText(data.latest_change, 28)}`);
+                if (data.note) parts.push(`补充=${Utils.summarizeText(data.note, 20)}`);
+                return parts.length ? `- ${name}：${parts.join("；")}` : "";
+            })
+            .filter(Boolean);
+
+        const itemLines = Object.entries(items)
+            .sort((left, right) => Number(right[1]?.last_updated_chapter || 0) - Number(left[1]?.last_updated_chapter || 0))
+            .slice(0, 4)
+            .map(([name, data]) => {
+                const holder = data.持有者 || data.holder || data.owner || "";
+                const status = data.当前状态 || data.status || "";
+                const type = data.类型 || data.type || "";
+                const parts = [holder ? `归属=${holder}` : "", status ? `状态=${status}` : "", type ? `类型=${type}` : "", data.note ? `补充=${Utils.summarizeText(data.note, 20)}` : ""]
+                    .filter(Boolean);
+                return parts.length ? `- ${name}：${parts.join("；")}` : "";
+            })
+            .filter(Boolean);
+        const abilityLines = Object.entries(abilities)
+            .sort((left, right) => Number(right[1]?.last_chapter || 0) - Number(left[1]?.last_chapter || 0))
+            .slice(0, 3)
+            .map(([name, data]) => {
+                const parts = [data.owner ? `归属=${data.owner}` : "", data.level ? `位阶=${data.level}` : "", data.type ? `类型=${data.type}` : "", data.note ? `补充=${Utils.summarizeText(data.note, 20)}` : ""]
+                    .filter(Boolean);
+                return parts.length ? `- ${name}：${parts.join("；")}` : "";
+            })
+            .filter(Boolean);
+        const rewardLines = rewards
+            .slice(0, 3)
+            .map((item) => {
+                const rewardItem = item && typeof item === "object" ? item : { name: String(item || "").trim() };
+                const name = rewardItem.reward || rewardItem.name || "";
+                if (!name) {
+                    return "";
+                }
+                const parts = [rewardItem.owner ? `归属=${rewardItem.owner}` : "", rewardItem.status ? `状态=${rewardItem.status}` : "", rewardItem.source ? `来源=${rewardItem.source}` : ""]
+                    .filter(Boolean);
+                return parts.length ? `- ${name}：${parts.join("；")}` : "";
+            })
+            .filter(Boolean);
+
+        const plotLines = [
+            ...(Array.isArray(plotThreads.active) ? plotThreads.active.slice(0, 4).map((item) => `主线=${Utils.summarizeText(item, 34)}`) : []),
+            ...(Array.isArray(plotThreads.temporary) ? plotThreads.temporary.slice(0, 3).map((item) => `支线=${Utils.summarizeText(item, 34)}`) : []),
+            ...(Array.isArray(plotThreads.unresolved_foreshadows) ? plotThreads.unresolved_foreshadows.slice(0, 3).map((item) => `伏笔=${Utils.summarizeText(item, 36)}`) : [])
+        ].slice(0, 8);
+
+        const lines = [];
+        if (meta.genre_profile || genreModules.length) {
+            lines.push(`题材档案：${meta.genre_profile || "通用长篇连载"}${genreModules.length ? `；重点=${genreModules.join("、")}` : ""}`);
+        }
+
+        const timeAnchor = overview.current_time || "";
+        const locationAnchor = overview.current_location || "";
+        const chapterAnchor = Number(overview.latest_chapter || chapterNumber || 0);
+        if (timeAnchor || locationAnchor || chapterAnchor) {
+            lines.push(`当前时空锚点：${chapterAnchor ? `第${chapterAnchor}章后` : "当前"}${timeAnchor ? `；时间=${Utils.summarizeText(timeAnchor, 40)}` : ""}${locationAnchor ? `；地点=${Utils.summarizeText(locationAnchor, 30)}` : ""}`);
+        }
+        if (characterLines.length) {
+            lines.push(`重点人物：\n${characterLines.join("\n")}`);
+        }
+        if (factionLines.length) {
+            lines.push(`势力/部门：\n${factionLines.join("\n")}`);
+        }
+        if (itemLines.length || abilityLines.length || rewardLines.length) {
+            lines.push(`关键物品/能力/奖励：\n${[...itemLines, ...abilityLines, ...rewardLines].join("\n")}`);
+        }
+        if (plotLines.length) {
+            lines.push(`主线、支线与伏笔：${plotLines.join("；")}`);
+        }
+        if (overviewNotes.length) {
+            lines.push(`手动总备注：${overviewNotes.join("；")}`);
+        }
+        if (hardRules.length) {
+            lines.push(`硬性红线：${hardRules.join("；")}`);
+        }
+        if (customModules.length) {
+            lines.push(`手动补充模块：${customModules.join("；")}`);
+        }
+        if (riskList.length) {
+            lines.push(`连续性风险：${riskList.join("；")}`);
+        }
+        if (!lines.length) {
+            return "";
+        }
+
+        lines.push("要求：本章动笔前先核对以上总表，再决定人物站位、称呼关系、物品归属、时间推进和结尾铺垫。");
+        return `【世界状态总控】\n${lines.join("\n")}`;
     }
 
     buildSubplotGuard(project) {

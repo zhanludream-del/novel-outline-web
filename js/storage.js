@@ -117,6 +117,27 @@ class StorageManager {
         merged.supporting_characters = merged.supporting_characters && typeof merged.supporting_characters === "object"
             ? merged.supporting_characters
             : {};
+        merged.world_state_manager = merged.world_state_manager && typeof merged.world_state_manager === "object"
+            ? merged.world_state_manager
+            : JSON.parse(JSON.stringify(DEFAULT_NOVEL_DATA.world_state_manager));
+        merged.world_state_manager.meta = merged.world_state_manager.meta && typeof merged.world_state_manager.meta === "object"
+            ? {
+                schema_version: merged.world_state_manager.meta.schema_version || DEFAULT_NOVEL_DATA.world_state_manager.meta.schema_version,
+                genre_profile: merged.world_state_manager.meta.genre_profile || "",
+                genre_modules: Array.isArray(merged.world_state_manager.meta.genre_modules)
+                    ? merged.world_state_manager.meta.genre_modules
+                    : [],
+                last_synced_at: merged.world_state_manager.meta.last_synced_at || "",
+                last_synced_chapter: Number(merged.world_state_manager.meta.last_synced_chapter || 0),
+                last_synced_volume: Number(merged.world_state_manager.meta.last_synced_volume || 0)
+            }
+            : JSON.parse(JSON.stringify(DEFAULT_NOVEL_DATA.world_state_manager.meta));
+        merged.world_state_manager.auto_state = merged.world_state_manager.auto_state && typeof merged.world_state_manager.auto_state === "object"
+            ? merged.world_state_manager.auto_state
+            : JSON.parse(JSON.stringify(DEFAULT_NOVEL_DATA.world_state_manager.auto_state));
+        merged.world_state_manager.manual_state = merged.world_state_manager.manual_state && typeof merged.world_state_manager.manual_state === "object"
+            ? merged.world_state_manager.manual_state
+            : JSON.parse(JSON.stringify(DEFAULT_NOVEL_DATA.world_state_manager.manual_state));
         merged.genre_progress_tracker = merged.genre_progress_tracker && typeof merged.genre_progress_tracker === "object"
             ? {
                 current_genre: merged.genre_progress_tracker.current_genre || "",
