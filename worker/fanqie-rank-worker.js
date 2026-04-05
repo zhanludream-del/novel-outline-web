@@ -6,6 +6,14 @@ const HTML_FETCH_TIMEOUT_MS = 7000;
 const API_FETCH_TIMEOUT_MS = 6000;
 const FETCH_RETRY_COUNT = 2;
 const MAX_CATEGORY_TARGETS = 2;
+const SEARCH_API_PATH = "/api/author/search/search_book/v1";
+const SEARCH_PAGE_FILTER = "127,127,127,127";
+const SEARCH_QUERY_TYPE = "0";
+const SEARCH_RESULT_PAGE_SIZE = 12;
+const BROWSER_SEARCH_TIMEOUT_MS = 30000;
+const EXTERNAL_SEARCH_MAX_QUERY_VARIANTS = 3;
+const EXTERNAL_SEARCH_MAX_PAGE_FETCHES = 4;
+const EXTERNAL_SEARCH_RESULT_MULTIPLIER = 3;
 const FANQIE_GLYPH_MAP = {
     "58670": "0", "58413": "1", "58678": "2", "58371": "3", "58353": "4", "58480": "5", "58359": "6", "58449": "7", "58540": "8", "58692": "9",
     "58712": "a", "58542": "b", "58575": "c", "58626": "d", "58691": "e", "58561": "f", "58362": "g", "58619": "h", "58430": "i", "58531": "j",
@@ -95,9 +103,9 @@ export default {
                 ? selectedCategories
                 : [{ name: "总榜参考", href: "/rank/all" }];
 
-            const itemMap = new Map();
+            const rankItemMap = new Map();
             for (const category of categoryTargets) {
-                if (itemMap.size >= limit) {
+                if (rankItemMap.size >= limit) {
                     break;
                 }
 
@@ -108,7 +116,7 @@ export default {
                 if (!books.length && category.href === "/rank/all") {
                     books = parseRankBooks(rankIndexHtml, category.name).slice(0, limit);
                 }
-                if (!books.length && itemMap.size === 0 && category.href && category.href !== "/rank/all") {
+                if (!books.length && rankItemMap.size === 0 && category.href && category.href !== "/rank/all") {
                     const categoryHtml = category.href === "/rank/all"
                         ? rankIndexHtml
                         : await fetchHtml(new URL(category.href, FANQIE_ORIGIN).toString());
@@ -119,24 +127,78 @@ export default {
                         return;
                     }
                     const key = normalizeKey(book.title);
-                    if (!itemMap.has(key)) {
-                        itemMap.set(key, book);
+                    if (!rankItemMap.has(key)) {
+                        rankItemMap.set(key, book);
                     }
                 });
             }
 
-            const items = Array.from(itemMap.values()).slice(0, limit);
+            const rankItems = Array.from(rankItemMap.values()).slice(0, limit);
+            const rankDiagnostics = buildTrendDiagnostics(rankItems);
+            const rankAssessment = assessTrendMatch({
+                keyword,
+                genre,
+                subgenre,
+                categories: categoryTargets,
+                items: rankItems,
+                diagnostics: rankDiagnostics
+            });
+
+            let searchResult = createEmptySearchResult();
+            if (shouldFallbackToSearch(rankAssessment)) {
+                searchResult = await fetchSearchBooks(env, keyword, limit);
+            }
+
+            let items = mergeTrendSources({
+                rankItems,
+                searchItems: searchResult.items,
+                keyword,
+                genre,
+                subgenre,
+                limit
+            });
+            if (!searchResult.used && shouldFallbackToSearch(rankAssessment) && rankAssessment.relevantCount === 0) {
+                items = [];
+            }
             const diagnostics = buildTrendDiagnostics(items);
-            const summary = buildTrendSummary({
+            const sourceBreakdown = {
+                rank: {
+                    used: rankItems.length > 0,
+                    categories: categoryTargets.map((item) => item.name).filter(Boolean),
+                    itemCount: rankItems.length,
+                    relevantCount: rankAssessment.relevantCount,
+                    score: rankAssessment.score,
+                    fallbackRecommended: rankAssessment.shouldFallback,
+                    fallbackReason: rankAssessment.reason || ""
+                },
+                search: {
+                    attempted: searchResult.attempted === true,
+                    used: searchResult.used === true,
+                    source: searchResult.source || "",
+                    itemCount: Array.isArray(searchResult.items) ? searchResult.items.length : 0,
+                    totalCount: Number(searchResult.totalCount || 0) || 0,
+                    challengeDetected: searchResult.challengeDetected === true,
+                    error: searchResult.error || ""
+                },
+                merged: {
+                    itemCount: items.length,
+                    sources: [
+                        rankItems.length ? "rank" : "",
+                        searchResult.used ? (searchResult.source || "search") : ""
+                    ].filter(Boolean)
+                }
+            };
+            const summary = buildTrendSummaryV3({
                 keyword,
                 genre,
                 subgenre,
                 categories: categoryTargets,
                 items,
-                diagnostics
+                diagnostics,
+                sourceBreakdown
             });
 
-            return json({
+            const response = json({
                 ok: true,
                 keyword,
                 genre,
@@ -145,6 +207,8 @@ export default {
                 items,
                 diagnostics,
                 summary,
+                searchFallbackUsed: searchResult.used === true,
+                sourceBreakdown,
                 fetchedAt: new Date().toISOString()
             }, 200, {
                 "Cache-Control": `public, max-age=${CACHE_TTL_SECONDS}, s-maxage=${CACHE_TTL_SECONDS}`,
@@ -289,6 +353,1168 @@ async function fetchRankCategoryBooks(category, limit) {
         tags: collectApiBookTags(book),
         url: book.bookId ? `/page/${book.bookId}` : ""
     }));
+}
+
+function createEmptySearchResult() {
+    return {
+        attempted: false,
+        used: false,
+        source: "",
+        items: [],
+        totalCount: 0,
+        challengeDetected: false,
+        error: ""
+    };
+}
+
+async function fetchSearchBooks(env, keyword, limit) {
+    const cleanKeyword = cleanText(keyword);
+    if (!cleanKeyword) {
+        return createEmptySearchResult();
+    }
+
+    const apiResult = await fetchSearchBooksFromApi(cleanKeyword, limit);
+    if (apiResult.used) {
+        return apiResult;
+    }
+
+    const htmlResult = await fetchSearchBooksFromHtml(cleanKeyword, limit);
+    if (htmlResult.used) {
+        return {
+            attempted: true,
+            used: true,
+            source: htmlResult.source || apiResult.source || "",
+            items: htmlResult.items,
+            totalCount: htmlResult.totalCount || apiResult.totalCount || 0,
+            challengeDetected: apiResult.challengeDetected === true || htmlResult.challengeDetected === true,
+            error: ""
+        };
+    }
+
+    const browserResult = await fetchSearchBooksFromBrowserService(env, cleanKeyword, limit);
+    if (browserResult.used) {
+        return {
+            attempted: true,
+            used: true,
+            source: browserResult.source || htmlResult.source || apiResult.source || "",
+            items: browserResult.items,
+            totalCount: browserResult.totalCount || htmlResult.totalCount || apiResult.totalCount || 0,
+            challengeDetected: apiResult.challengeDetected === true || htmlResult.challengeDetected === true,
+            error: ""
+        };
+    }
+
+    const externalResult = await fetchSearchBooksFromExternalSearch(cleanKeyword, limit);
+    return {
+        attempted: true,
+        used: externalResult.used,
+        source: externalResult.source || browserResult.source || htmlResult.source || apiResult.source || "",
+        items: externalResult.items,
+        totalCount: externalResult.totalCount || browserResult.totalCount || htmlResult.totalCount || apiResult.totalCount || 0,
+        challengeDetected: apiResult.challengeDetected === true || htmlResult.challengeDetected === true,
+        error: externalResult.used ? "" : (externalResult.error || browserResult.error || htmlResult.error || apiResult.error || "")
+    };
+}
+
+async function fetchSearchBooksFromBrowserService(env, keyword, limit) {
+    const endpointText = cleanText(env?.BROWSER_SEARCH_API_URL || "");
+    if (!endpointText) {
+        return createEmptySearchResult();
+    }
+
+    let endpoint;
+    try {
+        endpoint = new URL(endpointText);
+    } catch (_error) {
+        return {
+            attempted: true,
+            used: false,
+            source: "browser_service",
+            items: [],
+            totalCount: 0,
+            challengeDetected: false,
+            error: "browser service url invalid"
+        };
+    }
+
+    endpoint.searchParams.set("keyword", keyword);
+    endpoint.searchParams.set("limit", String(Math.max(1, Math.min(20, Number(limit) || SEARCH_RESULT_PAGE_SIZE))));
+
+    let response;
+    try {
+        response = await fetchWithTimeout(endpoint.toString(), {
+            headers: {
+                Accept: "application/json"
+            }
+        }, BROWSER_SEARCH_TIMEOUT_MS, 1);
+    } catch (error) {
+        return {
+            attempted: true,
+            used: false,
+            source: "browser_service",
+            items: [],
+            totalCount: 0,
+            challengeDetected: false,
+            error: error instanceof Error ? error.message : String(error || "browser service failed")
+        };
+    }
+
+    const rawText = await response.text().catch(() => "");
+    const payload = safeJsonParse(rawText);
+    if (!response.ok) {
+        return {
+            attempted: true,
+            used: false,
+            source: "browser_service",
+            items: [],
+            totalCount: 0,
+            challengeDetected: false,
+            error: payload?.error || `browser service status ${response.status}`
+        };
+    }
+
+    const rawBooks = Array.isArray(payload?.rawBooks)
+        ? payload.rawBooks
+        : (Array.isArray(payload?.data?.search_book_data_list) ? payload.data.search_book_data_list : []);
+    const items = parseSearchApiBooks({
+        data: {
+            search_book_data_list: rawBooks,
+            total_count: payload?.totalCount || payload?.data?.total_count || rawBooks.length
+        }
+    }).slice(0, limit);
+
+    return {
+        attempted: true,
+        used: items.length > 0,
+        source: "browser_service",
+        items,
+        totalCount: Number(payload?.totalCount || payload?.data?.total_count || 0) || items.length,
+        challengeDetected: payload?.needsVerification === true || payload?.challengeObserved === true,
+        error: items.length ? "" : cleanText(payload?.error || "browser service returned no books")
+    };
+}
+
+async function fetchSearchBooksFromApi(keyword, limit) {
+    const searchUrl = new URL(`/search/${encodeURIComponent(keyword)}`, FANQIE_ORIGIN).toString();
+    let cookieHeader = "";
+    try {
+        const bootstrapResponse = await fetchWithTimeout(searchUrl, {
+            headers: buildBrowserHeaders({
+                Accept: "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+                Referer: `${FANQIE_ORIGIN}/`
+            })
+        }, HTML_FETCH_TIMEOUT_MS, 1);
+        cookieHeader = extractCookieHeader(bootstrapResponse.headers);
+    } catch (_error) {
+        cookieHeader = "";
+    }
+
+    const endpoint = new URL(SEARCH_API_PATH, FANQIE_ORIGIN);
+    endpoint.searchParams.set("query_word", keyword);
+    endpoint.searchParams.set("query_type", SEARCH_QUERY_TYPE);
+    endpoint.searchParams.set("page_index", "0");
+    endpoint.searchParams.set("page_count", String(Math.max(10, Math.min(20, limit || SEARCH_RESULT_PAGE_SIZE))));
+    endpoint.searchParams.set("filter", SEARCH_PAGE_FILTER);
+
+    let response = null;
+    try {
+        response = await fetchWithTimeout(endpoint.toString(), {
+            headers: buildBrowserHeaders({
+                Accept: "application/json, text/plain, */*",
+                Referer: searchUrl,
+                Origin: FANQIE_ORIGIN,
+                ...(cookieHeader ? { Cookie: cookieHeader } : {})
+            })
+        }, API_FETCH_TIMEOUT_MS);
+    } catch (error) {
+        return {
+            attempted: true,
+            used: false,
+            source: "search_api",
+            items: [],
+            totalCount: 0,
+            challengeDetected: false,
+            error: error instanceof Error ? error.message : String(error || "search api failed")
+        };
+    }
+
+    const rawText = await response.text().catch(() => "");
+    const challengeDetected = isSearchChallengeResponse(response, rawText);
+    if (!response.ok) {
+        return {
+            attempted: true,
+            used: false,
+            source: "search_api",
+            items: [],
+            totalCount: 0,
+            challengeDetected,
+            error: `search api status ${response.status}`
+        };
+    }
+
+    const payload = safeJsonParse(rawText);
+    if (!payload) {
+        return {
+            attempted: true,
+            used: false,
+            source: "search_api",
+            items: [],
+            totalCount: 0,
+            challengeDetected,
+            error: rawText.trim() ? "search api invalid json" : "search api empty response"
+        };
+    }
+
+    const items = parseSearchApiBooks(payload).slice(0, limit);
+    return {
+        attempted: true,
+        used: items.length > 0,
+        source: "search_api",
+        items,
+        totalCount: Number(payload?.data?.total_count || payload?.data?.totalCount || 0) || items.length,
+        challengeDetected,
+        error: items.length ? "" : "search api returned no books"
+    };
+}
+
+async function fetchSearchBooksFromHtml(keyword, limit) {
+    const searchUrl = new URL(`/search/${encodeURIComponent(keyword)}`, FANQIE_ORIGIN).toString();
+    try {
+        const html = await fetchHtml(searchUrl);
+        const state = parseSearchStateFromHtml(html);
+        const stateBooks = findSearchBookArray(state);
+        if (stateBooks.length) {
+            const items = parseSearchApiBooks({
+                data: {
+                    search_book_data_list: stateBooks,
+                    total_count: stateBooks.length
+                }
+            }).slice(0, limit);
+            return {
+                attempted: true,
+                used: items.length > 0,
+                source: "search_html_state",
+                items,
+                totalCount: stateBooks.length,
+                challengeDetected: false,
+                error: items.length ? "" : "search html state had no usable books"
+            };
+        }
+
+        const items = parseSearchBooksFromHtmlMarkup(html, keyword).slice(0, limit);
+        return {
+            attempted: true,
+            used: items.length > 0,
+            source: "search_html",
+            items,
+            totalCount: items.length,
+            challengeDetected: false,
+            error: items.length ? "" : "search html had no usable books"
+        };
+    } catch (error) {
+        return {
+            attempted: true,
+            used: false,
+            source: "search_html",
+            items: [],
+            totalCount: 0,
+            challengeDetected: false,
+            error: error instanceof Error ? error.message : String(error || "search html failed")
+        };
+    }
+}
+
+async function fetchSearchBooksFromExternalSearch(keyword, limit) {
+    const queries = buildExternalSearchQueries(keyword).slice(0, EXTERNAL_SEARCH_MAX_QUERY_VARIANTS);
+    const merged = new Map();
+    let totalCount = 0;
+    let lastError = "";
+
+    for (const query of queries) {
+        try {
+            const rssItems = await fetchExternalSearchRss(query, Math.max(10, Math.min(30, (limit || SEARCH_RESULT_PAGE_SIZE) * EXTERNAL_SEARCH_RESULT_MULTIPLIER)));
+            totalCount += rssItems.length;
+            const candidates = rssItems
+                .filter((item) => isFanqieBookPageUrl(item.link))
+                .map((item) => normalizeExternalSearchCandidate(item))
+                .filter(Boolean)
+                .sort((left, right) => scoreBookForContext(right, { keyword }) - scoreBookForContext(left, { keyword }));
+
+            if (!candidates.length) {
+                continue;
+            }
+
+            const hydrated = await hydrateExternalSearchCandidates(candidates, keyword, limit);
+            hydrated.forEach((book) => {
+                if (!book?.title) {
+                    return;
+                }
+                const key = normalizeKey(book.title);
+                const existing = merged.get(key);
+                if (!existing || scoreBookForContext(book, { keyword }) > scoreBookForContext(existing, { keyword })) {
+                    merged.set(key, book);
+                }
+            });
+
+            if (merged.size >= limit) {
+                break;
+            }
+        } catch (error) {
+            lastError = error instanceof Error ? error.message : String(error || "external search failed");
+        }
+    }
+
+    const items = Array.from(merged.values())
+        .sort((left, right) => {
+            const rightScore = scoreBookForContext(right, { keyword });
+            const leftScore = scoreBookForContext(left, { keyword });
+            if (rightScore !== leftScore) {
+                return rightScore - leftScore;
+            }
+            return cleanText(right.analysisIntro || right.intro || "").length - cleanText(left.analysisIntro || left.intro || "").length;
+        })
+        .slice(0, limit);
+
+    return {
+        attempted: true,
+        used: items.length > 0,
+        source: "search_external_rss",
+        items,
+        totalCount: totalCount || items.length,
+        challengeDetected: false,
+        error: items.length ? "" : (lastError || "external search returned no books")
+    };
+}
+
+function buildBrowserHeaders(overrides = {}) {
+    return {
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
+        "Accept-Language": "zh-CN,zh;q=0.9",
+        "X-Requested-With": "XMLHttpRequest",
+        ...overrides
+    };
+}
+
+function buildExternalSearchQueries(keyword) {
+    const cleanKeyword = cleanText(keyword);
+    const compactKeyword = cleanKeyword.replace(/[^\p{L}\p{N}]+/gu, "");
+    return uniqueBy(
+        [
+            `site:fanqienovel.com/page/ ${cleanKeyword}`,
+            compactKeyword && compactKeyword !== cleanKeyword ? `site:fanqienovel.com/page/ ${compactKeyword}` : "",
+            cleanKeyword ? `site:fanqienovel.com/page/ "${cleanKeyword}"` : ""
+        ].map((item) => cleanText(item)).filter(Boolean),
+        (item) => normalizeKey(item)
+    );
+}
+
+async function fetchExternalSearchRss(query, count) {
+    const endpoint = new URL("/search", "https://www.bing.com");
+    endpoint.searchParams.set("format", "rss");
+    endpoint.searchParams.set("setlang", "zh-Hans");
+    endpoint.searchParams.set("mkt", "zh-CN");
+    endpoint.searchParams.set("count", String(Math.max(10, Math.min(50, Number(count) || 20))));
+    endpoint.searchParams.set("q", query);
+
+    const response = await fetchWithTimeout(endpoint.toString(), {
+        headers: buildBrowserHeaders({
+            Accept: "application/rss+xml, application/xml;q=0.9, text/xml;q=0.8, */*;q=0.5",
+            Referer: "https://www.bing.com/"
+        })
+    }, API_FETCH_TIMEOUT_MS, 1);
+
+    if (!response.ok) {
+        throw new Error(`external search status ${response.status}`);
+    }
+
+    const xml = await response.text().catch(() => "");
+    const items = parseExternalSearchRss(xml);
+    if (!items.length) {
+        throw new Error("external search returned no rss items");
+    }
+    return items;
+}
+
+function parseExternalSearchRss(xml) {
+    const items = [];
+    const regex = /<item\b[^>]*>([\s\S]*?)<\/item>/gi;
+    let match;
+
+    while ((match = regex.exec(String(xml || "")))) {
+        const block = match[1];
+        const title = decodeXmlEntities(extractXmlTagValue(block, "title"));
+        const link = decodeXmlEntities(extractXmlTagValue(block, "link"));
+        const description = decodeXmlEntities(extractXmlTagValue(block, "description"));
+        if (!link) {
+            continue;
+        }
+        items.push({
+            title: cleanText(title),
+            link: cleanText(link),
+            description: cleanText(description)
+        });
+    }
+
+    return items;
+}
+
+function extractXmlTagValue(block, tagName) {
+    const match = String(block || "").match(new RegExp(`<${tagName}\\b[^>]*>([\\s\\S]*?)<\\/${tagName}>`, "i"));
+    return stripCdata(match?.[1] || "");
+}
+
+function stripCdata(value) {
+    return String(value || "")
+        .replace(/^<!\[CDATA\[/, "")
+        .replace(/\]\]>$/, "")
+        .trim();
+}
+
+function decodeXmlEntities(value) {
+    return cleanText(String(value || "")
+        .replace(/&lt;/g, "<")
+        .replace(/&gt;/g, ">")
+        .replace(/&quot;/g, "\"")
+        .replace(/&#39;/g, "'")
+        .replace(/&apos;/g, "'")
+        .replace(/&amp;/g, "&"));
+}
+
+function isFanqieBookPageUrl(value) {
+    try {
+        const url = new URL(String(value || ""));
+        return /(^|\.)fanqienovel\.com$/i.test(url.hostname) && /^\/page\/\d+/.test(url.pathname);
+    } catch (_error) {
+        return false;
+    }
+}
+
+function normalizeExternalSearchCandidate(item) {
+    const absoluteUrl = cleanText(item?.link || "");
+    if (!isFanqieBookPageUrl(absoluteUrl)) {
+        return null;
+    }
+
+    const url = normalizeBookUrl(absoluteUrl);
+    const title = cleanExternalSearchTitle(item?.title || "");
+    const intro = stripHtmlTags(item?.description || "");
+    return normalizeBook({
+        title,
+        author: "",
+        intro,
+        category: "外部搜索",
+        tags: extractTags(`${title} ${intro}`),
+        url
+    });
+}
+
+function cleanExternalSearchTitle(value) {
+    return cleanText(String(value || "")
+        .replace(/完整版在线免费阅读/gi, "")
+        .replace(/在线免费阅读/gi, "")
+        .replace(/_番茄小说官网/gi, "")
+        .replace(/- 番茄小说官网/gi, "")
+        .replace(/番茄小说官网/gi, "")
+        .replace(/_小说$/gi, "")
+        .replace(/小说$/gi, "")
+        .replace(/[_\-\s]+$/g, ""));
+}
+
+async function hydrateExternalSearchCandidates(candidates, keyword, limit) {
+    const toHydrate = candidates.slice(0, Math.max(2, Math.min(EXTERNAL_SEARCH_MAX_PAGE_FETCHES, (limit || 5) + 1)));
+    const hydrated = await Promise.all(toHydrate.map(async (candidate) => {
+        const url = cleanText(candidate?.url || "");
+        if (!url) {
+            return candidate;
+        }
+
+        try {
+            const book = await fetchBookFromPageUrl(url);
+            return mergeExternalCandidateWithPageBook(candidate, book);
+        } catch (_error) {
+            return candidate;
+        }
+    }));
+
+    return uniqueBy(
+        hydrated
+            .filter(Boolean)
+            .filter((item) => scoreBookForContext(item, { keyword }) >= 6 || cleanText(item.analysisIntro || item.intro || "").length >= 18),
+        (item) => normalizeKey(item.title || item.url || "")
+    );
+}
+
+async function fetchBookFromPageUrl(url) {
+    const absoluteUrl = /^https?:\/\//i.test(url) ? url : new URL(url, FANQIE_ORIGIN).toString();
+    const html = await fetchHtml(absoluteUrl);
+    return parseBookPage(html, normalizeBookUrl(absoluteUrl));
+}
+
+function mergeExternalCandidateWithPageBook(candidate, pageBook) {
+    if (!pageBook?.title) {
+        return candidate;
+    }
+
+    return normalizeBook({
+        title: pageBook.title || candidate.title,
+        author: pageBook.author || candidate.author,
+        intro: pageBook.intro || candidate.intro,
+        status: pageBook.status || candidate.status,
+        readingCount: pageBook.readingCount || candidate.readingCount,
+        category: pageBook.category || candidate.category || "外部搜索",
+        tags: uniqueBy([...(candidate.tags || []), ...(pageBook.tags || [])], (item) => item),
+        url: pageBook.url || candidate.url
+    });
+}
+
+function parseBookPage(html, fallbackUrl = "") {
+    const structured = parsePrimaryStructuredBook(html, fallbackUrl);
+    const lines = extractTextLines(html);
+    const title = structured?.title || findBookPageTitle(lines);
+    const introIndex = findBookPageIntroIndex(lines);
+    const intro = structured?.intro || findBookPageIntro(lines, introIndex);
+    const author = structured?.author || findBookPageAuthor(lines, title, introIndex);
+    const statusCategory = findBookPageStatusAndCategory(lines, title);
+
+    return normalizeBook({
+        title,
+        author,
+        intro,
+        status: structured?.status || statusCategory.status,
+        category: structured?.category || statusCategory.category || "外部搜索",
+        tags: uniqueBy([...(structured?.tags || []), ...extractTags(`${title} ${intro}`)], (item) => item),
+        url: structured?.url || fallbackUrl
+    });
+}
+
+function parsePrimaryStructuredBook(html, fallbackUrl = "") {
+    const candidates = [];
+    const scriptRegex = /<script[^>]+type="application\/ld\+json"[^>]*>([\s\S]*?)<\/script>/gi;
+    let match;
+
+    while ((match = scriptRegex.exec(String(html || "")))) {
+        const parsed = safeJsonParse(match[1]);
+        walkStructuredData(parsed, (item) => {
+            const title = cleanExternalSearchTitle(item?.name || item?.headline || item?.title || "");
+            if (!title) {
+                return;
+            }
+            const intro = cleanText(item?.description || item?.summary || "");
+            const author = cleanText(extractAuthorName(item?.author));
+            const typeText = Array.isArray(item?.["@type"]) ? item["@type"].join(" ") : String(item?.["@type"] || "");
+            const status = normalizeCreationStatusText(item?.creationStatus || item?.status || "");
+            const url = normalizeBookUrl(item?.url || fallbackUrl);
+            let score = 0;
+            if (/\bBook\b/i.test(typeText)) {
+                score += 20;
+            }
+            if (intro) {
+                score += 8;
+            }
+            if (author) {
+                score += 5;
+            }
+            if (/\/page\/\d+/.test(url)) {
+                score += 3;
+            }
+            if (/^第.{1,20}章/.test(title)) {
+                score -= 10;
+            }
+
+            candidates.push({
+                score,
+                book: normalizeBook({
+                    title,
+                    author,
+                    intro,
+                    status,
+                    category: "",
+                    tags: extractTags(`${title} ${intro}`),
+                    url
+                })
+            });
+        });
+    }
+
+    return candidates
+        .sort((left, right) => right.score - left.score)
+        .map((item) => item.book)
+        .find((item) => item?.title) || null;
+}
+
+function extractTextLines(html) {
+    return String(html || "")
+        .replace(/<script[\s\S]*?<\/script>/gi, " ")
+        .replace(/<style[\s\S]*?<\/style>/gi, " ")
+        .replace(/<\/(p|div|li|h\d|section|article|header|footer|main|aside|nav|br)>/gi, "\n")
+        .replace(/<[^>]+>/g, " ")
+        .replace(/&nbsp;/g, " ")
+        .replace(/&amp;/g, "&")
+        .replace(/&quot;/g, "\"")
+        .replace(/&#39;/g, "'")
+        .split(/\r?\n+/)
+        .map((line) => cleanText(line))
+        .filter(Boolean);
+}
+
+function findBookPageTitle(lines) {
+    const candidates = Array.isArray(lines) ? lines : [];
+    for (let index = 0; index < Math.min(25, candidates.length); index += 1) {
+        const candidate = candidates[index];
+        if (!candidate || candidate.length < 2 || candidate.length > 40) {
+            continue;
+        }
+        if (/^首页\b|开始阅读|最近更新|番茄小说|目录|代表作|作者/.test(candidate)) {
+            continue;
+        }
+        if (/已完结|连载中|\d+\.?\d*\s*万字/.test(candidate)) {
+            continue;
+        }
+        if (/^第.{1,20}章/.test(candidate)) {
+            continue;
+        }
+        return candidate;
+    }
+    return "";
+}
+
+function findBookPageIntroIndex(lines) {
+    return (Array.isArray(lines) ? lines : []).findIndex((line) => /作品简介/.test(line));
+}
+
+function findBookPageIntro(lines, introIndex) {
+    if (!Array.isArray(lines) || introIndex < 0) {
+        return "";
+    }
+
+    const fragments = [];
+    for (let index = introIndex + 1; index < lines.length; index += 1) {
+        const candidate = lines[index];
+        if (!candidate) {
+            continue;
+        }
+        if (/^目录\b|^第一卷|^第二卷|^第三卷|^第四卷|^第五卷|^第六卷|^第七卷|^第八卷|^第\d+章/.test(candidate)) {
+            break;
+        }
+        if (/^代表作|^开始阅读|^\d+\.?\d*\s*万字$/.test(candidate)) {
+            continue;
+        }
+        fragments.push(candidate);
+        if (fragments.join(" ").length >= 260) {
+            break;
+        }
+    }
+    return fragments.join(" ").trim();
+}
+
+function findBookPageAuthor(lines, title, introIndex) {
+    if (!Array.isArray(lines) || !lines.length) {
+        return "";
+    }
+
+    const start = introIndex > 0 ? Math.max(0, introIndex - 12) : 0;
+    const end = introIndex > 0 ? introIndex : Math.min(lines.length, 20);
+    for (let index = end - 1; index >= start; index -= 1) {
+        const candidate = cleanText(lines[index]);
+        if (!candidate || candidate === title) {
+            continue;
+        }
+        if (candidate.length > 20) {
+            continue;
+        }
+        if (/^首页\b|开始阅读|最近更新|代表作|作品简介|目录|番茄小说|已完结|连载中|\d+\.?\d*\s*万字/.test(candidate)) {
+            continue;
+        }
+        if (/^第.{1,20}章/.test(candidate)) {
+            continue;
+        }
+        return candidate;
+    }
+    return "";
+}
+
+function findBookPageStatusAndCategory(lines, title) {
+    const candidates = Array.isArray(lines) ? lines : [];
+    const titleIndex = candidates.findIndex((line) => line === title);
+    const start = titleIndex >= 0 ? titleIndex + 1 : 0;
+    const end = Math.min(candidates.length, start + 4);
+    let status = "";
+    let category = "";
+
+    for (let index = start; index < end; index += 1) {
+        const candidate = candidates[index];
+        if (!candidate) {
+            continue;
+        }
+        if (/已完结|连载中/.test(candidate) && !status) {
+            const statusMatch = candidate.match(/已完结|连载中/);
+            status = statusMatch?.[0] || "";
+            category = cleanText(candidate.replace(/已完结|连载中/g, "").replace(/\d+\.?\d*\s*万字/g, ""));
+            if (status || category) {
+                break;
+            }
+        }
+    }
+
+    return { status, category };
+}
+
+function extractCookieHeader(headers) {
+    if (!headers) {
+        return "";
+    }
+
+    const collected = [];
+    const pushCookies = (input) => {
+        if (!input) {
+            return;
+        }
+        String(input)
+            .split(/,(?=[^;]+?=)/)
+            .map((entry) => entry.trim())
+            .forEach((entry) => {
+                const pair = entry.split(";")[0].trim();
+                if (pair && pair.includes("=")) {
+                    collected.push(pair);
+                }
+            });
+    };
+
+    if (typeof headers.getSetCookie === "function") {
+        headers.getSetCookie().forEach((value) => pushCookies(value));
+    } else {
+        pushCookies(headers.get("set-cookie"));
+    }
+
+    return uniqueBy(collected, (item) => item).join("; ");
+}
+
+function isSearchChallengeResponse(response, rawText = "") {
+    if (!response || !response.headers) {
+        return false;
+    }
+
+    const headers = response.headers;
+    if (headers.get("bdturing-verify") || headers.get("x-vc-bdturing-parameters") || headers.get("x-ms-token")) {
+        return true;
+    }
+
+    return !String(rawText || "").trim() && response.status === 200;
+}
+
+function parseSearchApiBooks(payload) {
+    const rawBooks = Array.isArray(payload?.data?.search_book_data_list)
+        ? payload.data.search_book_data_list
+        : findSearchBookArray(payload);
+    if (!Array.isArray(rawBooks) || !rawBooks.length) {
+        return [];
+    }
+
+    const books = rawBooks
+        .map((entry) => {
+            const book = unwrapSearchBookEntry(entry);
+            const title = decodeFanqieText(pickFirstString(book, [
+                "book_name",
+                "bookName",
+                "title",
+                "name",
+                "book_title",
+                "bookTitle"
+            ]) || pickFirstString(entry, [
+                "book_name",
+                "bookName",
+                "title",
+                "name"
+            ]));
+            if (!title) {
+                return null;
+            }
+
+            const author = decodeFanqieText(pickFirstString(book, [
+                "author",
+                "author_name",
+                "authorName",
+                "writer",
+                "author_info.name",
+                "authorInfo.name"
+            ]) || pickFirstString(entry, [
+                "author",
+                "author_name",
+                "authorName"
+            ]));
+            const intro = decodeFanqieText(stripHtmlTags(pickFirstString(book, [
+                "abstract",
+                "book_intro",
+                "bookIntro",
+                "intro",
+                "description",
+                "book_abstract",
+                "bookAbstract",
+                "summary"
+            ]) || pickFirstString(entry, [
+                "abstract",
+                "book_intro",
+                "bookIntro",
+                "description",
+                "summary",
+                "matched_content",
+                "matchedContent"
+            ])));
+            const status = normalizeCreationStatusText(
+                pickFirstString(book, ["creation_status", "creationStatus", "status"])
+                || pickFirstString(entry, ["creation_status", "creationStatus", "status"])
+            );
+            const bookId = pickFirstString(book, ["book_id", "bookId", "id"]) || pickFirstString(entry, ["book_id", "bookId", "id"]);
+            const category = decodeFanqieText(pickFirstString(book, [
+                "category_name",
+                "categoryName",
+                "subCategoryName",
+                "firstCategoryName",
+                "secondCategoryName"
+            ]));
+            const tags = uniqueBy(
+                collectApiBookTags(book).concat(collectApiBookTags(entry)).concat(extractTags(intro)),
+                (item) => item
+            );
+
+            return normalizeBook({
+                title,
+                author,
+                intro,
+                status,
+                category: category || "搜索结果",
+                tags,
+                url: normalizeBookUrl(pickFirstString(book, ["book_url", "url"]) || pickFirstString(entry, ["book_url", "url"]), bookId)
+            });
+        })
+        .filter(Boolean);
+
+    return uniqueBy(books, (item) => normalizeKey(item.title));
+}
+
+function unwrapSearchBookEntry(entry) {
+    if (!entry || typeof entry !== "object") {
+        return {};
+    }
+
+    const nestedKeys = [
+        "book_data",
+        "bookData",
+        "book_info",
+        "bookInfo",
+        "book",
+        "novel",
+        "item_data",
+        "itemData"
+    ];
+    for (const key of nestedKeys) {
+        if (entry[key] && typeof entry[key] === "object") {
+            return entry[key];
+        }
+    }
+    return entry;
+}
+
+function pickFirstString(source, paths) {
+    for (const path of paths || []) {
+        const value = getByPath(source, path);
+        if (value === undefined || value === null) {
+            continue;
+        }
+        const text = cleanText(String(value));
+        if (text) {
+            return text;
+        }
+    }
+    return "";
+}
+
+function getByPath(source, path) {
+    if (!source || typeof source !== "object") {
+        return undefined;
+    }
+
+    return String(path || "")
+        .split(".")
+        .reduce((cursor, key) => (cursor == null ? undefined : cursor[key]), source);
+}
+
+function normalizeCreationStatusText(value) {
+    const text = cleanText(value);
+    if (!text) {
+        return "";
+    }
+    if (text === "1") {
+        return "连载中";
+    }
+    if (text === "2") {
+        return "已完结";
+    }
+    return text;
+}
+
+function normalizeBookUrl(value, fallbackId = "") {
+    const text = cleanText(value);
+    if (text) {
+        if (/^https?:\/\//i.test(text)) {
+            return text;
+        }
+        return text.startsWith("/") ? text : `/${text}`;
+    }
+    return fallbackId ? `/page/${fallbackId}` : "";
+}
+
+function stripHtmlTags(value) {
+    return cleanText(String(value || "")
+        .replace(/<[^>]+>/g, " ")
+        .replace(/&nbsp;/g, " ")
+        .replace(/&amp;/g, "&")
+        .replace(/&quot;/g, "\"")
+        .replace(/&#39;/g, "'"));
+}
+
+function parseSearchStateFromHtml(html) {
+    if (!html) {
+        return null;
+    }
+
+    const patterns = [
+        /window\.__INITIAL_STATE__\s*=\s*(\{[\s\S]*?\})\s*;/,
+        /window\.__INITIAL_STATE__\s*=\s*JSON\.parse\('([\s\S]*?)'\)\s*;/,
+        /window\.__NUXT__\s*=\s*(\{[\s\S]*?\})\s*;/
+    ];
+
+    for (const pattern of patterns) {
+        const match = html.match(pattern);
+        if (!match || !match[1]) {
+            continue;
+        }
+
+        const candidate = match[1]
+            .replace(/\\"/g, "\"")
+            .replace(/\\u003C/g, "<")
+            .replace(/\\u003E/g, ">");
+        const parsed = safeJsonParse(candidate);
+        if (parsed) {
+            return parsed;
+        }
+    }
+
+    return null;
+}
+
+function findSearchBookArray(node) {
+    let found = [];
+
+    const visit = (value) => {
+        if (!value || found.length) {
+            return;
+        }
+        if (Array.isArray(value)) {
+            if (value.length && value.some((item) => isSearchBookLike(item))) {
+                found = value;
+                return;
+            }
+            value.forEach((item) => visit(item));
+            return;
+        }
+        if (typeof value !== "object") {
+            return;
+        }
+        Object.entries(value).forEach(([key, child]) => {
+            if (found.length) {
+                return;
+            }
+            if (key === "search_book_data_list" && Array.isArray(child)) {
+                found = child;
+                return;
+            }
+            visit(child);
+        });
+    };
+
+    visit(node);
+    return found;
+}
+
+function isSearchBookLike(item) {
+    if (!item || typeof item !== "object") {
+        return false;
+    }
+
+    const book = unwrapSearchBookEntry(item);
+    return Boolean(
+        pickFirstString(book, ["book_name", "bookName", "title", "name"])
+        || pickFirstString(item, ["book_name", "bookName", "title", "name"])
+    );
+}
+
+function parseSearchBooksFromHtmlMarkup(html, keyword) {
+    const books = [];
+    const regex = /<a[^>]+href="(\/page\/\d+)"[^>]*>([\s\S]*?)<\/a>/gi;
+    let match;
+
+    while ((match = regex.exec(html))) {
+        const url = cleanText(match[1]);
+        const inner = String(match[2] || "");
+        const title = stripHtmlTags(inner);
+        if (!title || !isReasonableSearchTitle(title)) {
+            continue;
+        }
+
+        const nearby = html.slice(match.index, Math.min(html.length, match.index + 600));
+        const intro = stripHtmlTags(nearby).replace(title, "").trim();
+        books.push(normalizeBook({
+            title,
+            author: "",
+            intro,
+            category: "搜索页",
+            tags: extractTags(intro),
+            url
+        }));
+    }
+
+    return uniqueBy(books, (item) => normalizeKey(item.title))
+        .filter((item) => scoreBookForContext(item, { keyword }) >= 6);
+}
+
+function isReasonableSearchTitle(value) {
+    const text = cleanText(value);
+    return Boolean(
+        text
+        && text.length >= 2
+        && text.length <= 40
+        && !/登录|注册|下载|首页|作者|目录|继续阅读|立即阅读/.test(text)
+    );
+}
+
+function assessTrendMatch({ keyword, genre, subgenre, categories, items, diagnostics }) {
+    const scores = (items || []).map((item) => scoreBookForContext(item, { keyword, genre, subgenre }));
+    const relevantCount = scores.filter((score) => score >= 8).length;
+    const score = scores.reduce((sum, current) => sum + current, 0);
+    const onlyGenericCategory = (categories || []).length === 1 && normalizeKey(categories[0]?.href || "") === "/rank/all";
+    const usableIntroCount = Number(diagnostics?.usableIntroCount || 0) || 0;
+
+    let shouldFallback = false;
+    let reason = "";
+
+    if (!cleanText(keyword)) {
+        return {
+            relevantCount,
+            score,
+            shouldFallback: false,
+            reason: ""
+        };
+    }
+
+    if (!items.length) {
+        shouldFallback = true;
+        reason = "rank_items_empty";
+    } else if (relevantCount === 0) {
+        shouldFallback = true;
+        reason = "rank_keyword_unmatched";
+    } else if (relevantCount < 2 && onlyGenericCategory) {
+        shouldFallback = true;
+        reason = "rank_match_too_weak";
+    } else if (usableIntroCount === 0 && relevantCount < 3) {
+        shouldFallback = true;
+        reason = "rank_intro_too_weak";
+    }
+
+    return {
+        relevantCount,
+        score,
+        shouldFallback,
+        reason
+    };
+}
+
+function shouldFallbackToSearch(assessment) {
+    return assessment?.shouldFallback === true;
+}
+
+function scoreBookForContext(book, context = {}) {
+    const terms = getContextTerms(context);
+    if (!terms.length) {
+        return 0;
+    }
+
+    const title = cleanText(book?.title || "");
+    const intro = cleanText(book?.analysisIntro || book?.intro || "");
+    const category = cleanText(book?.category || "");
+    const tags = Array.isArray(book?.tags) ? book.tags.join(" ") : "";
+    let score = 0;
+
+    terms.forEach((term) => {
+        if (title === term) {
+            score += 18;
+        } else if (title.includes(term)) {
+            score += 12;
+        }
+
+        if (intro.includes(term)) {
+            score += 6;
+        }
+        if (category.includes(term)) {
+            score += 5;
+        }
+        if (tags.includes(term)) {
+            score += 5;
+        }
+    });
+
+    const aliasGroups = buildAliasGroups(terms.join(" "));
+    aliasGroups.forEach((aliases) => {
+        const titleHits = aliases.filter((alias) => alias && title.includes(alias)).length;
+        const introHits = aliases.filter((alias) => alias && intro.includes(alias)).length;
+        score += titleHits * 4 + introHits * 2;
+    });
+
+    if (isUsableIntro(intro)) {
+        score += 3;
+    }
+    if (containsObfuscatedText(title)) {
+        score -= 6;
+    }
+    if (containsObfuscatedText(intro)) {
+        score -= 4;
+    }
+
+    return score;
+}
+
+function getContextTerms({ keyword, genre, subgenre } = {}) {
+    return uniqueBy(
+        [keyword, subgenre, genre]
+            .map((item) => cleanText(item))
+            .filter(Boolean),
+        (item) => normalizeKey(item)
+    );
+}
+
+function mergeTrendSources({ rankItems, searchItems, keyword, genre, subgenre, limit }) {
+    const merged = new Map();
+    [...(Array.isArray(rankItems) ? rankItems : []), ...(Array.isArray(searchItems) ? searchItems : [])].forEach((item) => {
+        if (!item?.title) {
+            return;
+        }
+        const key = normalizeKey(item.title);
+        const existing = merged.get(key);
+        if (!existing || scoreBookForContext(item, { keyword, genre, subgenre }) > scoreBookForContext(existing, { keyword, genre, subgenre })) {
+            merged.set(key, item);
+        }
+    });
+
+    return Array.from(merged.values())
+        .sort((left, right) => {
+            const rightScore = scoreBookForContext(right, { keyword, genre, subgenre });
+            const leftScore = scoreBookForContext(left, { keyword, genre, subgenre });
+            if (rightScore !== leftScore) {
+                return rightScore - leftScore;
+            }
+            return cleanText(right.analysisIntro || right.intro || "").length - cleanText(left.analysisIntro || left.intro || "").length;
+        })
+        .slice(0, limit);
 }
 
 function parseCategoryLinks(html) {
@@ -669,6 +1895,160 @@ function buildTrendSummary({ keyword, genre, subgenre, categories, items, diagno
         diffSuggestions.length ? `建议优先做的差异化切口：${diffSuggestions.join("；")}。` : "",
         `不要照搬榜单书名和现成剧情，更适合提炼“赛道共性 + 读者情绪需求 + 缺口打法”。`,
         (subgenre || genre) ? `当前项目题材参考：${subgenre || genre}。请在同赛道内做升级或反差切入。` : ""
+    ].filter(Boolean).join("\n");
+}
+
+function buildTrendSourceNotes(sourceBreakdown) {
+    if (!sourceBreakdown) {
+        return "";
+    }
+
+    const rankInfo = sourceBreakdown.rank || {};
+    const searchInfo = sourceBreakdown.search || {};
+
+    if (searchInfo.used) {
+        const sourceLabel = searchInfo.source === "search_api"
+            ? "番茄搜索接口"
+            : (searchInfo.source === "search_html_state" ? "搜索页状态数据" : "搜索页解析");
+        return `榜单匹配偏弱，已自动补充搜索结果（来源：${sourceLabel}，补充 ${searchInfo.itemCount || 0} 个样本）。`;
+    }
+
+    if (searchInfo.attempted && !searchInfo.used) {
+        const riskNote = searchInfo.challengeDetected ? " 搜索端疑似触发了风控或空响应。" : "";
+        return `榜单匹配偏弱，本次已尝试番茄搜索补充，但暂未拿到可用搜索结果。${riskNote}`;
+    }
+
+    if (rankInfo.used) {
+        return "本次样本主要来自番茄榜单。";
+    }
+
+    return "";
+}
+
+function buildTrendSummaryV2({ keyword, genre, subgenre, categories, items, diagnostics, sourceBreakdown = null }) {
+    return buildTrendSummaryV3({ keyword, genre, subgenre, categories, items, diagnostics, sourceBreakdown });
+}
+
+function buildTrendSourceNotes(sourceBreakdown) {
+    if (!sourceBreakdown) {
+        return "";
+    }
+
+    const rankInfo = sourceBreakdown.rank || {};
+    const searchInfo = sourceBreakdown.search || {};
+
+    if (searchInfo.used) {
+        const sourceLabel = searchInfo.source === "search_api"
+            ? "番茄搜索接口"
+            : (searchInfo.source === "search_html_state"
+                ? "搜索页状态数据"
+                : (searchInfo.source === "browser_service" ? "浏览器搜索服务" : "外部搜索补充"));
+        return `榜单匹配偏弱，已自动补充搜索结果（来源：${sourceLabel}，补充 ${searchInfo.itemCount || 0} 条样本）。`;
+    }
+
+    if (searchInfo.attempted && !searchInfo.used) {
+        const riskNote = searchInfo.challengeDetected ? " 搜索链路疑似触发了验证或空响应。" : "";
+        return `榜单匹配偏弱，本次已尝试搜索补充，但暂时没有拿到可用搜索结果。${riskNote}`;
+    }
+
+    if (rankInfo.used) {
+        return "本次样本主要来自番茄榜单。";
+    }
+
+    return "";
+}
+/*
+    const cleanItems = items.filter((item) => isUsableIntro(item.analysisIntro || item.intro));
+    const categoriesText = categories.map((item) => item.name).filter(Boolean).join("、") || "总榜";
+    const hotTags = collectHotTags(cleanItems);
+    const protagonistSignals = collectFrequentSignals(cleanItems, [
+        "閲嶇敓", "绌夸功", "绌胯秺", "涓嬩埂", "鐭ヨ潚", "澶ч櫌", "鍐涘", "鍏诲▋", "甯﹀唇", "鎵撹劯",
+        "鍒涗笟", "绉嶇敯", "杩斿煄", "绂诲", "杩藉", "鍥㈠疇", "鎭舵瘨濂抽厤", "鐪熷亣鍗冮噾", "绯荤粺"
+    ], 5);
+    const conflictSignals = collectFrequentSignals(cleanItems, [
+        "閫嗚", "缈昏韩", "鎶ヤ粐", "澶嶄粐", "鏁戣祹", "瀵圭収缁?, "閫€濠?, "鏂翰", "鍒嗗",
+        "鑷村瘜", "瀹堟姢", "涓婁綅", "鐮村眬", "鍙嶆潃", "鐢熷瓨", "楂樿€?, "濠氱害", "韬笘"
+    ], 5);
+    const emotionSignals = collectFrequentSignals(cleanItems, [
+        "鐖?, "鐢?, "瀹?, "铏?, "鐕?, "娓╂儏", "娌绘剤", "鍘嬫姂", "鎷夋壇", "鎮枒"
+    ], 4);
+    const openingPatterns = inferOpeningPatterns(cleanItems);
+    const diffSuggestions = buildDiffSuggestions({
+        keyword,
+        genre,
+        subgenre,
+        hotTags,
+        protagonistSignals,
+        conflictSignals
+    });
+    const introSamples = cleanItems
+        .map((item) => limitText(item.analysisIntro || item.intro || "", 56))
+        .filter(Boolean)
+        .slice(0, 3);
+    const sourceNotes = buildTrendSourceNotes(sourceBreakdown);
+
+    return [
+        `本次对标关键词：${keyword || "未指定"}。`,
+        `参考入口：${categoriesText}。`,
+        sourceNotes,
+        diagnostics ? `本次共整理 ${diagnostics.totalItems} 个样本，可直接用于分析的简介 ${diagnostics.usableIntroCount} 个，可抢救片段 ${diagnostics.salvagedIntroCount || 0} 个，混淆书名 ${diagnostics.obfuscatedTitleCount} 个。` : "",
+        hotTags.length ? `当前高频卖点：${hotTags.join("、")}。` : "当前样本文本里稳定可提取的标签不多，建议结合题材方向做人工判断。",
+        protagonistSignals.length ? `高频主角模板信号：${protagonistSignals.join("、")}。` : "",
+        conflictSignals.length ? `高频冲突发动机：${conflictSignals.join("、")}。` : "",
+        emotionSignals.length ? `高频情绪抓手：${emotionSignals.join("、")}。` : "",
+        openingPatterns.length ? `常见高点开局方式：${openingPatterns.join("；")}。` : "",
+        introSamples.length ? `可用简介样本：${introSamples.join("；")}。` : "",
+        diffSuggestions.length ? `建议优先做的差异化切口：${diffSuggestions.join("；")}。` : "",
+        "不要照搬现成书名和剧情，更适合提炼“赛道共性 + 读者情绪 + 差异切口”。",
+        (subgenre || genre) ? `当前项目题材参考：${subgenre || genre}，优先在同赛道里做升级或反差切入。` : ""
+    ].filter(Boolean).join("\n");
+}
+
+*/
+function buildTrendSummaryV3({ keyword, genre, subgenre, categories, items, diagnostics, sourceBreakdown = null }) {
+    const cleanItems = items.filter((item) => isUsableIntro(item.analysisIntro || item.intro));
+    const categoriesText = categories.map((item) => item.name).filter(Boolean).join("、") || "总榜";
+    const hotTags = collectHotTags(cleanItems);
+    const protagonistSignals = collectFrequentSignals(cleanItems, [
+        "重生", "穿书", "穿越", "下乡", "知青", "大院", "军婚", "养娃", "带崽", "打脸",
+        "创业", "种田", "返城", "离婚", "追妻", "团宠", "恶毒女配", "真假千金", "系统"
+    ], 5);
+    const conflictSignals = collectFrequentSignals(cleanItems, [
+        "逆袭", "翻身", "报仇", "复仇", "救赎", "对照组", "退婚", "断亲", "分家",
+        "致富", "守护", "上位", "破局", "反杀", "生存", "高考", "婚约", "身世"
+    ], 5);
+    const emotionSignals = collectFrequentSignals(cleanItems, [
+        "爱", "恨", "家", "虐", "甜", "温情", "治愈", "压抑", "拉扯", "悬疑"
+    ], 4);
+    const openingPatterns = inferOpeningPatterns(cleanItems);
+    const diffSuggestions = buildDiffSuggestions({
+        keyword,
+        genre,
+        subgenre,
+        hotTags,
+        protagonistSignals,
+        conflictSignals
+    });
+    const introSamples = cleanItems
+        .map((item) => limitText(item.analysisIntro || item.intro || "", 56))
+        .filter(Boolean)
+        .slice(0, 3);
+    const sourceNotes = buildTrendSourceNotes(sourceBreakdown);
+
+    return [
+        `本次对标关键词：${keyword || "未指定"}。`,
+        `参考入口：${categoriesText}。`,
+        sourceNotes,
+        diagnostics ? `本次共整理 ${diagnostics.totalItems} 个样本，可直接用于分析的简介 ${diagnostics.usableIntroCount} 个，可抢救片段 ${diagnostics.salvagedIntroCount || 0} 个，混淆书名 ${diagnostics.obfuscatedTitleCount} 个。` : "",
+        hotTags.length ? `当前高频卖点：${hotTags.join("、")}。` : "当前样本文本里稳定可提取的标签不多，建议结合题材方向做人工判断。",
+        protagonistSignals.length ? `高频主角模板信号：${protagonistSignals.join("、")}。` : "",
+        conflictSignals.length ? `高频冲突发动机：${conflictSignals.join("、")}。` : "",
+        emotionSignals.length ? `高频情绪抓手：${emotionSignals.join("、")}。` : "",
+        openingPatterns.length ? `常见高点开局方式：${openingPatterns.join("；")}。` : "",
+        introSamples.length ? `可用简介样本：${introSamples.join("；")}。` : "",
+        diffSuggestions.length ? `建议优先做的差异化切口：${diffSuggestions.join("；")}。` : "",
+        "不要照搬现成书名和剧情，更适合提炼“赛道共性 + 读者情绪 + 差异切口”。",
+        (subgenre || genre) ? `当前项目题材参考：${subgenre || genre}，优先在同赛道里做升级或反差切入。` : ""
     ].filter(Boolean).join("\n");
 }
 
