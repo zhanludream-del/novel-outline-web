@@ -2597,6 +2597,100 @@ class NovelGenerator {
             });
             return merged;
         };
+        const normalizeRewardList = (value = []) => {
+            const list = Array.isArray(value) ? value : this.normalizeWorldStateList(value);
+            return list
+                .map((item) => {
+                    if (!item) {
+                        return null;
+                    }
+                    if (typeof item === "object") {
+                        const name = item.reward || item.name || item.item || item.title || item["名称"] || "";
+                        if (!String(name || "").trim()) {
+                            return null;
+                        }
+                        return {
+                            reward: String(name || "").trim(),
+                            name: String(name || "").trim(),
+                            owner: String(item.owner || item.holder || item["持有者"] || item["归属"] || "").trim(),
+                            status: String(item.status || item["当前状态"] || item["状态"] || "").trim(),
+                            source: String(item.source || item["来源"] || "").trim(),
+                            detail: String(item.detail || item.description || item["描述"] || name || "").trim(),
+                            chapter: Number(item.chapter || item.last_updated_chapter || 0)
+                        };
+                    }
+                    const name = String(item || "").trim();
+                    return name
+                        ? { reward: name, name, owner: "", status: "", source: "", detail: name, chapter: 0 }
+                        : null;
+                })
+                .filter(Boolean);
+        };
+        const mergeRewardLists = (...values) => {
+            const merged = [];
+            const seen = new Set();
+            values.forEach((value) => {
+                normalizeRewardList(value).forEach((item) => {
+                    const key = [item.reward || item.name || "", item.owner || "", item.status || "", item.source || ""].join("|");
+                    if (seen.has(key)) {
+                        return;
+                    }
+                    seen.add(key);
+                    merged.push(item);
+                });
+            });
+            return merged;
+        };
+        const normalizeSystemPanel = (value = {}) => {
+            const panel = value && typeof value === "object" ? value : {};
+            return {
+                system_name: String(panel.system_name || panel.name || panel["系统名"] || "").trim(),
+                owner: String(panel.owner || panel.host || panel.user || panel["宿主"] || "").trim(),
+                messages: this.normalizeWorldStateList(panel.messages || panel.logs || panel.broadcasts || panel["系统播报"]),
+                rewards: normalizeRewardList(panel.rewards),
+                benefits: this.normalizeWorldStateList(panel.benefits || panel.privileges || panel.perks || panel["特权"]),
+                rules: this.normalizeWorldStateList(panel.rules || panel["规则"] || panel["核心规则"]),
+                functions: this.normalizeWorldStateList(panel.functions || panel.features || panel["功能"]),
+                statuses: this.normalizeWorldStateList(panel.statuses || panel["状态"] || panel["系统状态"]),
+                pending_unlocks: this.normalizeWorldStateList(panel.pending_unlocks || panel.pending || panel["待解锁"] || panel["未解锁"]),
+                last_seen_chapter: Number(panel.last_seen_chapter || panel.chapter || 0)
+            };
+        };
+        const mergeSystemPanel = (...values) => {
+            const merged = {
+                system_name: "",
+                owner: "",
+                messages: [],
+                rewards: [],
+                benefits: [],
+                rules: [],
+                functions: [],
+                statuses: [],
+                pending_unlocks: [],
+                last_seen_chapter: 0
+            };
+            const pushText = (key, text) => {
+                const clean = String(text || "").trim();
+                if (!clean || merged[key].includes(clean)) {
+                    return;
+                }
+                merged[key].push(clean);
+            };
+            values.forEach((value) => {
+                const panel = normalizeSystemPanel(value);
+                if (panel.system_name) merged.system_name = panel.system_name;
+                if (panel.owner) merged.owner = panel.owner;
+                merged.last_seen_chapter = Math.max(merged.last_seen_chapter, Number(panel.last_seen_chapter || 0));
+                panel.messages.forEach((item) => pushText("messages", item));
+                panel.benefits.forEach((item) => pushText("benefits", item));
+                panel.rules.forEach((item) => pushText("rules", item));
+                panel.functions.forEach((item) => pushText("functions", item));
+                panel.statuses.forEach((item) => pushText("statuses", item));
+                panel.pending_unlocks.forEach((item) => pushText("pending_unlocks", item));
+                merged.rewards = mergeRewardLists(merged.rewards, panel.rewards);
+            });
+            return merged;
+        };
 
         const overview = autoState.overview || {};
         const characters = mergeMap(autoState.characters || {}, manualState.characters || {});
@@ -2607,6 +2701,7 @@ class NovelGenerator {
             ...(Array.isArray(autoState.rewards) ? autoState.rewards : []),
             ...(Array.isArray(manualState.rewards) ? manualState.rewards : [])
         ];
+        const systemPanel = mergeSystemPanel(autoState.system_panel || {}, manualState.system_panel || {});
         const plotThreads = autoState.plot_threads || {};
         const genreModules = Array.isArray(meta.genre_modules) ? meta.genre_modules.slice(0, 8) : [];
         const hardRules = this.normalizeWorldStateList(manualState.hard_rules).slice(0, 8);
@@ -2710,6 +2805,36 @@ class NovelGenerator {
                 return parts.length ? `- ${name}：${parts.join("；")}` : "";
             })
             .filter(Boolean);
+        const recentSystemMessages = systemPanel.messages.slice(-3).reverse();
+        const systemRewardLines = systemPanel.rewards
+            .slice()
+            .sort((left, right) => Number(right.chapter || 0) - Number(left.chapter || 0))
+            .slice(0, 4);
+        const systemPanelLines = [];
+        if (systemPanel.system_name || systemPanel.owner) {
+            systemPanelLines.push(`- 面板=${[systemPanel.system_name || "系统面板", systemPanel.owner ? `宿主=${systemPanel.owner}` : ""].filter(Boolean).join("；")}`);
+        }
+        if (recentSystemMessages.length) {
+            systemPanelLines.push(`- 最近播报=${recentSystemMessages.map((item) => Utils.summarizeText(item, 40)).join("｜")}`);
+        }
+        if (systemPanel.statuses.length) {
+            systemPanelLines.push(`- 当前状态=${systemPanel.statuses.slice(-2).reverse().map((item) => Utils.summarizeText(item, 36)).join("｜")}`);
+        }
+        if (systemPanel.benefits.length) {
+            systemPanelLines.push(`- 系统特权=${systemPanel.benefits.slice(0, 6).join("、")}`);
+        }
+        if (systemRewardLines.length) {
+            systemPanelLines.push(`- 系统奖励=${systemRewardLines.map((item) => Utils.summarizeText(item.reward || item.name || "", 18)).filter(Boolean).join("、")}`);
+        }
+        if (systemPanel.rules.length) {
+            systemPanelLines.push(`- 核心规则=${systemPanel.rules.slice(0, 2).map((item) => Utils.summarizeText(item, 40)).join("｜")}`);
+        }
+        if (systemPanel.functions.length) {
+            systemPanelLines.push(`- 系统功能=${systemPanel.functions.slice(0, 3).join("、")}`);
+        }
+        if (systemPanel.pending_unlocks.length) {
+            systemPanelLines.push(`- 待解锁=${systemPanel.pending_unlocks.slice(0, 3).join("、")}`);
+        }
 
         const plotLines = [
             ...(Array.isArray(plotThreads.active) ? plotThreads.active.slice(0, 4).map((item) => `主线=${Utils.summarizeText(item, 34)}`) : []),
@@ -2727,6 +2852,9 @@ class NovelGenerator {
         const chapterAnchor = Number(overview.latest_chapter || chapterNumber || 0);
         if (timeAnchor || locationAnchor || chapterAnchor) {
             lines.push(`当前时空锚点：${chapterAnchor ? `第${chapterAnchor}章后` : "当前"}${timeAnchor ? `；时间=${Utils.summarizeText(timeAnchor, 40)}` : ""}${locationAnchor ? `；地点=${Utils.summarizeText(locationAnchor, 30)}` : ""}`);
+        }
+        if (systemPanelLines.length) {
+            lines.push(`系统面板：\n${systemPanelLines.join("\n")}`);
         }
         if (characterLines.length) {
             lines.push(`重点人物：\n${characterLines.join("\n")}`);

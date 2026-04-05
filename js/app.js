@@ -1551,11 +1551,16 @@ ${(detailedOutline || concept || "未填写").slice(0, 2200)}`;
         const items = autoState.items || {};
         const abilities = autoState.abilities || {};
         const rewards = Array.isArray(autoState.rewards) ? autoState.rewards : [];
+        const systemPanel = this.mergeWorldStateSystemPanels(autoState.system_panel, manualState.system_panel);
         const hardRules = this.normalizeWorldStateTextList(manualState.hard_rules);
         const riskList = [
             ...(Array.isArray(autoState.continuity_risks) ? autoState.continuity_risks : []),
             ...this.normalizeWorldStateTextList(manualState.continuity_risks)
         ].slice(0, 8);
+        const systemEntryCount = systemPanel.messages.length
+            + systemPanel.rewards.length
+            + systemPanel.benefits.length
+            + systemPanel.pending_unlocks.length;
 
         const cards = [
             { label: "人物档案", value: Object.keys(characters).length, note: "状态 / 位置 / 身份 / 位阶" },
@@ -1563,6 +1568,7 @@ ${(detailedOutline || concept || "未填写").slice(0, 2200)}`;
             { label: "地点记录", value: Object.keys(locations).length, note: "占位 / 控制 / 近期事件" },
             { label: "关键物品", value: Object.keys(items).length, note: "持有者 / 状态 / 来源" },
             { label: "能力位阶", value: Object.keys(abilities).length, note: "功法 / 技能 / 修为 / 身份权限" },
+            { label: "系统面板", value: systemEntryCount, note: "播报 / 特权 / 奖励 / 待解锁" },
             { label: "奖励记录", value: rewards.length + this.normalizeWorldStateTextList(manualState.rewards).length, note: "系统 / 任务 / 资源回报" },
             { label: "风险提醒", value: riskList.length, note: "最容易吃书的地方" },
             { label: "手动规则", value: hardRules.length, note: "你额外锁死的红线" }
@@ -1643,7 +1649,44 @@ ${(detailedOutline || concept || "未填写").slice(0, 2200)}`;
                     .join("；")
             }))
         ].slice(0, 8);
+        const systemMessages = systemPanel.messages.slice(-3).reverse();
+        const systemStatuses = systemPanel.statuses.slice(-2).reverse();
+        const systemBenefits = systemPanel.benefits.slice(0, 4);
+        const systemRewards = systemPanel.rewards
+            .slice()
+            .sort((left, right) => Number(right.chapter || 0) - Number(left.chapter || 0))
+            .slice(0, 4);
+        const systemPanelEntries = [
+            (systemPanel.system_name || systemPanel.owner || systemMessages.length || systemStatuses.length) ? {
+                title: systemPanel.system_name ? `系统面板｜${systemPanel.system_name}` : "系统面板",
+                detail: [
+                    systemPanel.owner ? `宿主=${systemPanel.owner}` : "",
+                    systemMessages[0] ? `最近播报=${systemMessages[0]}` : "",
+                    systemStatuses[0] ? `当前状态=${systemStatuses[0]}` : ""
+                ].filter(Boolean).join("；")
+            } : null,
+            systemBenefits.length ? {
+                title: "系统特权",
+                detail: systemBenefits.join("；")
+            } : null,
+            systemRewards.length ? {
+                title: "系统奖励",
+                detail: systemRewards
+                    .map((item) => item.reward || item.name || "")
+                    .filter(Boolean)
+                    .join("；")
+            } : null,
+            systemPanel.rules.length ? {
+                title: "系统规则",
+                detail: systemPanel.rules.slice(0, 2).join("；")
+            } : null,
+            systemPanel.pending_unlocks.length ? {
+                title: "系统待解锁",
+                detail: systemPanel.pending_unlocks.slice(0, 2).join("；")
+            } : null
+        ].filter(Boolean);
         const prioritizedAssetItems = [
+            ...systemPanelEntries,
             ...rewards.slice(0, 3).map((item) => ({
                 title: item.reward || item.name || "奖励记录",
                 detail: [item.owner ? `归属=${item.owner}` : "", item.status ? `状态=${item.status}` : "", item.source ? `来源=${item.source}` : ""]
@@ -1705,6 +1748,7 @@ ${(detailedOutline || concept || "未填写").slice(0, 2200)}`;
         manager.auto_state.items = manager.auto_state.items && typeof manager.auto_state.items === "object" ? manager.auto_state.items : {};
         manager.auto_state.abilities = manager.auto_state.abilities && typeof manager.auto_state.abilities === "object" ? manager.auto_state.abilities : {};
         manager.auto_state.rewards = Array.isArray(manager.auto_state.rewards) ? manager.auto_state.rewards : [];
+        manager.auto_state.system_panel = this.normalizeWorldStateSystemPanel(manager.auto_state.system_panel);
         manager.auto_state.plot_threads = manager.auto_state.plot_threads && typeof manager.auto_state.plot_threads === "object"
             ? manager.auto_state.plot_threads
             : fallback.auto_state.plot_threads;
@@ -1718,6 +1762,7 @@ ${(detailedOutline || concept || "未填写").slice(0, 2200)}`;
         manager.manual_state.items = manager.manual_state.items && typeof manager.manual_state.items === "object" ? manager.manual_state.items : {};
         manager.manual_state.abilities = manager.manual_state.abilities && typeof manager.manual_state.abilities === "object" ? manager.manual_state.abilities : {};
         manager.manual_state.rewards = Array.isArray(manager.manual_state.rewards) ? manager.manual_state.rewards : [];
+        manager.manual_state.system_panel = this.normalizeWorldStateSystemPanel(manager.manual_state.system_panel);
         manager.manual_state.hard_rules = this.normalizeWorldStateTextList(manager.manual_state.hard_rules);
         manager.manual_state.continuity_risks = this.normalizeWorldStateTextList(manager.manual_state.continuity_risks);
         manager.manual_state.custom_modules = manager.manual_state.custom_modules && typeof manager.manual_state.custom_modules === "object"
@@ -1749,6 +1794,123 @@ ${(detailedOutline || concept || "未填写").slice(0, 2200)}`;
             .split(/[\n,，、；;\/]/)
             .map((item) => item.trim())
             .filter(Boolean);
+    }
+
+    normalizeWorldStateRewardEntries(value) {
+        const list = Array.isArray(value) ? value : this.normalizeWorldStateTextList(value);
+        return list
+            .map((item) => {
+                if (!item) {
+                    return null;
+                }
+                if (typeof item === "object") {
+                    const name = this.pickWorldStateText(item.reward, item.name, item.item, item.title, item["名称"]);
+                    if (!name) {
+                        return null;
+                    }
+                    return {
+                        reward: name,
+                        name,
+                        owner: this.pickWorldStateText(item.owner, item.holder, item["持有者"], item["归属"]),
+                        status: this.pickWorldStateText(item.status, item["当前状态"], item["状态"]),
+                        source: this.pickWorldStateText(item.source, item["来源"]),
+                        detail: this.pickWorldStateText(item.detail, item.description, item["描述"]) || name,
+                        chapter: Number(item.chapter || item.last_updated_chapter || 0)
+                    };
+                }
+                const name = String(item || "").trim();
+                return name
+                    ? {
+                        reward: name,
+                        name,
+                        owner: "",
+                        status: "",
+                        source: "",
+                        detail: name,
+                        chapter: 0
+                    }
+                    : null;
+            })
+            .filter(Boolean);
+    }
+
+    mergeWorldStateRewardEntries(...values) {
+        const rewards = [];
+        const seen = new Set();
+        values.forEach((value) => {
+            this.normalizeWorldStateRewardEntries(value).forEach((item) => {
+                const key = [
+                    item.reward || item.name || "",
+                    item.owner || "",
+                    item.status || "",
+                    item.source || ""
+                ].join("|");
+                if (seen.has(key)) {
+                    return;
+                }
+                seen.add(key);
+                rewards.push(item);
+            });
+        });
+        return rewards;
+    }
+
+    normalizeWorldStateSystemPanel(value = {}) {
+        const panel = value && typeof value === "object" ? value : {};
+        return {
+            system_name: this.pickWorldStateText(panel.system_name, panel.name, panel["系统名"]),
+            owner: this.pickWorldStateText(panel.owner, panel.host, panel.user, panel["宿主"]),
+            messages: this.normalizeWorldStateTextList(panel.messages || panel.logs || panel.broadcasts || panel["系统播报"]),
+            rewards: this.normalizeWorldStateRewardEntries(panel.rewards),
+            benefits: this.normalizeWorldStateTextList(panel.benefits || panel.privileges || panel.perks || panel["特权"]),
+            rules: this.normalizeWorldStateTextList(panel.rules || panel["规则"] || panel["核心规则"]),
+            functions: this.normalizeWorldStateTextList(panel.functions || panel.features || panel["功能"]),
+            statuses: this.normalizeWorldStateTextList(panel.statuses || panel["状态"] || panel["系统状态"]),
+            pending_unlocks: this.normalizeWorldStateTextList(panel.pending_unlocks || panel.pending || panel["待解锁"] || panel["未解锁"]),
+            last_seen_chapter: Number(panel.last_seen_chapter || panel.chapter || 0)
+        };
+    }
+
+    mergeWorldStateSystemPanels(...values) {
+        const merged = {
+            system_name: "",
+            owner: "",
+            messages: [],
+            rewards: [],
+            benefits: [],
+            rules: [],
+            functions: [],
+            statuses: [],
+            pending_unlocks: [],
+            last_seen_chapter: 0
+        };
+        const pushText = (key, text) => {
+            const clean = String(text || "").trim();
+            if (!clean || merged[key].includes(clean)) {
+                return;
+            }
+            merged[key].push(clean);
+        };
+
+        values.forEach((value) => {
+            const panel = this.normalizeWorldStateSystemPanel(value);
+            if (panel.system_name) {
+                merged.system_name = panel.system_name;
+            }
+            if (panel.owner) {
+                merged.owner = panel.owner;
+            }
+            merged.last_seen_chapter = Math.max(merged.last_seen_chapter, Number(panel.last_seen_chapter || 0));
+            panel.messages.forEach((item) => pushText("messages", item));
+            panel.benefits.forEach((item) => pushText("benefits", item));
+            panel.rules.forEach((item) => pushText("rules", item));
+            panel.functions.forEach((item) => pushText("functions", item));
+            panel.statuses.forEach((item) => pushText("statuses", item));
+            panel.pending_unlocks.forEach((item) => pushText("pending_unlocks", item));
+            merged.rewards = this.mergeWorldStateRewardEntries(merged.rewards, panel.rewards);
+        });
+
+        return merged;
     }
 
     getWorldStatePrimaryRewardOwner() {
@@ -1833,6 +1995,126 @@ ${(detailedOutline || concept || "未填写").slice(0, 2200)}`;
         });
 
         return rewards;
+    }
+
+    extractWorldStateSystemPanelFromContent(content = "", chapterNumber = 0) {
+        const text = String(content || "");
+        const panel = {
+            system_name: "",
+            owner: this.getWorldStatePrimaryRewardOwner(),
+            messages: [],
+            rewards: [],
+            benefits: [],
+            rules: [],
+            functions: [],
+            statuses: [],
+            pending_unlocks: [],
+            last_seen_chapter: Number(chapterNumber || 0)
+        };
+        if (!text.trim()) {
+            return panel;
+        }
+
+        const pushText = (key, value) => {
+            const clean = String(value || "")
+                .replace(/^[【[]\s*/u, "")
+                .replace(/[】\]]$/u, "")
+                .replace(/\s+/g, " ")
+                .trim();
+            if (!clean || panel[key].includes(clean)) {
+                return;
+            }
+            panel[key].push(clean);
+        };
+        const pushLabels = (key, value) => {
+            const cleanValue = String(value || "").replace(/[。！？]+$/u, "");
+            this.splitWorldStateLabels(cleanValue).forEach((item) => {
+                const clean = String(item || "")
+                    .replace(/^[“"'‘’「『]+/u, "")
+                    .replace(/[”"'‘’」』]+$/u, "")
+                    .trim();
+                if (clean) {
+                    pushText(key, clean);
+                }
+            });
+        };
+
+        text.split(/\r?\n/)
+            .map((line) => String(line || "").trim())
+            .filter(Boolean)
+            .forEach((line) => {
+                const cleanLine = line
+                    .replace(/^[【[]\s*/u, "")
+                    .replace(/[】\]]$/u, "")
+                    .replace(/\s+/g, " ")
+                    .trim();
+                if (!cleanLine) {
+                    return;
+                }
+
+                const isBracketLine = /^[【[]/.test(line) && /[】\]]$/.test(line);
+                const isStructuredSystemLine = /系统|获得物品|附加奖励|核心规则|规则提示|规则说明|永久特权|基础特权已激活|特权已激活|安全保障已开启/u.test(cleanLine);
+                const isSystemLine = isBracketLine || isStructuredSystemLine;
+                if (!isSystemLine) {
+                    return;
+                }
+
+                const systemNameMatch = cleanLine.match(/([A-Za-z0-9\u4e00-\u9fa5·《》“”"'_-]{2,30}系统)/u);
+                if (systemNameMatch?.[1]) {
+                    panel.system_name = systemNameMatch[1];
+                }
+
+                pushText("messages", cleanLine);
+
+                if (/(绑定|激活|开启|修复|净化|恢复|检测)/u.test(cleanLine)) {
+                    pushText("statuses", cleanLine);
+                }
+
+                if (/(永久特权|基础特权已激活|特权已激活|安全保障已开启|特权)/u.test(cleanLine)) {
+                    const benefitText = cleanLine.split(/[：:]/u).slice(1).join("：") || cleanLine;
+                    pushLabels("benefits", benefitText.replace(/^(永久特权|基础特权已激活|特权已激活|安全保障已开启|特权)\s*/u, ""));
+                }
+
+                if (/核心规则|规则提示|规则说明/u.test(cleanLine)) {
+                    pushText("rules", cleanLine.split(/[：:]/u).slice(1).join("：") || cleanLine);
+                }
+
+                if (/系统商城|商城/u.test(cleanLine)) {
+                    pushText("functions", "系统商城");
+                }
+
+                if ((/待解锁|逐步解锁|解锁/u.test(cleanLine)) && (/系统商城|商城/u.test(cleanLine))) {
+                    pushText("pending_unlocks", "系统商城高级物品解锁");
+                }
+
+                if (/无痛生子/u.test(cleanLine)) {
+                    pushText("benefits", "无痛生子");
+                }
+                if (/百病不侵/u.test(cleanLine)) {
+                    pushText("benefits", "孕期百病不侵");
+                }
+                if (/绝对防御/u.test(cleanLine)) {
+                    pushText("benefits", "绝对防御");
+                }
+                if (/生育机能已恢复/u.test(cleanLine)) {
+                    pushText("benefits", "生育机能恢复");
+                }
+                if (/附加奖励/u.test(cleanLine)) {
+                    if (/寿命延长/u.test(cleanLine)) {
+                        pushText("benefits", "寿命延长");
+                    }
+                    if (/气运加成/u.test(cleanLine)) {
+                        pushText("benefits", "气运加成");
+                    }
+                }
+            });
+
+        panel.rewards = this.mergeWorldStateRewardEntries(
+            panel.rewards,
+            this.extractWorldStateRewardsFromContent(text, chapterNumber)
+        );
+
+        return panel;
     }
 
     mergeWorldStateText(...values) {
@@ -1953,6 +2235,7 @@ ${(detailedOutline || concept || "未填写").slice(0, 2200)}`;
         const items = this.buildWorldStateItemRegistry(chapterMeta, characters);
         const abilities = this.buildWorldStateAbilityRegistry(characters);
         const rewards = this.buildWorldStateRewardRegistry(items, chapterMeta);
+        const systemPanel = this.buildWorldStateSystemPanel(chapterMeta, characters, rewards);
         const plotThreads = this.buildWorldStatePlotThreadRegistry(chapterMeta);
 
         let activePlotUnit = "";
@@ -2012,6 +2295,7 @@ ${(detailedOutline || concept || "未填写").slice(0, 2200)}`;
             items,
             abilities,
             rewards,
+            system_panel: systemPanel,
             plot_threads: plotThreads,
             continuity_risks: continuityRisks
         };
@@ -2679,7 +2963,53 @@ ${(detailedOutline || concept || "未填写").slice(0, 2200)}`;
             });
         });
 
-        return rewards.sort((left, right) => Number(right.chapter || 0) - Number(left.chapter || 0)).slice(0, 20);
+    return rewards.sort((left, right) => Number(right.chapter || 0) - Number(left.chapter || 0)).slice(0, 20);
+    }
+
+    buildWorldStateSystemPanel(chapterMeta = {}, characters = {}, rewards = []) {
+        const panel = this.mergeWorldStateSystemPanels({
+            owner: this.getWorldStatePrimaryRewardOwner(),
+            last_seen_chapter: Number(chapterMeta?.chapterNumber || 0)
+        });
+        const isSystemReward = (reward) => {
+            const text = [
+                reward?.reward || reward?.name || "",
+                reward?.source || "",
+                reward?.detail || ""
+            ].join(" ");
+            return /系统|特权|礼包|奖励|商城|正文系统提示|无痛生子|百病不侵|绝对防御|寿命延长|气运加成|春风化雨/u.test(text);
+        };
+
+        (this.novelData.outline?.volumes || []).forEach((volume) => {
+            (volume?.chapters || []).forEach((chapter) => {
+                const chapterNumber = Number(chapter?.number || 0);
+                const content = String(chapter?.content || "").trim();
+                if (!content) {
+                    return;
+                }
+                Object.assign(panel, this.mergeWorldStateSystemPanels(
+                    panel,
+                    this.extractWorldStateSystemPanelFromContent(content, chapterNumber)
+                ));
+            });
+        });
+
+        panel.rewards = this.mergeWorldStateRewardEntries(
+            panel.rewards,
+            this.normalizeWorldStateRewardEntries(rewards).filter((reward) => isSystemReward(reward))
+        ).sort((left, right) => Number(right.chapter || 0) - Number(left.chapter || 0)).slice(0, 12);
+
+        if (!panel.owner) {
+            panel.owner = this.getWorldStatePrimaryRewardOwner();
+        }
+        if (!panel.system_name && panel.messages.length) {
+            const systemNameMatch = panel.messages.join(" ").match(/([A-Za-z0-9\u4e00-\u9fa5·《》“”"'_-]{2,30}系统)/u);
+            if (systemNameMatch?.[1]) {
+                panel.system_name = systemNameMatch[1];
+            }
+        }
+
+        return this.normalizeWorldStateSystemPanel(panel);
     }
 
     buildWorldStatePlotThreadRegistry(chapterMeta = {}) {

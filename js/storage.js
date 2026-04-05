@@ -138,9 +138,17 @@ class StorageManager {
         merged.world_state_manager.auto_state = merged.world_state_manager.auto_state && typeof merged.world_state_manager.auto_state === "object"
             ? merged.world_state_manager.auto_state
             : JSON.parse(JSON.stringify(DEFAULT_NOVEL_DATA.world_state_manager.auto_state));
+        merged.world_state_manager.auto_state.system_panel = merged.world_state_manager.auto_state.system_panel
+            && typeof merged.world_state_manager.auto_state.system_panel === "object"
+            ? merged.world_state_manager.auto_state.system_panel
+            : JSON.parse(JSON.stringify(DEFAULT_NOVEL_DATA.world_state_manager.auto_state.system_panel));
         merged.world_state_manager.manual_state = merged.world_state_manager.manual_state && typeof merged.world_state_manager.manual_state === "object"
             ? merged.world_state_manager.manual_state
             : JSON.parse(JSON.stringify(DEFAULT_NOVEL_DATA.world_state_manager.manual_state));
+        merged.world_state_manager.manual_state.system_panel = merged.world_state_manager.manual_state.system_panel
+            && typeof merged.world_state_manager.manual_state.system_panel === "object"
+            ? merged.world_state_manager.manual_state.system_panel
+            : JSON.parse(JSON.stringify(DEFAULT_NOVEL_DATA.world_state_manager.manual_state.system_panel));
         merged.genre_progress_tracker = merged.genre_progress_tracker && typeof merged.genre_progress_tracker === "object"
             ? {
                 current_genre: merged.genre_progress_tracker.current_genre || "",

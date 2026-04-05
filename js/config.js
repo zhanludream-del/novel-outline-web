@@ -356,6 +356,18 @@ const DEFAULT_NOVEL_DATA = {
             items: {},
             abilities: {},
             rewards: [],
+            system_panel: {
+                system_name: "",
+                owner: "",
+                messages: [],
+                rewards: [],
+                benefits: [],
+                rules: [],
+                functions: [],
+                statuses: [],
+                pending_unlocks: [],
+                last_seen_chapter: 0
+            },
             plot_threads: {
                 active: [],
                 temporary: [],
@@ -372,6 +384,17 @@ const DEFAULT_NOVEL_DATA = {
             items: {},
             abilities: {},
             rewards: [],
+            system_panel: {
+                system_name: "",
+                owner: "",
+                messages: [],
+                rewards: [],
+                benefits: [],
+                rules: [],
+                functions: [],
+                statuses: [],
+                pending_unlocks: []
+            },
             hard_rules: [],
             continuity_risks: [],
             custom_modules: {}
