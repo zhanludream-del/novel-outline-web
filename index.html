@@ -922,6 +922,16 @@
                         <input class="input" id="settingRankApiUrl" type="text" placeholder="例如：https://你的-worker域名/api/fanqie/trends">
                     </label>
 
+                    <label class="field">
+                        <span>榜单超时秒数</span>
+                        <input class="input" id="settingRankTimeoutSeconds" type="number" min="15" step="15" value="90">
+                    </label>
+
+                    <label class="field">
+                        <span>榜单重试次数</span>
+                        <input class="input" id="settingRankRetryCount" type="number" min="1" max="6" step="1" value="2">
+                    </label>
+
                     <label class="field field-full">
                         <span>API Key</span>
                         <input class="input" id="settingApiKey" type="password" placeholder="仅保存在当前浏览器本地">

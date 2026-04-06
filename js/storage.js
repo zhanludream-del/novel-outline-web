@@ -71,6 +71,14 @@ class StorageManager {
                 market_diagnostics: merged.idea_lab.market_diagnostics && typeof merged.idea_lab.market_diagnostics === "object"
                     ? merged.idea_lab.market_diagnostics
                     : {},
+                market_selected_categories: Array.isArray(merged.idea_lab.market_selected_categories)
+                    ? merged.idea_lab.market_selected_categories
+                    : [],
+                market_source_breakdown: merged.idea_lab.market_source_breakdown && typeof merged.idea_lab.market_source_breakdown === "object"
+                    ? merged.idea_lab.market_source_breakdown
+                    : {},
+                market_status: merged.idea_lab.market_status || "",
+                market_error: merged.idea_lab.market_error || "",
                 selected_id: merged.idea_lab.selected_id || "",
                 results: Array.isArray(merged.idea_lab.results) ? merged.idea_lab.results : []
             }
@@ -82,6 +90,10 @@ class StorageManager {
                 market_summary: "",
                 market_items: [],
                 market_diagnostics: {},
+                market_selected_categories: [],
+                market_source_breakdown: {},
+                market_status: "",
+                market_error: "",
                 selected_id: "",
                 results: []
             };

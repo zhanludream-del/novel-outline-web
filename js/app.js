@@ -122,6 +122,8 @@ class NovelOutlineWebApp {
             settingModel: document.getElementById("settingModel"),
             settingApiBase: document.getElementById("settingApiBase"),
             settingRankApiUrl: document.getElementById("settingRankApiUrl"),
+            settingRankTimeoutSeconds: document.getElementById("settingRankTimeoutSeconds"),
+            settingRankRetryCount: document.getElementById("settingRankRetryCount"),
             settingApiKey: document.getElementById("settingApiKey"),
             settingTemperature: document.getElementById("settingTemperature"),
             settingMaxTokens: document.getElementById("settingMaxTokens"),
@@ -335,6 +337,14 @@ class NovelOutlineWebApp {
         this.novelData.idea_lab.market_diagnostics = this.novelData.idea_lab.market_diagnostics && typeof this.novelData.idea_lab.market_diagnostics === "object"
             ? this.novelData.idea_lab.market_diagnostics
             : {};
+        this.novelData.idea_lab.market_selected_categories = Array.isArray(this.novelData.idea_lab.market_selected_categories)
+            ? this.novelData.idea_lab.market_selected_categories
+            : [];
+        this.novelData.idea_lab.market_source_breakdown = this.novelData.idea_lab.market_source_breakdown && typeof this.novelData.idea_lab.market_source_breakdown === "object"
+            ? this.novelData.idea_lab.market_source_breakdown
+            : {};
+        this.novelData.idea_lab.market_status = this.novelData.idea_lab.market_status || "";
+        this.novelData.idea_lab.market_error = this.novelData.idea_lab.market_error || "";
         this.novelData.idea_lab.selected_id = this.novelData.idea_lab.selected_id || "";
         this.novelData.idea_lab.results = Array.isArray(this.novelData.idea_lab.results) ? this.novelData.idea_lab.results : [];
         if (!this.novelData.prompt_state) {
@@ -473,6 +483,7 @@ class NovelOutlineWebApp {
             this.elements.ideaUseMarketTrends.addEventListener("change", () => {
                 this.novelData.idea_lab.use_market_trends = this.elements.ideaUseMarketTrends.checked;
                 this.persist(true);
+                this.renderIdeaLabResults();
             });
         }
         this.elements.btnAutoDetectGenre.addEventListener("click", () => this.safeAsync(() => this.autoDetectGenre()));
@@ -1058,6 +1069,15 @@ ${(detailedOutline || concept || "未填写").slice(0, 2200)}`;
         this.elements.settingApiBase.value = settings.apiBase || DEFAULT_API_CONFIG.apiBase;
         if (this.elements.settingRankApiUrl) {
             this.elements.settingRankApiUrl.value = settings.rankApiUrl || "";
+        }
+        if (this.elements.settingRankTimeoutSeconds) {
+            this.elements.settingRankTimeoutSeconds.value = Math.max(
+                15,
+                Math.round(Number(settings.rankApiTimeoutMs ?? DEFAULT_API_CONFIG.rankApiTimeoutMs) / 1000)
+            );
+        }
+        if (this.elements.settingRankRetryCount) {
+            this.elements.settingRankRetryCount.value = settings.rankApiRetryCount ?? DEFAULT_API_CONFIG.rankApiRetryCount;
         }
         this.elements.settingApiKey.value = settings.apiKey || "";
         this.elements.settingTemperature.value = settings.temperature ?? DEFAULT_API_CONFIG.temperature;
@@ -3477,6 +3497,14 @@ ${(detailedOutline || concept || "未填写").slice(0, 2200)}`;
             model: this.elements.settingModel.value.trim(),
             apiBase: this.elements.settingApiBase.value.trim(),
             rankApiUrl: this.elements.settingRankApiUrl?.value.trim() || "",
+            rankApiTimeoutMs: Math.max(
+                15000,
+                Number(this.elements.settingRankTimeoutSeconds?.value || (DEFAULT_API_CONFIG.rankApiTimeoutMs / 1000)) * 1000
+            ),
+            rankApiRetryCount: Math.max(
+                1,
+                Number(this.elements.settingRankRetryCount?.value || DEFAULT_API_CONFIG.rankApiRetryCount)
+            ),
             apiKey: this.elements.settingApiKey.value.trim(),
             temperature: Number(this.elements.settingTemperature.value || DEFAULT_API_CONFIG.temperature),
             maxTokens: Number(this.elements.settingMaxTokens.value || DEFAULT_API_CONFIG.maxTokens),
@@ -3539,6 +3567,14 @@ ${(detailedOutline || concept || "未填写").slice(0, 2200)}`;
         this.novelData.idea_lab.market_diagnostics = this.novelData.idea_lab.market_diagnostics && typeof this.novelData.idea_lab.market_diagnostics === "object"
             ? this.novelData.idea_lab.market_diagnostics
             : {};
+        this.novelData.idea_lab.market_selected_categories = Array.isArray(this.novelData.idea_lab.market_selected_categories)
+            ? this.novelData.idea_lab.market_selected_categories
+            : [];
+        this.novelData.idea_lab.market_source_breakdown = this.novelData.idea_lab.market_source_breakdown && typeof this.novelData.idea_lab.market_source_breakdown === "object"
+            ? this.novelData.idea_lab.market_source_breakdown
+            : {};
+        this.novelData.idea_lab.market_status = this.novelData.idea_lab.market_status || "";
+        this.novelData.idea_lab.market_error = this.novelData.idea_lab.market_error || "";
         this.novelData.idea_lab.selected_id = this.novelData.idea_lab.selected_id || "";
         this.novelData.idea_lab.results = Array.isArray(this.novelData.idea_lab.results) ? this.novelData.idea_lab.results : [];
         this.novelData.prompt_state = this.novelData.prompt_state || JSON.parse(JSON.stringify(DEFAULT_NOVEL_DATA.prompt_state));
@@ -4595,6 +4631,88 @@ ${(detailedOutline || concept || "未填写").slice(0, 2200)}`;
         `;
     }
 
+    buildIdeaMarketSummaryFallback(snapshot = {}, context = {}) {
+        const items = Array.isArray(snapshot.items) ? snapshot.items : [];
+        if (!items.length) {
+            return "";
+        }
+
+        const diagnostics = snapshot.diagnostics && typeof snapshot.diagnostics === "object"
+            ? snapshot.diagnostics
+            : {};
+        const categories = Array.isArray(snapshot.selectedCategories) ? snapshot.selectedCategories : [];
+        const sourceBreakdown = snapshot.sourceBreakdown && typeof snapshot.sourceBreakdown === "object"
+            ? snapshot.sourceBreakdown
+            : {};
+        const keyword = String(context.keyword || snapshot.keyword || this.novelData.idea_lab?.keyword || "").trim();
+        const genreRef = String(context.subgenre || context.genre || snapshot.subgenre || snapshot.genre || "").trim();
+        const categoryText = categories
+            .map((item) => String(item?.name || "").trim())
+            .filter(Boolean)
+            .slice(0, 3)
+            .join("、");
+        const sourceNotes = [];
+        if (sourceBreakdown.rank?.used) {
+            sourceNotes.push(`榜单 ${Number(sourceBreakdown.rank?.itemCount || 0) || items.length} 本`);
+        }
+        if (sourceBreakdown.search?.used) {
+            sourceNotes.push(`搜索补充 ${Number(sourceBreakdown.search?.itemCount || 0) || 0} 本`);
+        }
+
+        const sampleTitles = items
+            .map((item) => String(item?.title || "").trim())
+            .filter(Boolean)
+            .slice(0, 5);
+        const introSamples = items
+            .map((item) => Utils.summarizeText(item?.analysisIntro || item?.intro || "", 56))
+            .filter(Boolean)
+            .slice(0, 3);
+
+        return [
+            `本次对标关键词：${keyword || genreRef || "未指定"}。`,
+            categoryText ? `参考入口：${categoryText}。` : "",
+            sourceNotes.length ? `样本来源：${sourceNotes.join("，")}。` : "",
+            `本次共整理 ${Number(diagnostics.totalItems || 0) || items.length} 个样本，可直接用于分析的简介 ${Number(diagnostics.usableIntroCount || 0)} 个。`,
+            sampleTitles.length ? `代表样本：${sampleTitles.join("、")}。` : "",
+            introSamples.length ? `可用简介样本：${introSamples.join("；")}` : ""
+        ].filter(Boolean).join("\n");
+    }
+
+    normalizeIdeaMarketSnapshot(snapshot, context = {}) {
+        if (!snapshot || typeof snapshot !== "object") {
+            return {
+                summary: "",
+                items: [],
+                diagnostics: {},
+                selectedCategories: [],
+                sourceBreakdown: {},
+                status: "",
+                error: ""
+            };
+        }
+
+        const normalized = {
+            ...snapshot,
+            items: Array.isArray(snapshot.items) ? snapshot.items : [],
+            diagnostics: snapshot.diagnostics && typeof snapshot.diagnostics === "object"
+                ? snapshot.diagnostics
+                : {},
+            selectedCategories: Array.isArray(snapshot.selectedCategories) ? snapshot.selectedCategories : [],
+            sourceBreakdown: snapshot.sourceBreakdown && typeof snapshot.sourceBreakdown === "object"
+                ? snapshot.sourceBreakdown
+                : {},
+            error: String(snapshot.error || "").trim()
+        };
+
+        normalized.summary = String(snapshot.summary || "").trim()
+            || this.buildIdeaMarketSummaryFallback(normalized, context);
+        normalized.status = String(snapshot.status || "").trim()
+            || (normalized.summary
+                ? "success"
+                : (normalized.items.length ? "partial" : (normalized.error ? "error" : "empty")));
+        return normalized;
+    }
+
     renderIdeaMarketSummary() {
         if (!this.elements.ideaMarketSummary) {
             return;
@@ -4603,15 +4721,39 @@ ${(detailedOutline || concept || "未填写").slice(0, 2200)}`;
         const summary = String(this.novelData.idea_lab?.market_summary || "").trim();
         const useMarket = this.novelData.idea_lab?.use_market_trends === true;
         const diagnostics = this.novelData.idea_lab?.market_diagnostics || {};
+        const items = Array.isArray(this.novelData.idea_lab?.market_items) ? this.novelData.idea_lab.market_items : [];
+        const selectedCategories = Array.isArray(this.novelData.idea_lab?.market_selected_categories)
+            ? this.novelData.idea_lab.market_selected_categories
+            : [];
+        const sourceBreakdown = this.novelData.idea_lab?.market_source_breakdown || {};
+        const marketStatus = String(this.novelData.idea_lab?.market_status || "").trim();
+        const marketError = String(this.novelData.idea_lab?.market_error || "").trim();
         if (!useMarket) {
             this.elements.ideaMarketSummary.className = "market-summary empty-state";
             this.elements.ideaMarketSummary.textContent = "如果开启榜单趋势，这里会显示本次抓到的番茄榜摘要。";
             return;
         }
 
-        if (!summary) {
+        const displaySummary = summary || this.buildIdeaMarketSummaryFallback({
+            items,
+            diagnostics,
+            selectedCategories,
+            sourceBreakdown
+        }, {
+            keyword: this.novelData.idea_lab?.keyword || "",
+            genre: this.novelData.outline?.genre || "",
+            subgenre: this.novelData.outline?.subgenre || ""
+        });
+
+        if (!displaySummary) {
             this.elements.ideaMarketSummary.className = "market-summary empty-state";
-            this.elements.ideaMarketSummary.textContent = "已开启榜单趋势，但这次还没有成功拿到榜单摘要。请检查榜单接口 URL。";
+            if (marketStatus === "config_missing") {
+                this.elements.ideaMarketSummary.textContent = "已开启榜单趋势，但还没配置榜单接口 URL。";
+            } else if (marketStatus === "error") {
+                this.elements.ideaMarketSummary.textContent = `已开启榜单趋势，但本次抓取失败：${marketError || "榜单接口暂时不可用。"}`;
+            } else {
+                this.elements.ideaMarketSummary.textContent = "已开启榜单趋势。点击“生成脑洞”后会自动抓取番茄摘要。";
+            }
             return;
         }
 
@@ -4619,7 +4761,7 @@ ${(detailedOutline || concept || "未填写").slice(0, 2200)}`;
         const prefix = diagnostics.totalItems
             ? `样本 ${diagnostics.totalItems} 本，可用简介 ${diagnostics.usableIntroCount || 0} 本，可抢救片段 ${diagnostics.salvagedIntroCount || 0} 本，混淆书名 ${diagnostics.obfuscatedTitleCount || 0} 本，混淆简介 ${diagnostics.obfuscatedIntroCount || 0} 本。\n\n`
             : "";
-        this.elements.ideaMarketSummary.textContent = `${prefix}${summary}`;
+        this.elements.ideaMarketSummary.textContent = `${prefix}${displaySummary}`;
     }
 
     handleIdeaResultClick(event) {
@@ -4714,6 +4856,16 @@ ${(detailedOutline || concept || "未填写").slice(0, 2200)}`;
             this.novelData.idea_lab.market_diagnostics = marketSnapshot?.diagnostics && typeof marketSnapshot.diagnostics === "object"
                 ? marketSnapshot.diagnostics
                 : {};
+            this.novelData.idea_lab.market_selected_categories = Array.isArray(marketSnapshot?.selectedCategories)
+                ? marketSnapshot.selectedCategories
+                : [];
+            this.novelData.idea_lab.market_source_breakdown = marketSnapshot?.sourceBreakdown && typeof marketSnapshot.sourceBreakdown === "object"
+                ? marketSnapshot.sourceBreakdown
+                : {};
+            this.novelData.idea_lab.market_status = marketSnapshot?.status || (
+                this.novelData.idea_lab.use_market_trends ? "empty" : ""
+            );
+            this.novelData.idea_lab.market_error = marketSnapshot?.error || "";
             this.novelData.idea_lab.results = results;
             this.novelData.idea_lab.selected_id = results[0]?.id || "";
             this.persist(true);
@@ -4727,16 +4879,28 @@ ${(detailedOutline || concept || "未填写").slice(0, 2200)}`;
         const endpoint = String(this.api.getConfig().rankApiUrl || "").trim();
         if (!endpoint) {
             Utils.log("已开启榜单趋势，但还没配置榜单接口 URL，这次跳过榜单注入。", "info");
-            return null;
+            return {
+                summary: "",
+                items: [],
+                diagnostics: {},
+                selectedCategories: [],
+                sourceBreakdown: {},
+                status: "config_missing",
+                error: "榜单接口 URL 未配置"
+            };
         }
 
         try {
             Utils.log("正在拉取番茄榜单摘要，用于脑洞对标。", "info");
-            const snapshot = await this.api.fetchFanqieTrendSnapshot({
+            const snapshot = this.normalizeIdeaMarketSnapshot(await this.api.fetchFanqieTrendSnapshot({
                 keyword,
                 genre,
                 subgenre,
                 limit: 10
+            }), {
+                keyword,
+                genre,
+                subgenre
             });
 
             if (snapshot?.summary) {
@@ -4747,7 +4911,15 @@ ${(detailedOutline || concept || "未填写").slice(0, 2200)}`;
             return snapshot;
         } catch (error) {
             Utils.log(`番茄榜单接口调用失败，这次改为普通脑洞模式：${error?.message || error}`, "error");
-            return null;
+            return {
+                summary: "",
+                items: [],
+                diagnostics: {},
+                selectedCategories: [],
+                sourceBreakdown: {},
+                status: "error",
+                error: error?.message || String(error || "榜单接口调用失败")
+            };
         }
     }
 
