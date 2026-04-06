@@ -264,7 +264,7 @@ class NovelOutlineWebApp {
 
         const params = new URLSearchParams(window.location.search);
         const urlVersion = params.get("v");
-        const buildVersion = "2026.04.03-c";
+        const buildVersion = "2026.04.06-e";
         const label = urlVersion ? `版本 ${urlVersion}` : `版本 ${buildVersion}`;
 
         this.elements.appVersionChip.textContent = label;
@@ -1068,7 +1068,7 @@ ${(detailedOutline || concept || "未填写").slice(0, 2200)}`;
         this.elements.settingModel.value = settings.model || DEFAULT_API_CONFIG.model;
         this.elements.settingApiBase.value = settings.apiBase || DEFAULT_API_CONFIG.apiBase;
         if (this.elements.settingRankApiUrl) {
-            this.elements.settingRankApiUrl.value = settings.rankApiUrl || "";
+            this.elements.settingRankApiUrl.value = settings.rankApiUrl || DEFAULT_API_CONFIG.rankApiUrl;
         }
         if (this.elements.settingRankTimeoutSeconds) {
             this.elements.settingRankTimeoutSeconds.value = Math.max(
@@ -3249,7 +3249,7 @@ ${(detailedOutline || concept || "未填写").slice(0, 2200)}`;
         if (!("serviceWorker" in navigator) || !window.isSecureContext && location.hostname !== "127.0.0.1" && location.hostname !== "localhost") {
             return;
         }
-        navigator.serviceWorker.register("service-worker.js?v=20260406b").then((registration) => {
+        navigator.serviceWorker.register("service-worker.js?v=20260406e").then((registration) => {
             registration.update().catch(() => {});
         }).catch(() => {});
     }
@@ -3496,7 +3496,7 @@ ${(detailedOutline || concept || "未填写").slice(0, 2200)}`;
             provider: this.elements.settingProvider.value,
             model: this.elements.settingModel.value.trim(),
             apiBase: this.elements.settingApiBase.value.trim(),
-            rankApiUrl: this.elements.settingRankApiUrl?.value.trim() || "",
+            rankApiUrl: this.elements.settingRankApiUrl?.value.trim() || DEFAULT_API_CONFIG.rankApiUrl,
             rankApiTimeoutMs: Math.max(
                 15000,
                 Number(this.elements.settingRankTimeoutSeconds?.value || (DEFAULT_API_CONFIG.rankApiTimeoutMs / 1000)) * 1000

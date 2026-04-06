@@ -194,7 +194,7 @@ const DEFAULT_API_CONFIG = {
     provider: "doubao",
     apiKey: "",
     apiBase: "https://ark.cn-beijing.volces.com/api/v3",
-    rankApiUrl: "",
+    rankApiUrl: "https://fanqie-rank-worker.zhanludream-del.workers.dev/api/fanqie/trends",
     rankApiTimeoutMs: 90000,
     rankApiRetryCount: 2,
     model: "doubao-pro-32k-241215",

@@ -345,7 +345,19 @@ class SettingsStorage {
                 return { ...DEFAULT_API_CONFIG };
             }
 
-            return { ...DEFAULT_API_CONFIG, ...JSON.parse(raw) };
+            const merged = { ...DEFAULT_API_CONFIG, ...JSON.parse(raw) };
+            if (!String(merged.rankApiUrl || "").trim()) {
+                merged.rankApiUrl = DEFAULT_API_CONFIG.rankApiUrl;
+            }
+            merged.rankApiTimeoutMs = Math.max(
+                15000,
+                Number(merged.rankApiTimeoutMs ?? DEFAULT_API_CONFIG.rankApiTimeoutMs) || DEFAULT_API_CONFIG.rankApiTimeoutMs
+            );
+            merged.rankApiRetryCount = Math.max(
+                1,
+                Number(merged.rankApiRetryCount ?? DEFAULT_API_CONFIG.rankApiRetryCount) || DEFAULT_API_CONFIG.rankApiRetryCount
+            );
+            return merged;
         } catch (error) {
             console.error("加载 API 设置失败：", error);
             return { ...DEFAULT_API_CONFIG };
@@ -355,6 +367,9 @@ class SettingsStorage {
     save(settings) {
         try {
             const merged = { ...DEFAULT_API_CONFIG, ...(settings || {}) };
+            if (!String(merged.rankApiUrl || "").trim()) {
+                merged.rankApiUrl = DEFAULT_API_CONFIG.rankApiUrl;
+            }
             localStorage.setItem(this.storageKey, JSON.stringify(merged, null, 2));
             return true;
         } catch (error) {
