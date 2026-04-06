@@ -289,25 +289,41 @@ class NovelGenerator {
         const previousVolumeEnding = this.buildPreviousVolumeEnding(project, volumeNumber);
         const clicheWarning = this.buildSynopsisClicheWarning(project, volumeNumber);
         const volumeBoundaryGuard = this.buildSynopsisVolumeBoundaryGuard(project, volumeNumber);
-        const storyStateSummary = this.buildStoryStateSummary(project, volumeNumber, 1);
+        const outlineSlice = this.extractCurrentVolumeOutlineContext(project, volumeNumber);
+        const currentVolumeOutlineContext = this.limitContext(outlineSlice.currentOutline || "", 2600);
+        const adjacentOutlineSummary = outlineSlice.adjacentSummary || "";
+        const synopsisHistoryContext = this.buildSynopsisHistoryContext(project, volumeNumber);
+        const synopsisClarityGuard = this.buildSynopsisClarityGuard({
+            volumeNumber,
+            chapterCount,
+            hasDetailedOutline: Boolean(String(outlineSlice.currentOutline || "").trim())
+        });
+        const storyStateSummary = this.buildStoryStateSummary(
+            project,
+            volumeNumber,
+            1,
+            [volumeSummary || "", existingSynopsis || "", outlineSlice.currentOutline || ""].filter(Boolean).join("\n")
+        );
         const systemPrompt = [
             genreConstraint,
             "你是一名中文长篇小说章节细纲策划编辑。",
             "你的输出必须简单易懂、直白、口语化，要像会讲故事的网文编辑，而不是论文写手。",
-            "请严格根据当前卷卷纲、世界观、前置卷细纲、已用剧情去重要求和人物一致性约束，拆解出当前卷的简要章节细纲。",
+            "请严格根据当前卷卷纲、当前卷详细大纲、世界观、前置卷细纲、已用剧情去重要求和人物一致性约束，拆解出当前卷的简要章节细纲。",
+            "如果当前卷存在详细大纲或明确事件链，优先服从详细大纲，不要只围着抽象卷纲空转。",
             "你现在只允许处理当前卷，不能提前写后续卷的重要剧情。",
             "细纲续写必须紧接前文最后一章或上一卷结尾，不准跳场、不准回退、不准重复已经发生的事件。",
             "如果前文细纲存在轻微逻辑毛边，你要在新的细纲里自然修顺，但不能改主线结果。",
+            "允许必要的过桥章，但过桥章也必须带来至少一个新的可见变化，不能只是把上一章换句话重写一遍。",
+            "同一事件不能换一种说法连续写两章；上一章的结果只能作为下一章的起点。",
             "情绪曲线要前后连续，角色状态、地点、时间线都要顺着前文往前走。",
-            "输出必须严格保持这种格式：第X章：章节标题 - 核心内容（20-50字）。",
+            "输出必须严格保持这种格式：第X章：章节标题 - 核心内容（25-60字）。",
             "一章只占一行，不要输出 JSON，不要加序号列表、说明、代码块或小标题。"
         ].filter(Boolean).join("\n");
 
         const volumeSynopsisContext = this.buildVolumeSynopsisContext(project, volumeNumber);
-        const previousChapterSynopsisContext = this.buildPreviousChapterSynopsisContext(project, volumeNumber);
         const synopsisConsistencyContext = this.buildSynopsisConsistencyContext(
             project,
-            `${volumeSummary || ""}\n${existingSynopsis || ""}`,
+            `${volumeSummary || ""}\n${existingSynopsis || ""}\n${outlineSlice.currentOutline || ""}`,
             volumeNumber
         );
 
@@ -317,9 +333,12 @@ class NovelGenerator {
             `故事概念：${concept || "暂无"}`,
             `世界观：${worldbuilding || "暂无"}`,
             volumeSynopsisContext ? `【卷纲前置】\n${volumeSynopsisContext}` : "",
-            previousChapterSynopsisContext ? `【前置细纲衔接】\n${previousChapterSynopsisContext}` : "",
+            currentVolumeOutlineContext ? `【当前卷详细大纲参考（优先服从）】\n${currentVolumeOutlineContext}` : "",
+            adjacentOutlineSummary ? `【相邻卷边界提示】\n${adjacentOutlineSummary}` : "",
+            synopsisHistoryContext ? synopsisHistoryContext : "",
             previousVolumeEnding ? `【上一卷结尾（用于衔接）】\n${previousVolumeEnding}` : "",
             storyStateSummary ? `【前文状态摘要】\n${storyStateSummary}` : "",
+            synopsisClarityGuard,
             volumeBoundaryGuard,
             usedPlotsContext,
             clicheWarning,
@@ -331,15 +350,15 @@ class NovelGenerator {
             existingSynopsis ? `已有细纲参考：${existingSynopsis}` : "",
             "",
             "请严格按下面格式直接输出：",
-            "第1章：章节标题 - 核心内容（20-50字）",
-            "第2章：章节标题 - 核心内容（20-50字）",
-            "第3章：章节标题 - 核心内容（20-50字）",
+            "第1章：章节标题 - 核心内容（25-60字）",
+            "第2章：章节标题 - 核心内容（25-60字）",
+            "第3章：章节标题 - 核心内容（25-60字）",
             "",
             "额外要求：",
             "1. 章节之间必须层层递进，不能重复同一冲突。",
             "2. 已经在前面卷细纲中使用过的核心情节，不得重复或变相重复。",
-            "3. 每一章的核心事件必须是新的、不同的剧情推进点。",
-            "4. 每章都要服务当前卷主线，同时兼顾支线、伏笔或人物关系推进。",
+            "3. 每一章都必须带来新的有效变化，可以是目标变化、信息增量、关系变化、位置变化或代价升级；允许必要过桥，不要为了求新硬跳剧情。",
+            "4. 每章优先服务当前卷主线，支线、伏笔或人物关系推进只在自然发生时顺带推进，不要一章塞太多任务。",
             "5. 如果桥段过于套路化，必须主动做变化，不要照搬常见模板。",
             "6. 要注意当前卷与上一卷结尾的衔接，不能断层。",
             "7. 人物说话方式、行为逻辑、关系进展必须符合已有人设。",
@@ -350,7 +369,8 @@ class NovelGenerator {
             "12. 如果前文某件事已经发生，后续细纲不能再把它写成“即将发生”或“刚要发生”。",
             "13. 情绪曲线要前后顺滑衔接，不能上一章刚爆发，下一章无缘无故平静重开。",
             "14. 如果前面的细纲或卷末衔接略生硬，你要在本卷前几章自然补桥，让读者感觉顺。",
-            "15. 每章只写一句简要细纲，不要扩写成详细章纲，不要写【章节目标】【情节推进】这些标签。"
+            "15. 每章只写一句简要细纲，但尽量交代“起因/动作/结果”中的至少两个，不要只写抽象结论。",
+            "16. 如果当前卷卷纲写得偏概括，优先依据【当前卷详细大纲参考】和上一卷结尾，把抽象目标拆成具体事件链，再分配到章节。"
         ].filter(Boolean).join("\n");
 
         const raw = await this.api.callLLM(userPrompt, systemPrompt, {
@@ -524,9 +544,23 @@ class NovelGenerator {
         }
 
         const volumeSynopsisContext = this.buildVolumeSynopsisContext(project, volumeNumber);
-        const previousChapterSynopsisContext = this.buildPreviousChapterSynopsisContext(project, volumeNumber);
+        const outlineSlice = this.extractCurrentVolumeOutlineContext(project, volumeNumber);
+        const currentVolumeOutlineContext = this.limitContext(outlineSlice.currentOutline || "", 2600);
+        const adjacentOutlineSummary = outlineSlice.adjacentSummary || "";
+        const synopsisHistoryContext = this.buildSynopsisHistoryContext(project, volumeNumber);
+        const synopsisClarityGuard = this.buildSynopsisClarityGuard({
+            volumeNumber,
+            chapterCount: targetCount,
+            hasDetailedOutline: Boolean(String(outlineSlice.currentOutline || "").trim())
+        });
+        const usedPlotsContext = this.buildUsedPlotsSummary(project, volumeNumber);
         const previousVolumeEnding = this.buildPreviousVolumeEnding(project, volumeNumber);
-        const storyStateSummary = this.buildStoryStateSummary(project, volumeNumber, 1);
+        const storyStateSummary = this.buildStoryStateSummary(
+            project,
+            volumeNumber,
+            1,
+            [volumeSummary || "", existingSynopsis || "", outlineSlice.currentOutline || ""].filter(Boolean).join("\n")
+        );
 
         for (let round = 0; round < 2 && missingNumbers.length; round += 1) {
             const knownLines = synopsisItems
@@ -540,9 +574,13 @@ class NovelGenerator {
                 `故事概念：${concept || "暂无"}`,
                 `世界观：${worldbuilding || "暂无"}`,
                 volumeSynopsisContext ? `【卷纲前置】\n${volumeSynopsisContext}` : "",
-                previousChapterSynopsisContext ? `【前置细纲衔接】\n${previousChapterSynopsisContext}` : "",
+                currentVolumeOutlineContext ? `【当前卷详细大纲参考（优先服从）】\n${currentVolumeOutlineContext}` : "",
+                adjacentOutlineSummary ? `【相邻卷边界提示】\n${adjacentOutlineSummary}` : "",
+                synopsisHistoryContext ? synopsisHistoryContext : "",
                 previousVolumeEnding ? `【上一卷结尾】\n${previousVolumeEnding}` : "",
                 storyStateSummary ? `【前文状态摘要】\n${storyStateSummary}` : "",
+                synopsisClarityGuard,
+                usedPlotsContext,
                 `当前卷：第${volumeNumber}卷`,
                 `计划章节数：${targetCount}`,
                 `当前卷卷纲：${volumeSummary || "暂无"}`,
@@ -555,7 +593,7 @@ class NovelGenerator {
                 missingNumbers.map((num) => `第${num}章`).join("、"),
                 "",
                 "请只输出缺失章节，一章一行，严格使用格式：",
-                "第X章：章节标题 - 核心内容（20-50字）",
+                "第X章：章节标题 - 核心内容（25-60字）",
                 "不要重复已经生成过的章节，不要输出额外说明。"
             ].filter(Boolean).join("\n");
 
@@ -4604,6 +4642,98 @@ class NovelGenerator {
         }).filter(Boolean).join("\n\n");
     }
 
+    collectSynopsisHistoryItems(project, currentVolumeNumber) {
+        const items = [];
+        (project?.outline?.volumes || [])
+            .slice(0, Math.max(0, currentVolumeNumber - 1))
+            .forEach((volume, volumeIndex) => {
+                const synopsis = this.normalizeSynopsisReferenceText(
+                    project,
+                    volume.chapterSynopsis || volume.chapter_synopsis || ""
+                );
+                synopsis
+                    .split(/\r?\n/)
+                    .map((line) => line.trim())
+                    .filter(Boolean)
+                    .forEach((line, lineIndex) => {
+                        const chapterMatch = line.match(/^第\s*(\d+)\s*章/);
+                        items.push({
+                            volumeNumber: volumeIndex + 1,
+                            chapterNumber: Number(chapterMatch?.[1] || lineIndex + 1),
+                            line,
+                            body: this.extractSynopsisEventBody(line)
+                        });
+                    });
+            });
+        return items;
+    }
+
+    formatSynopsisHistoryItem(item, bodyMax = 32) {
+        const body = Utils.summarizeText(item?.body || item?.line || "", bodyMax);
+        return `- 第${item?.volumeNumber || "?"}卷第${item?.chapterNumber || "?"}章：${body}`;
+    }
+
+    buildSynopsisHistoryContext(project, currentVolumeNumber) {
+        const items = this.collectSynopsisHistoryItems(project, currentVolumeNumber);
+        if (!items.length) {
+            return "";
+        }
+
+        return [
+            `【前文全部细纲原文（全量，共 ${items.length} 章）】`,
+            items.map((item) => `第${item.volumeNumber}卷 ${item.line}`).join("\n"),
+            "以上全部视为已经发生的事实，续写只能承接其后果，不能改写、倒放或换说法重写。"
+        ].filter(Boolean).join("\n");
+    }
+
+    buildSynopsisPhaseGuide(chapterCount) {
+        const total = Math.max(0, Number(chapterCount || 0));
+        if (!total) {
+            return "";
+        }
+        if (total <= 5) {
+            return [
+                "【本卷节奏护栏】",
+                `共 ${total} 章，前半段先承接上一卷结尾并立起本卷目标，后半段把冲突推高后完成阶段性收束，结尾再留钩子。`
+            ].join("\n");
+        }
+
+        const openingEnd = Math.max(1, Math.min(total, Math.ceil(total * 0.25)));
+        const escalationEnd = Math.max(openingEnd + 1, Math.min(total, Math.ceil(total * 0.65)));
+        const turnEnd = Math.max(escalationEnd + 1, Math.min(total, Math.ceil(total * 0.85)));
+        const formatRange = (start, end) => start >= end ? `第${start}章` : `第${start}-${end}章`;
+        const lines = ["【本卷节奏护栏】"];
+
+        lines.push(`${formatRange(1, openingEnd)}：先承接上一卷结尾，明确本卷目标、压力和行动方向，不要空转。`);
+        if (openingEnd + 1 <= escalationEnd) {
+            lines.push(`${formatRange(openingEnd + 1, escalationEnd)}：持续升级阻力，让信息、关系、代价或位置发生连续变化，避免反复围着同一冲突打转。`);
+        }
+        if (escalationEnd + 1 <= turnEnd) {
+            lines.push(`${formatRange(escalationEnd + 1, turnEnd)}：安排关键转折、失控点或重大代价，让局势明显改道。`);
+        }
+        if (turnEnd + 1 <= total) {
+            lines.push(`${formatRange(turnEnd + 1, total)}：完成本卷阶段性收束并留下卷末钩子，但不要直接展开下一卷主线。`);
+        }
+        return lines.join("\n");
+    }
+
+    buildSynopsisClarityGuard({ volumeNumber, chapterCount, hasDetailedOutline = false }) {
+        const lines = ["【当前卷执行护栏】"];
+        if (hasDetailedOutline) {
+            lines.push(`第 ${volumeNumber} 卷存在详细大纲时，优先服从详细大纲；简略卷纲只负责提醒方向，不要只围着抽象词打转。`);
+        }
+        lines.push("如果当前卷卷纲只写了抽象方向，你必须先在脑中补全：开局承接事件、本卷显性目标、中段持续阻力、关键转折、卷末落点，再分配到章节。");
+        lines.push("允许必要过桥章，但过桥章必须至少带来一个可见变化：新信息、新决定、新代价、新位置或新关系。");
+        lines.push("不要把上一章结尾换句话再写一遍；上一章的结果只能作为下一章的起点。");
+        lines.push("禁止用“继续调查”“继续修炼”“关系升温”“局势变化”“暗流涌动”这类抽象词单独充当核心事件，必须落到具体动作和结果。");
+
+        const phaseGuide = this.buildSynopsisPhaseGuide(chapterCount);
+        if (phaseGuide) {
+            lines.push(phaseGuide);
+        }
+        return lines.join("\n");
+    }
+
     buildVolumeInnovationPrompt(project, concept, worldbuilding) {
         const history = (project?.outline?.volumes || [])
             .map((volume, index) => ({ index, summary: volume.summary || "" }))
@@ -4638,28 +4768,23 @@ class NovelGenerator {
     }
 
     buildUsedPlotsSummary(project, currentVolumeNumber) {
-        const allPrevChapters = [];
-        (project?.outline?.volumes || [])
-            .slice(0, Math.max(0, currentVolumeNumber - 1))
-            .forEach((volume) => {
-                const synopsis = volume.chapterSynopsis || volume.chapter_synopsis || "";
-                synopsis
-                    .split("\n")
-                    .map((line) => line.trim())
-                    .filter(Boolean)
-                    .forEach((line) => allPrevChapters.push(line));
-            });
-
-        if (!allPrevChapters.length) {
+        const historyItems = this.collectSynopsisHistoryItems(project, currentVolumeNumber);
+        if (!historyItems.length) {
             return "";
         }
 
+        const allPrevChapters = historyItems.map((item) => item.line);
         const repeatRiskSummary = this.buildSynopsisRepeatRiskSummary(allPrevChapters);
+        const recentAnchors = historyItems
+            .slice(-6)
+            .map((item) => this.formatSynopsisHistoryItem(item, 42));
         return [
-            "【以下情节已经使用过，绝对禁止重复或变相重复】",
-            this.limitContext(allPrevChapters.join("\n"), 3600),
+            "【生成前防重复护栏】",
+            "下面这些前文已经写完，当前卷只能承接它们造成的后果，不能把它们重新写成新的核心事件。",
+            recentAnchors.length ? `尤其不要重写最近刚发生的事件：\n${recentAnchors.join("\n")}` : "",
+            "如果必须沿用同类桥段，至少同时更换目标、阻力、场景、结果中的两个维度。",
             repeatRiskSummary,
-            `（共 ${allPrevChapters.length} 条前置细纲记录）`
+            `（已纳入 ${historyItems.length} 条前置细纲记录）`
         ].filter(Boolean).join("\n");
     }
 
