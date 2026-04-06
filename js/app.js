@@ -4429,12 +4429,7 @@ ${(detailedOutline || concept || "未填写").slice(0, 2200)}`;
             const chapters = await this.generator.generateChapterSynopsis({
                 project: this.novelData,
                 ...payload,
-                concept: [
-                    preparedSynopsisInput.processedConcept || payload.concept,
-                    preparedSynopsisInput.lockedNamesHint,
-                    preparedSynopsisInput.mappingHint,
-                    preparedSynopsisInput.pendingHint
-                ].filter(Boolean).join("\n\n"),
+                concept: preparedSynopsisInput.processedConcept || payload.concept,
                 volumeNumber,
                 chapterCount: Number(this.elements.projectChaptersPerVolume.value || 20),
                 volumeSummary: preparedSynopsisInput.processedVolumeSummary || volume.summary,

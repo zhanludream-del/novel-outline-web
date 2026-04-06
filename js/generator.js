@@ -284,94 +284,31 @@ class NovelGenerator {
             genre,
             subgenre || project?.outline?.subgenre || project?.subgenre || genre
         );
-        const usedPlotsContext = this.buildUsedPlotsSummary(project, volumeNumber);
-        const innovationPrompt = this.buildSynopsisInnovationPrompt(project, volumeNumber, concept, volumeSummary);
-        const previousVolumeEnding = this.buildPreviousVolumeEnding(project, volumeNumber);
-        const clicheWarning = this.buildSynopsisClicheWarning(project, volumeNumber);
-        const volumeBoundaryGuard = this.buildSynopsisVolumeBoundaryGuard(project, volumeNumber);
-        const outlineSlice = this.extractCurrentVolumeOutlineContext(project, volumeNumber);
-        const currentVolumeOutlineContext = this.limitContext(outlineSlice.currentOutline || "", 2600);
-        const adjacentOutlineSummary = outlineSlice.adjacentSummary || "";
-        const synopsisHistoryContext = this.buildSynopsisHistoryContext(project, volumeNumber);
-        const synopsisClarityGuard = this.buildSynopsisClarityGuard({
+        const promptContext = this.buildDesktopSynopsisPromptContext({
+            project,
+            concept,
+            volumeSummary,
+            existingSynopsis,
+            volumeNumber,
+            chapterCount
+        });
+        const systemPrompt = this.buildDesktopSynopsisSystemPrompt({
+            genreConstraint,
+            chapterCount,
+            lockedNamesTable: promptContext.lockedNamesTable
+        });
+        const userPrompt = this.buildDesktopSynopsisUserPrompt({
+            title,
+            genre,
+            subgenre,
+            worldbuilding,
             volumeNumber,
             chapterCount,
-            hasDetailedOutline: Boolean(String(outlineSlice.currentOutline || "").trim())
+            concept,
+            volumeSummary,
+            existingSynopsis,
+            ...promptContext
         });
-        const storyStateSummary = this.buildStoryStateSummary(
-            project,
-            volumeNumber,
-            1,
-            [volumeSummary || "", existingSynopsis || "", outlineSlice.currentOutline || ""].filter(Boolean).join("\n")
-        );
-        const systemPrompt = [
-            genreConstraint,
-            "你是一名中文长篇小说章节细纲策划编辑。",
-            "你的输出必须简单易懂、直白、口语化，要像会讲故事的网文编辑，而不是论文写手。",
-            "请严格根据当前卷卷纲、当前卷详细大纲、世界观、前置卷细纲、已用剧情去重要求和人物一致性约束，拆解出当前卷的简要章节细纲。",
-            "如果当前卷存在详细大纲或明确事件链，优先服从详细大纲，不要只围着抽象卷纲空转。",
-            "你现在只允许处理当前卷，不能提前写后续卷的重要剧情。",
-            "细纲续写必须紧接前文最后一章或上一卷结尾，不准跳场、不准回退、不准重复已经发生的事件。",
-            "如果前文细纲存在轻微逻辑毛边，你要在新的细纲里自然修顺，但不能改主线结果。",
-            "允许必要的过桥章，但过桥章也必须带来至少一个新的可见变化，不能只是把上一章换句话重写一遍。",
-            "同一事件不能换一种说法连续写两章；上一章的结果只能作为下一章的起点。",
-            "情绪曲线要前后连续，角色状态、地点、时间线都要顺着前文往前走。",
-            "输出必须严格保持这种格式：第X章：章节标题 - 核心内容（25-60字）。",
-            "一章只占一行，不要输出 JSON，不要加序号列表、说明、代码块或小标题。"
-        ].filter(Boolean).join("\n");
-
-        const volumeSynopsisContext = this.buildVolumeSynopsisContext(project, volumeNumber);
-        const synopsisConsistencyContext = this.buildSynopsisConsistencyContext(
-            project,
-            `${volumeSummary || ""}\n${existingSynopsis || ""}\n${outlineSlice.currentOutline || ""}`,
-            volumeNumber
-        );
-
-        const userPrompt = [
-            `小说标题：《${title || "未命名小说"}》`,
-            `题材：${subgenre || genre || "未指定"}`,
-            `故事概念：${concept || "暂无"}`,
-            `世界观：${worldbuilding || "暂无"}`,
-            volumeSynopsisContext ? `【卷纲前置】\n${volumeSynopsisContext}` : "",
-            currentVolumeOutlineContext ? `【当前卷详细大纲参考（优先服从）】\n${currentVolumeOutlineContext}` : "",
-            adjacentOutlineSummary ? `【相邻卷边界提示】\n${adjacentOutlineSummary}` : "",
-            synopsisHistoryContext ? synopsisHistoryContext : "",
-            previousVolumeEnding ? `【上一卷结尾（用于衔接）】\n${previousVolumeEnding}` : "",
-            storyStateSummary ? `【前文状态摘要】\n${storyStateSummary}` : "",
-            synopsisClarityGuard,
-            volumeBoundaryGuard,
-            usedPlotsContext,
-            clicheWarning,
-            innovationPrompt ? `【反套路与创新建议】\n${innovationPrompt}` : "",
-            synopsisConsistencyContext,
-            `当前卷：第 ${volumeNumber} 卷`,
-            `计划章节数：${chapterCount}`,
-            `当前卷卷纲：${volumeSummary || "暂无"}`,
-            existingSynopsis ? `已有细纲参考：${existingSynopsis}` : "",
-            "",
-            "请严格按下面格式直接输出：",
-            "第1章：章节标题 - 核心内容（25-60字）",
-            "第2章：章节标题 - 核心内容（25-60字）",
-            "第3章：章节标题 - 核心内容（25-60字）",
-            "",
-            "额外要求：",
-            "1. 章节之间必须层层递进，不能重复同一冲突。",
-            "2. 已经在前面卷细纲中使用过的核心情节，不得重复或变相重复。",
-            "3. 每一章都必须带来新的有效变化，可以是目标变化、信息增量、关系变化、位置变化或代价升级；允许必要过桥，不要为了求新硬跳剧情。",
-            "4. 每章优先服务当前卷主线，支线、伏笔或人物关系推进只在自然发生时顺带推进，不要一章塞太多任务。",
-            "5. 如果桥段过于套路化，必须主动做变化，不要照搬常见模板。",
-            "6. 要注意当前卷与上一卷结尾的衔接，不能断层。",
-            "7. 人物说话方式、行为逻辑、关系进展必须符合已有人设。",
-            "8. 如果出现男主、女主、师尊、反派等模糊代称，必须替换成真实姓名。",
-            "9. 尚未正式见面的人物，不能在细纲里提前写成熟人互动。",
-            "10. 如果当前卷后面还有其他卷，当前卷结尾应该留下钩子，但不要直接写成下一卷开篇。",
-            "11. 下一章的开头必须能接住上一章结尾，不要让人物突然换地点、换状态、换目标。",
-            "12. 如果前文某件事已经发生，后续细纲不能再把它写成“即将发生”或“刚要发生”。",
-            "13. 情绪曲线要前后顺滑衔接，不能上一章刚爆发，下一章无缘无故平静重开。",
-            "14. 如果前面的细纲或卷末衔接略生硬，你要在本卷前几章自然补桥，让读者感觉顺。",
-            "15. 每章只写一句简要细纲，但尽量交代“起因/动作/结果”中的至少两个，不要只写抽象结论。",
-            "16. 如果当前卷卷纲写得偏概括，优先依据【当前卷详细大纲参考】和上一卷结尾，把抽象目标拆成具体事件链，再分配到章节。"
-        ].filter(Boolean).join("\n");
 
         const raw = await this.api.callLLM(userPrompt, systemPrompt, {
             temperature: 0.72,
@@ -543,24 +480,14 @@ class NovelGenerator {
             return synopsisItems;
         }
 
-        const volumeSynopsisContext = this.buildVolumeSynopsisContext(project, volumeNumber);
-        const outlineSlice = this.extractCurrentVolumeOutlineContext(project, volumeNumber);
-        const currentVolumeOutlineContext = this.limitContext(outlineSlice.currentOutline || "", 2600);
-        const adjacentOutlineSummary = outlineSlice.adjacentSummary || "";
-        const synopsisHistoryContext = this.buildSynopsisHistoryContext(project, volumeNumber);
-        const synopsisClarityGuard = this.buildSynopsisClarityGuard({
-            volumeNumber,
-            chapterCount: targetCount,
-            hasDetailedOutline: Boolean(String(outlineSlice.currentOutline || "").trim())
-        });
-        const usedPlotsContext = this.buildUsedPlotsSummary(project, volumeNumber);
-        const previousVolumeEnding = this.buildPreviousVolumeEnding(project, volumeNumber);
-        const storyStateSummary = this.buildStoryStateSummary(
+        const promptContext = this.buildDesktopSynopsisPromptContext({
             project,
+            concept,
+            volumeSummary,
+            existingSynopsis,
             volumeNumber,
-            1,
-            [volumeSummary || "", existingSynopsis || "", outlineSlice.currentOutline || ""].filter(Boolean).join("\n")
-        );
+            chapterCount: targetCount
+        });
 
         for (let round = 0; round < 2 && missingNumbers.length; round += 1) {
             const knownLines = synopsisItems
@@ -568,34 +495,20 @@ class NovelGenerator {
                 .map((item) => item.line)
                 .join("\n");
 
-            const repairPrompt = [
-                `小说标题：《${title || "未命名小说"}》`,
-                `题材：${subgenre || genre || "未指定"}`,
-                `故事概念：${concept || "暂无"}`,
-                `世界观：${worldbuilding || "暂无"}`,
-                volumeSynopsisContext ? `【卷纲前置】\n${volumeSynopsisContext}` : "",
-                currentVolumeOutlineContext ? `【当前卷详细大纲参考（优先服从）】\n${currentVolumeOutlineContext}` : "",
-                adjacentOutlineSummary ? `【相邻卷边界提示】\n${adjacentOutlineSummary}` : "",
-                synopsisHistoryContext ? synopsisHistoryContext : "",
-                previousVolumeEnding ? `【上一卷结尾】\n${previousVolumeEnding}` : "",
-                storyStateSummary ? `【前文状态摘要】\n${storyStateSummary}` : "",
-                synopsisClarityGuard,
-                usedPlotsContext,
-                `当前卷：第${volumeNumber}卷`,
-                `计划章节数：${targetCount}`,
-                `当前卷卷纲：${volumeSummary || "暂无"}`,
-                existingSynopsis ? `已有细纲参考：${existingSynopsis}` : "",
-                "",
-                "【已经成功生成的章节细纲】",
-                knownLines || "暂无",
-                "",
-                "【只允许补齐以下缺失章节】",
-                missingNumbers.map((num) => `第${num}章`).join("、"),
-                "",
-                "请只输出缺失章节，一章一行，严格使用格式：",
-                "第X章：章节标题 - 核心内容（25-60字）",
-                "不要重复已经生成过的章节，不要输出额外说明。"
-            ].filter(Boolean).join("\n");
+            const repairPrompt = this.buildDesktopSynopsisRepairPrompt({
+                title,
+                genre,
+                subgenre,
+                worldbuilding,
+                concept,
+                volumeNumber,
+                chapterCount: targetCount,
+                volumeSummary,
+                existingSynopsis,
+                knownLines,
+                missingNumbers,
+                ...promptContext
+            });
 
             const repairedRaw = await this.api.callLLM(repairPrompt, systemPrompt, {
                 temperature: 0.55,
@@ -3509,30 +3422,880 @@ class NovelGenerator {
             .map(([role, name]) => `【${role}】${name}`);
         const supportingLines = Object.entries(synopsisData.locked_character_names || {})
             .filter(([, info]) => info?.type !== "主角")
-            .slice(0, 20)
-            .map(([name, info]) => {
-                const identity = info?.identity || "未知";
-                const lockedVolume = info?.locked_volume ? `，锁定卷：第${info.locked_volume}卷` : "";
-                return `${name}（${identity}${lockedVolume}）`;
-            });
+            .slice(0, 30)
+            .map(([name]) => name);
 
         if (!protagonistLines.length && !supportingLines.length) {
             return "";
         }
 
         return [
-            "【角色名字锁定表】",
-            "一、主角名字（最高优先级，绝对不能改名或退回模糊称呼）：",
-            protagonistLines.length ? protagonistLines.join("\n") : "（暂无）",
+            "【🔒🔒🔒 角色名字锁定表 - 已锁定的名字绝对禁止修改！🔒🔒🔒】",
             "",
-            "二、已锁定角色名字（后续细纲/章纲/正文必须沿用）：",
-            supportingLines.length ? supportingLines.join("、") : "（暂无）",
+            "一、主角名字（最高优先级 - 绝对不可修改）：",
+            protagonistLines.length ? protagonistLines.join("\n") : "（暂无主角设定）",
             "",
-            "强制规则：",
-            "1. 已锁定角色必须一直使用真实姓名，不能写回男主、女主、主角、师尊、同事A之类代称。",
-            "2. 已锁定角色的常见简称、别名也不能误写成另一个新角色。",
-            "3. 新角色可以起新名字，但不能撞到锁定表里的实名或别名。"
+            "二、配角名字（已出场配角 - 必须沿用原名）：",
+            supportingLines.length ? supportingLines.join("、") : "（暂无配角）",
+            "",
+            "【强制性规则】：",
+            "1. 以上所有名字已锁定，AI只能使用这些完整名字，不能做任何修改！",
+            "2. 禁止使用简称、别名、昵称！例如“苏婉儿”不能写成“婉儿”“苏婉”“女主”！",
+            "3. 禁止使用模糊称呼！“男主母亲”必须写成具体名字（如“林夫人”）！",
+            "4. 新出场角色可以起名，但必须符合世界观且有辨识度！",
+            "5. 已锁定名字的别名也禁止单独使用，避免同角漂移。",
+            "",
+            "【违反锁定表的后果】：生成的章节将被视为错误，需要重新生成！"
         ].join("\n");
+    }
+
+    buildSynopsisMappingHint(project) {
+        const synopsisData = this.restoreSynopsisMainCharacters(project);
+        const mappingLines = Object.entries(synopsisData.vague_to_name_mapping || {})
+            .filter(([, specificName]) => String(specificName || "").trim())
+            .slice(0, 20)
+            .map(([vagueTerm, specificName]) => `  · "${vagueTerm}" → ${specificName}`);
+
+        if (!mappingLines.length) {
+            return "";
+        }
+
+        return [
+            "【🔒 模糊称呼→具体名字映射表（必须遵守！）】",
+            "以下模糊称呼已经对应了具体名字，必须在所有章节中使用具体名字：",
+            mappingLines.join("\n"),
+            "",
+            "⚠️ 绝对禁止继续使用映射表中的模糊称呼，必须写对应的具体名字！"
+        ].join("\n");
+    }
+
+    getSynopsisClichePatterns() {
+        return {
+            开局套路: {
+                patterns: [
+                    "穿越重生获得金手指",
+                    "废柴被退婚/羞辱后崛起",
+                    "捡到神秘功法/传承",
+                    "意外获得强大血脉觉醒",
+                    "被家族/宗门驱逐后崛起"
+                ],
+                innovations: [
+                    "【反向开局】开局就是巅峰，然后失去一切重新开始",
+                    "【普通开局】没有金手指，完全靠努力和智慧",
+                    "【反派开局】主角本身就是反派角色",
+                    "【多重身份】开局就有复杂身份，需要在身份间周旋"
+                ]
+            },
+            战斗套路: {
+                patterns: [
+                    "主角被压制后突然爆发反杀",
+                    "关键时刻突破境界获胜",
+                    "隐藏实力被低估后震惊全场",
+                    "以弱胜强战胜天才",
+                    "敌人临死前说你等着然后叫来更强的敌人"
+                ],
+                innovations: [
+                    "【实力差距】主角确实打不过，只能智取或逃跑",
+                    "【付出代价】胜利伴随着重大牺牲或损失",
+                    "【敌人变友】战斗后不打不相识，成为盟友",
+                    "【平局收场】双方都受伤撤退，留待后续",
+                    "【第三方介入】战斗被第三方打断或收割"
+                ]
+            },
+            感情套路: {
+                patterns: [
+                    "英雄救美后女主爱上男主",
+                    "误会产生感情",
+                    "青梅竹马打败天降",
+                    "情敌出现后最终选择主角",
+                    "家族反对的感情最终冲破阻碍"
+                ],
+                innovations: [
+                    "【救助无用】救人后对方并不感激，反而引出新矛盾",
+                    "【感情无关】感情线只是调味，不必次次抢主线",
+                    "【多元关系】不要只做一对一，可以写更复杂的关系网络",
+                    "【感情失败】感情线不圆满，但角色因此成长"
+                ]
+            },
+            升级套路: {
+                patterns: [
+                    "每次遇到敌人都能刚好突破",
+                    "吞噬吸收敌人力量快速升级",
+                    "获得传承后实力暴涨",
+                    "秘境历练后实力大增",
+                    "濒死突破获得新生"
+                ],
+                innovations: [
+                    "【渐进成长】没有突然飞跃，每一步都来之不易",
+                    "【升级代价】突破要付出寿命、记忆、关系等代价",
+                    "【瓶颈期】长时间卡住，逼角色换路径",
+                    "【失去力量】实力倒退后重新积累"
+                ]
+            },
+            势力套路: {
+                patterns: [
+                    "建立势力后一路扩张",
+                    "敌人势力内部有叛徒",
+                    "联盟对抗最终胜利",
+                    "吞并敌对势力壮大自己"
+                ],
+                innovations: [
+                    "【管理困境】扩张后要面对内部分裂和管理难题",
+                    "【灰度势力】没有绝对正邪，各方都有合理性",
+                    "【合作共赢】敌人变合作伙伴，而不是只能消灭",
+                    "【势力崩塌】主角势力也可能因决策失误而受创"
+                ]
+            },
+            揭秘套路: {
+                patterns: [
+                    "主角真实身份是某某之子或继承人",
+                    "幕后黑手竟然是身边信任的人",
+                    "敌人其实是被控制的受害者",
+                    "一切阴谋都是为了主角好"
+                ],
+                innovations: [
+                    "【身份无关】身份揭露不重要，重要的是角色如何选择",
+                    "【多重真相】一层真相背后还有更深一层",
+                    "【无真相】有些事情永远无法完全得知真相",
+                    "【自我定义】身份不决定命运，选择才决定命运"
+                ]
+            },
+            复仇套路: {
+                patterns: [
+                    "全家被杀踏上复仇路",
+                    "最终发现仇人有苦衷",
+                    "复仇成功后感到空虚",
+                    "仇人临死前说出更大阴谋"
+                ],
+                innovations: [
+                    "【复杂动机】仇恨背后不是简单对错，而是复杂因果",
+                    "【超越仇恨】放下不是原谅，而是选择停止被仇恨驱动",
+                    "【复仇代价】报仇成功却失去更重要的东西",
+                    "【轮回困境】复仇之后自己也成了别人的复仇对象"
+                ]
+            },
+            宝物套路: {
+                patterns: [
+                    "秘境中获得神级宝物",
+                    "宝物内有器灵指导主角",
+                    "宝物认主后无人可夺",
+                    "拍卖会上捡漏宝物"
+                ],
+                innovations: [
+                    "【宝物有价】宝物需要付出相应代价才能使用",
+                    "【宝物有缺】宝物有缺陷或副作用",
+                    "【宝物之争】宝物带来追杀、觊觎和连锁麻烦",
+                    "【宝物无用】宝物未必真能解决问题，甚至会失效"
+                ]
+            }
+        };
+    }
+
+    getSynopsisPlotElements() {
+        return {
+            冲突来源: ["资源争夺", "理念冲突", "误会引发", "利益纠葛", "情感矛盾", "势力博弈", "命运安排", "意外触发"],
+            转折方式: ["第三方介入", "意外发现", "信息揭露", "能力突破", "心态转变", "外部变故", "盟友背叛", "敌人帮助"],
+            解决路径: ["实力碾压", "智谋取胜", "妥协和解", "暂时回避", "借助外力", "付出代价", "改变目标", "时间化解"],
+            影响范围: ["个人成长", "关系变化", "势力格局", "世界观揭示", "主线推进", "支线开启", "伏笔回收", "新谜团出现"],
+            情感走向: ["热血沸腾", "温馨治愈", "虐心压抑", "轻松搞笑", "惊悚紧张", "感动落泪", "愤怒不平", "恍然大悟"]
+        };
+    }
+
+    getSynopsisEventTypeSuggestions() {
+        return {
+            战斗: {
+                avoid: ["重复的战斗场景", "相似的敌人类型", "同样的战斗结果模式"],
+                suggest: ["不同类型的敌人（人/兽/机关/幻境）", "多样的战斗环境", "意外的战斗结果", "战斗的非战斗后果"]
+            },
+            修炼: {
+                avoid: ["重复的突破描写", "同样的修炼方法", "无代价的提升"],
+                suggest: ["不同的修炼瓶颈", "创新的突破方式", "突破后的副作用", "修炼的意外收获"]
+            },
+            对话: {
+                avoid: ["重复的对话目的", "相似的信息揭露方式", "单向的信息传递"],
+                suggest: ["多重目的的对话", "信息博弈与试探", "对话中的误会与暗示", "对话的后续影响"]
+            },
+            探索: {
+                avoid: ["重复的发现模式", "同样的探索目的", "无风险的探索"],
+                suggest: ["探索的意外发现", "探索的代价与风险", "探索的连锁反应", "探索的遗留问题"]
+            },
+            交易: {
+                avoid: ["重复的交易类型", "顺利的交易过程", "无后续的交易"],
+                suggest: ["交易背后的博弈", "交易的意外后果", "交易的道德困境", "交易的信息差"]
+            }
+        };
+    }
+
+    getSynopsisAllowedRepeatEvents() {
+        return {
+            修炼突破: {
+                keywords: ["修炼", "突破", "闭关", "顿悟", "境界"],
+                description: "每个境界都可能突破，但每次突破都该写出不同的新鲜感。",
+                variations: [
+                    "突破时机：闭关成功 / 战斗顿悟 / 机缘巧合 / 传承加持",
+                    "突破场景：宗门密室 / 秘境禁地 / 战场之上 / 传承之地",
+                    "突破代价或奖励：实力暴涨 / 获得神通 / 觉醒血脉 / 开启秘法",
+                    "突破后续：碾压同阶 / 打脸嘲讽者 / 收获崇拜 / 开启新地图"
+                ],
+                examples: [
+                    "可以从突破时机与突破代价入手，避免每次都只是“打着打着就升级”。",
+                    "可以让突破改变人物关系或局势，而不只是数值提升。 "
+                ]
+            },
+            生子怀孕: {
+                keywords: ["怀孕", "生子", "胎", "生产", "子嗣"],
+                description: "生子文里怀孕和生产可以重复出现，但每次都应当写出不同情绪、不同处境和不同后续。",
+                variations: [
+                    "惊喜来源：新婚即孕 / 求子得子 / 意外惊喜 / 天降祥瑞",
+                    "孕期状态：丈夫宠爱 / 家族重视 / 身体异状 / 天赋预兆",
+                    "生产结果：母子平安 / 龙凤呈祥 / 孩子天赋异禀 / 引发新局势",
+                    "后续影响：家庭关系变化 / 势力态度变化 / 奖励降临 / 新目标开启"
+                ],
+                examples: [
+                    "不要把每一胎都写成同样的“发现怀孕-众人高兴-顺利生产”。",
+                    "可以从奖励、身份变化、子嗣天赋或宫斗压力上做差异。"
+                ]
+            },
+            感情发展: {
+                keywords: ["感情", "心动", "表白", "婚约", "成婚", "暧昧"],
+                description: "感情推进可以重复，但每一段关系都该有不同的起点、阻力和落点。",
+                variations: [
+                    "相遇方式：偶然邂逅 / 身份曝光 / 英雄救美 / 青梅重逢",
+                    "升温路径：共患难 / 日常相处 / 利益合作 / 价值观吸引",
+                    "阻力类型：身份差距 / 家族反对 / 旧怨未解 / 目标冲突",
+                    "结果落点：修成正果 / 暂时错过 / 关系升级 / 埋下更复杂的牵连"
+                ],
+                examples: [
+                    "不要每条感情线都套“救人-心动-表白”同一模板。",
+                    "同样是升温，也可以分别写利益同盟、命运牵扯、互相利用后转真心。"
+                ]
+            },
+            获得宝物: {
+                keywords: ["宝物", "法器", "神器", "功法", "传承", "至宝"],
+                description: "获得宝物可以重复，但宝物来源、代价和作用必须变化。",
+                variations: [
+                    "获得方式：秘境所得 / 拍卖竞拍 / 击败强敌掉落 / 意外继承",
+                    "宝物属性：稀有宝物 / 史诗神器 / 有缺之物 / 限制型底牌",
+                    "副作用或争夺：被追杀 / 认主失败 / 需要代价 / 引发觊觎",
+                    "后续效果：实力变化 / 身份变化 / 关系变化 / 新地图开启"
+                ],
+                examples: [
+                    "不要每次都写成“随手捡到神级宝物然后立刻暴涨”。",
+                    "可以写宝物有缺陷、有限制，或者带来追杀与连锁问题。"
+                ]
+            }
+        };
+    }
+
+    extractSynopsisPatternKeywords(pattern) {
+        return String(pattern || "")
+            .replace(/[“”"'、，。！？；：:（）()\[\]【】]/g, " ")
+            .replace(/\//g, " ")
+            .split(/\s+/)
+            .map((keyword) => keyword.trim())
+            .filter((keyword) => keyword.length >= 2);
+    }
+
+    matchSynopsisPattern(pattern, text) {
+        const keywords = this.extractSynopsisPatternKeywords(pattern);
+        if (!keywords.length) {
+            return false;
+        }
+        const matchedCount = keywords.filter((keyword) => String(text || "").includes(keyword)).length;
+        return matchedCount >= Math.max(1, Math.ceil(keywords.length * 0.5));
+    }
+
+    countSynopsisKeywordMatches(text, keywords = []) {
+        const source = String(text || "");
+        return (keywords || []).reduce((count, keyword) => {
+            if (!keyword) {
+                return count;
+            }
+            const escaped = String(keyword).replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+            const matches = source.match(new RegExp(escaped, "g"));
+            return count + (matches ? matches.length : 0);
+        }, 0);
+    }
+
+    analyzeSynopsisInnovation(project, volumeNumber, currentOutlineText = "") {
+        const previousLines = this.collectSynopsisHistoryLines(project, volumeNumber);
+        const historyText = previousLines.join("\n");
+        const recentHistoryText = previousLines.slice(-10).join("\n");
+        const outlineText = String(currentOutlineText || "").trim();
+        const clichePatterns = this.getSynopsisClichePatterns();
+        const plotElements = this.getSynopsisPlotElements();
+        const allowedRepeatEvents = this.getSynopsisAllowedRepeatEvents();
+
+        const detectedCliches = [];
+        Object.entries(clichePatterns).forEach(([category, info]) => {
+            (info.patterns || []).forEach((pattern) => {
+                if (!this.matchSynopsisPattern(pattern, recentHistoryText || historyText)) {
+                    return;
+                }
+                detectedCliches.push({
+                    category,
+                    pattern,
+                    suggestion: info.innovations || []
+                });
+            });
+        });
+
+        const repetitionRisks = [];
+        Object.entries(plotElements).forEach(([type, elements]) => {
+            (elements || []).forEach((element) => {
+                if (outlineText && outlineText.includes(element) && historyText.includes(element)) {
+                    repetitionRisks.push({
+                        type,
+                        element,
+                        message: `「${element}」已在之前章节中多次出现`
+                    });
+                }
+            });
+        });
+
+        const allowedRepeats = [];
+        Object.entries(allowedRepeatEvents).forEach(([type, info]) => {
+            const currentMatches = this.countSynopsisKeywordMatches(outlineText, info.keywords || []);
+            const historyMatches = this.countSynopsisKeywordMatches(historyText, info.keywords || []);
+            if (currentMatches > 0 && historyMatches > 0) {
+                allowedRepeats.push({
+                    type,
+                    description: info.description,
+                    count: historyMatches,
+                    variations: info.variations || [],
+                    examples: info.examples || []
+                });
+            }
+        });
+
+        return {
+            previousLines,
+            detectedCliches,
+            repetitionRisks,
+            allowedRepeatEvents: allowedRepeats
+        };
+    }
+
+    collectSynopsisHistoryLines(project, currentVolumeNumber) {
+        return this.collectSynopsisHistoryItems(project, currentVolumeNumber).map((item) => item.line);
+    }
+
+    buildDesktopSynopsisPreviousContext(project, currentVolumeNumber) {
+        if (!project?.outline?.volumes?.length || currentVolumeNumber <= 1) {
+            return "";
+        }
+
+        const sections = [];
+        project.outline.volumes
+            .slice(0, Math.max(0, currentVolumeNumber - 1))
+            .forEach((volume, index) => {
+                const synopsis = this.normalizeSynopsisReferenceText(
+                    project,
+                    volume.chapterSynopsis || volume.chapter_synopsis || ""
+                );
+                if (!String(synopsis || "").trim()) {
+                    return;
+                }
+                sections.push(`【第${index + 1}卷已有章节 - 禁止重复这些情节】\n${synopsis}`);
+            });
+        return sections.join("\n\n");
+    }
+
+    collectHistoricalSynopsisCharacterSignals(project, currentVolumeNumber, extraText = "") {
+        const synopsisData = this.restoreSynopsisMainCharacters(project);
+        const historyText = [
+            this.collectSynopsisHistoryLines(project, currentVolumeNumber).join("\n"),
+            extraText || ""
+        ].filter(Boolean).join("\n");
+        const names = new Set();
+        const relationships = new Map();
+
+        Object.values(synopsisData.main_characters || {}).forEach((name) => {
+            if (name) {
+                names.add(name);
+            }
+        });
+        Object.keys(synopsisData.locked_character_names || {}).forEach((name) => {
+            if (name) {
+                names.add(name);
+            }
+        });
+        (project?.outline?.characters || []).forEach((character) => {
+            const name = String(character?.name || "").trim();
+            if (name) {
+                names.add(name);
+            }
+        });
+
+        if (historyText.trim()) {
+            const namePatterns = [
+                /[\u4e00-\u9fa5]{2,4}(?=说|道|笑|问|答|喊|叫|骂|点|看|走|站|坐|跑|想|觉|发现|看到|听到)/g,
+                /([\u4e00-\u9fa5]{2,4})(?=的|之)/g,
+                /["“”「」『』]([\u4e00-\u9fa5]{2,4})["“”「」『』]/g,
+                /(?:与|和|跟|同|向|对)([\u4e00-\u9fa5]{2,4})(?=[，。、！？\s]|$)/g
+            ];
+            namePatterns.forEach((pattern) => {
+                Array.from(historyText.matchAll(pattern)).forEach((match) => {
+                    const name = String(match?.[1] || match?.[0] || "").trim();
+                    if (name) {
+                        names.add(name);
+                    }
+                });
+            });
+
+            const relationPatterns = [
+                /([\u4e00-\u9fa5]{2,4})是([\u4e00-\u9fa5]{2,4})的(父亲|母亲|哥哥|弟弟|姐姐|妹妹|师父|徒弟|妻子|丈夫|儿子|女儿|朋友|敌人|对手|恋人|未婚妻|未婚夫)/g,
+                /([\u4e00-\u9fa5]{2,4})的(父亲|母亲|哥哥|弟弟|姐姐|妹妹|师父|徒弟|妻子|丈夫|儿子|女儿|朋友|敌人|对手|恋人|未婚妻|未婚夫)是([\u4e00-\u9fa5]{2,4})/g,
+                /([\u4e00-\u9fa5]{2,4})(?:与|和|跟)([\u4e00-\u9fa5]{2,4})(?:结盟|成婚|成为|建立)(.+?)(?=，|。|！|？)/g
+            ];
+            relationPatterns.forEach((pattern, index) => {
+                Array.from(historyText.matchAll(pattern)).forEach((match) => {
+                    if (index === 0) {
+                        const [, left, right, relation] = match;
+                        if (left && right && relation) {
+                            relationships.set(`${left}-${right}`, `${left} ↔ ${right}：${relation}`);
+                        }
+                        return;
+                    }
+                    if (index === 1) {
+                        const [, left, relation, right] = match;
+                        if (left && right && relation) {
+                            relationships.set(`${left}-${right}`, `${left} ↔ ${right}：${relation}`);
+                        }
+                        return;
+                    }
+                    const [, left, right, relation] = match;
+                    if (left && right && relation) {
+                        relationships.set(`${left}-${right}`, `${left} ↔ ${right}：${String(relation || "").trim()}`);
+                    }
+                });
+            });
+        }
+
+        const excludeWords = new Set([
+            "这个", "那个", "什么", "怎么", "如何", "为什么", "哪里", "那里", "这里",
+            "此时", "彼时", "当时", "之后", "之前", "随后", "然后", "最后", "最初",
+            "可是", "但是", "不过", "而且", "并且", "或者", "虽然", "即使", "如果",
+            "一些", "所有", "全部", "部分", "大多", "少数", "很多", "许多", "某些",
+            "主角", "男主", "女主", "配角", "龙套", "路人", "其他人", "众人", "世界",
+            "地方", "东西", "事情", "情况", "问题", "原因", "结果", "办法", "时候",
+            "瞬间", "片刻", "一直", "已经", "正在", "将要", "曾经", "终于"
+        ]);
+        const filteredNames = Array.from(names)
+            .map((name) => String(name || "").trim())
+            .filter((name) => /^[\u4e00-\u9fa5]{2,4}$/.test(name) && !excludeWords.has(name));
+
+        return {
+            names: Array.from(new Set(filteredNames)).sort((left, right) => left.localeCompare(right, "zh-Hans-CN")),
+            relationships: Array.from(relationships.values()).slice(0, 12)
+        };
+    }
+
+    buildSynopsisNamePatternWarning(names = []) {
+        const cleanNames = Array.from(new Set((names || []).map((name) => String(name || "").trim()).filter(Boolean)));
+        if (!cleanNames.length) {
+            return "";
+        }
+
+        const suffixMap = new Map();
+        cleanNames.forEach((name) => {
+            if (name.length < 2) {
+                return;
+            }
+            [2, 1].forEach((suffixLength) => {
+                if (name.length >= suffixLength) {
+                    const suffix = name.slice(-suffixLength);
+                    const list = suffixMap.get(suffix) || [];
+                    list.push(name);
+                    suffixMap.set(suffix, list);
+                }
+            });
+        });
+
+        const commonSuffixes = new Set(["天", "地", "人", "子", "儿", "一", "二", "三"]);
+        const repeatedPatterns = Array.from(suffixMap.entries())
+            .filter(([suffix, values]) => suffix && values.length >= 2 && !commonSuffixes.has(suffix))
+            .sort((left, right) => right[1].length - left[1].length)
+            .slice(0, 5);
+
+        if (!repeatedPatterns.length) {
+            return "";
+        }
+
+        return [
+            "【⚠️ 名字模式重复警告 - 极其重要！】",
+            "检测到以下名字后缀重复过多，禁止再使用类似模式：",
+            repeatedPatterns.map(([suffix, values]) => `  · “${suffix}”字重复：${Array.from(new Set(values)).join("、")}`).join("\n"),
+            "",
+            "【起名要求】",
+            "1. 禁止继续使用上面这些重复名字后缀。",
+            "2. 每个新角色的名字必须有辨识度，风格各异。",
+            "3. 避免批量生成“X招娣、X翠花、X秀英”这种模式化名字。",
+            "4. 名字要符合世界观和时代感，重点是稳定一致。"
+        ].join("\n");
+    }
+
+    buildSynopsisPendingVagueHint(project, volumeNumber, text = "") {
+        const pendingTerms = this.collectPendingSynopsisTerms(text, project);
+        if (!pendingTerms.length) {
+            return "";
+        }
+
+        if (Number(volumeNumber || 0) <= 1) {
+            return [
+                "【首次定名后必须锁定】",
+                "以下角色如果还没有具体名字，可以在首次出场时补一个名字；但一旦定名，本卷后续和后面各卷都必须沿用同一个名字：",
+                pendingTerms.slice(0, 12).map((term) => `  · “${term}”`).join("\n"),
+                "",
+                "【强制性要求】",
+                "1. 同一个角色一旦用了具体名字，后续不能再换名。",
+                "2. 已经有映射或已锁定的角色，只能沿用旧名字。",
+                "3. 名字不需要刻意夸张，重点是稳定一致。"
+            ].join("\n");
+        }
+
+        return [
+            "【后续卷只做沿用，不要改名】",
+            "以下称呼如果已经在前文对应过具体名字，本卷必须继续沿用原名；如果没有把握，就不要把旧角色改成新名字：",
+            pendingTerms.slice(0, 12).map((term) => `  · “${term}”`).join("\n"),
+            "",
+            "【强制性要求】",
+            "1. 已锁定角色只能沿用旧名字，不能一卷一个名字。",
+            "2. 没有明确证据时，不要给旧角色重新起名。",
+            "3. 重点是同一角色前后统一，不是追求每卷都改成新名字。"
+        ].join("\n");
+    }
+
+    buildSynopsisNameGenerationHint(project, volumeNumber, text = "") {
+        const roleRequirement = this.detectSynopsisRoleRequirements(project, text, volumeNumber);
+        if (Number(volumeNumber || 0) !== 1 || !roleRequirement.pendingRoles?.length) {
+            return "";
+        }
+        return [
+            "【第一卷角色名字处理】",
+            "检测到角色设定或输入里仍有模糊主角称呼：",
+            roleRequirement.pendingRoles.map((role) => `【${role}】当前仍未稳定定名，可在首次出场时自然补具体名字`).join("\n"),
+            "",
+            "【规则】",
+            "1. 如果本卷首次给这些角色起名，后续所有章节和后续所有卷都必须沿用同一个名字。",
+            "2. 如果暂时没有自然的定名机会，不要为了起名而硬改剧情。",
+            "3. 重点不是名字多华丽，而是同一个角色不要再改名。"
+        ].join("\n");
+    }
+
+    buildSynopsisHardFactHint(project, volumeNumber, contextText = "") {
+        const signals = this.collectHistoricalSynopsisCharacterSignals(project, volumeNumber, contextText);
+        const relevantCharacters = this.collectRelevantCharacters(project, contextText, signals.names);
+        const factLines = [];
+
+        relevantCharacters.slice(0, 10).forEach((character) => {
+            const identity = String(character?.identity || character?.["身份"] || "").trim();
+            if (character?.name && identity) {
+                factLines.push(`- ${character.name}：${identity}`);
+            }
+        });
+        signals.relationships.slice(0, 8).forEach((line) => {
+            factLines.push(`- ${line}`);
+        });
+
+        if (!factLines.length) {
+            return [
+                "【同批细纲硬事实锁定】",
+                "同一批次里，角色的身份、位份、辈分、亲属关系、婚配、师徒、官职、阵营一旦首次明确，后文必须原样沿用，禁止改口。",
+                "例如已经写成“太后的儿子是皇帝”，后文就不能改成“小皇子”；已经写成“太子妃”，后文也不能降回“秀女”。"
+            ].join("\n");
+        }
+
+        return [
+            "【同批细纲硬事实锁定】",
+            "以下身份与关系一旦写定，后文必须保持一致，不能前后改口：",
+            factLines.join("\n"),
+            "如果本批后文需要继续提到这些人，必须沿用同样的身份、位份、辈分和关系。",
+            "已经写成已登基、已成婚、已拜师、已认亲、已封爵、已怀孕、已生子等事实，后文不能回退成未发生。"
+        ].join("\n");
+    }
+
+    buildDesktopSynopsisCharacterConsistencyHint(project, { volumeNumber, concept, volumeSummary, existingSynopsis, outlineContext = "" }) {
+        const contextText = [concept || "", volumeSummary || "", existingSynopsis || "", outlineContext || ""].filter(Boolean).join("\n");
+        const synopsisData = this.restoreSynopsisMainCharacters(project);
+        const historicalSignals = this.collectHistoricalSynopsisCharacterSignals(project, volumeNumber, contextText);
+        const pendingVagueHint = this.buildSynopsisPendingVagueHint(project, volumeNumber, contextText);
+        const namePatternWarning = this.buildSynopsisNamePatternWarning(historicalSignals.names);
+        const lockedMainNames = Object.entries(synopsisData.main_characters || {})
+            .filter(([, name]) => String(name || "").trim())
+            .map(([role, name]) => `【${role}】${name}`);
+
+        const parts = [];
+        if (lockedMainNames.length) {
+            parts.push([
+                "【🔒 已锁定主角名字】",
+                lockedMainNames.join("\n"),
+                "",
+                "后续所有卷的细纲都必须继续沿用以上主角名字，禁止改名，禁止退回成“男主”“女主”等模糊称呼！"
+            ].join("\n"));
+        }
+
+        if (pendingVagueHint) {
+            parts.push(pendingVagueHint);
+        }
+
+        if (historicalSignals.names.length) {
+            const relationshipHint = historicalSignals.relationships.length
+                ? `\n\n【已建立的人物关系】\n${historicalSignals.relationships.slice(0, 10).map((line) => `  · ${line}`).join("\n")}`
+                : "";
+            const mainCharHint = lockedMainNames.length
+                ? [
+                    "【🔴🔴🔴 核心角色名字 - 绝对禁止修改！🔴🔴🔴】",
+                    lockedMainNames.map((line) => line.replace("】", "】= ")).join("\n").replace(/】= 】/g, "】"),
+                    "",
+                    "⚠️ 以上是本小说的核心主角，所有章节必须使用这些名字，绝对禁止改名！",
+                    "⚠️ 例如：如果女主叫“苏婉儿”，就不能写成“苏婉”“婉儿”“女主”等其他称呼！"
+                ].join("\n")
+                : "";
+            parts.push([
+                mainCharHint,
+                "【⚠️ 所有已出场角色名字一致性要求 ⚠️】",
+                "以下角色已在本小说中出场，必须使用这些名字（主角+配角都不能改名）：",
+                historicalSignals.names.slice(0, 24).join("、"),
+                relationshipHint,
+                "",
+                "禁止改名、禁止使用“男主”“女主”“嫂子”“那家伙”等模糊称呼！",
+                "必须沿用已出现的角色名字和人物关系！",
+                namePatternWarning
+            ].filter(Boolean).join("\n"));
+        } else if (namePatternWarning) {
+            parts.push(namePatternWarning);
+        }
+
+        const hardFactHint = this.buildSynopsisHardFactHint(project, volumeNumber, contextText);
+        if (hardFactHint) {
+            parts.push(hardFactHint);
+        }
+
+        return parts.filter(Boolean).join("\n\n");
+    }
+
+    buildDesktopSynopsisPromptContext({ project, concept, volumeSummary, existingSynopsis, volumeNumber, chapterCount }) {
+        const outlineSlice = this.extractCurrentVolumeOutlineContext(project, volumeNumber);
+        const currentVolume = project?.outline?.volumes?.[volumeNumber - 1] || {};
+        const contextText = [concept || "", volumeSummary || "", existingSynopsis || "", outlineSlice.currentOutline || ""].filter(Boolean).join("\n");
+        const lockedNamesTable = this.buildSynopsisLockedNameTable(project);
+
+        return {
+            lockedNamesTable,
+            currentVolume,
+            currentVolumeTaskLabel: `${currentVolume.title || `第${volumeNumber}卷`}${volumeSummary ? ` - ${Utils.summarizeText(volumeSummary, 120)}` : ""}`,
+            volumeSynopsisContext: this.buildVolumeSynopsisContext(project, volumeNumber),
+            currentVolumeOutlineContext: String(outlineSlice.currentOutline || "").trim(),
+            adjacentOutlineSummary: outlineSlice.adjacentSummary || "",
+            mappingHint: this.buildSynopsisMappingHint(project),
+            synopsisHistoryContext: this.buildSynopsisHistoryContext(project, volumeNumber),
+            previousSynopsisContext: this.buildDesktopSynopsisPreviousContext(project, volumeNumber),
+            previousVolumeEnding: this.buildPreviousVolumeEnding(project, volumeNumber),
+            storyStateSummary: this.buildStoryStateSummary(project, volumeNumber, 1, contextText),
+            timelineGuard: this.buildTimelineGuard(project, 1),
+            foreshadowGuard: this.buildForeshadowGuard(project, 1),
+            synopsisClarityGuard: this.buildSynopsisClarityGuard({
+                volumeNumber,
+                chapterCount,
+                hasDetailedOutline: Boolean(String(outlineSlice.currentOutline || "").trim())
+            }),
+            volumeBoundaryGuard: this.buildSynopsisVolumeBoundaryGuard(project, volumeNumber),
+            usedPlotsContext: this.buildUsedPlotsSummary(project, volumeNumber),
+            clicheWarning: this.buildSynopsisClicheWarning(project, volumeNumber),
+            innovationPrompt: this.buildSynopsisInnovationPrompt(project, volumeNumber, concept, volumeSummary),
+            synopsisConsistencyContext: this.buildSynopsisConsistencyContext(project, contextText, volumeNumber),
+            characterConsistencyHint: this.buildDesktopSynopsisCharacterConsistencyHint(project, {
+                volumeNumber,
+                concept,
+                volumeSummary,
+                existingSynopsis,
+                outlineContext: outlineSlice.currentOutline || ""
+            }),
+            nameGenerationHint: this.buildSynopsisNameGenerationHint(project, volumeNumber, contextText)
+        };
+    }
+
+    buildDesktopSynopsisSystemPrompt({ genreConstraint, chapterCount, lockedNamesTable }) {
+        return [
+            genreConstraint,
+            "你是世界书构建专家“默默”，一位资深网文策划编辑。请生成章节大纲。",
+            "",
+            lockedNamesTable,
+            "",
+            "【★★★ 最重要的规则 ★★★】",
+            `1. 你必须一次性输出【恰好${chapterCount}章】,从第1章到第${chapterCount}章,不能多也不能少！`,
+            `2. 不要说“以下是部分章节”或“由于篇幅限制”之类的话,必须完整输出所有${chapterCount}章！`,
+            "3. 如果你只输出了一部分就停止,这是严重错误！",
+            "",
+            "【⚠️⚠️⚠️ 角色名字规范 - 极其重要！⚠️⚠️⚠️】",
+            "1. 禁止同角改名：同一个角色一旦已经用过具体名字，后续所有章节和后续所有卷都必须继续沿用这个名字。",
+            "2. 已有名字优先：所有已经建立映射或已经锁定的角色，必须继续使用原来的具体名字，不能一卷换一个名字。",
+            "3. 不强制重新起名：后续卷的重点是沿用旧名字，不是给旧角色重新命名；没有把握时宁可保持原状。",
+            "4. 模糊称呼只作辅助：如果输入里有“男主”“女主”“舅妈”“室友”等称呼，只能用于识别角色，最终不要把同一角色改成另一个新名字。",
+            "",
+            "【主角名字要求】",
+            "1. 如果主角已经有名字，绝对禁止修改。",
+            "2. 如果第一卷首次定名，只要名字前后一致即可，不要求刻意夸张或模式化。",
+            "3. 配角同理，重点是前后统一，不是名字华丽程度。",
+            "",
+            "【严重警告】禁止模式化起名：",
+            "1. 禁止批量生成“X招娣、X翠花、X秀英、X桂芳”这种同类型名字。",
+            "2. 每个角色的名字必须有独特风格，避免重复后缀。",
+            "3. 名字要多样化：可以参考诗词典故、自然意象、美好寓意等不同来源。",
+            "",
+            "【防止情节重复 - 记忆系统】",
+            "1. 仔细阅读前面卷的章节内容,确保新章节的情节与之前完全不同。",
+            "2. 禁止重复使用相同的：冲突类型、解决方式、场景设定、角色互动模式。",
+            "3. 每个新章节必须推进故事,不能原地踏步或回到之前的情节。",
+            "4. 如果前面有“主角获得宝物”,后面不能再有类似的“获得宝物”情节。",
+            "5. 如果前面有“被人陷害后反杀”,后面不能再有类似的“陷害-反杀”套路。",
+            "",
+            "【剧情节点设计】",
+            "1. 每个章节都是一个“剧情节点”,包含场景、冲突、转折。",
+            "2. 章节之间要有“钩子”——本章结尾引出下章悬念。",
+            "3. 遵循情绪曲线：紧张-缓和-更紧张-高潮-余韵。",
+            "4. 每3-5章形成一个小高潮,卷末形成大高潮。",
+            "",
+            "【逻辑衔接铁律】",
+            "1. 细纲必须紧接上一卷结尾或前文最后一章，不能跳场、回退、重写已发生事件。",
+            "2. 同一批细纲里，身份、位份、辈分、亲属关系、婚配、师徒、官职、阵营一旦首次明确，后文必须保持一致。",
+            "3. 例如已经写成“太后的儿子是皇帝”，后文就不能改成“小皇子”；已经写成“太子妃”，后文也不能降回“秀女”。",
+            "4. 上一章的结果只能作为下一章的起点，不能换句话重复发生。",
+            "5. 如果需要过桥章，过桥章也必须带来一个新的有效变化。",
+            "",
+            "【输出格式要求】",
+            "1. 每章格式：第X章：章节标题 - 核心内容（20-40字描述）",
+            `2. 从第1章连续输出到第${chapterCount}章,中间不要有任何说明文字。`,
+            "3. 直接输出章节列表,开头和结尾都不要任何额外说明。",
+            "",
+            `【再次强调】你必须输出完整的${chapterCount}章,这是硬性要求！`
+        ].filter(Boolean).join("\n");
+    }
+
+    buildDesktopSynopsisUserPrompt({
+        title,
+        worldbuilding,
+        volumeNumber,
+        chapterCount,
+        concept,
+        volumeSummary,
+        existingSynopsis,
+        currentVolumeTaskLabel,
+        volumeSynopsisContext,
+        currentVolumeOutlineContext,
+        adjacentOutlineSummary,
+        mappingHint,
+        previousSynopsisContext,
+        previousVolumeEnding,
+        storyStateSummary,
+        timelineGuard,
+        foreshadowGuard,
+        synopsisClarityGuard,
+        volumeBoundaryGuard,
+        usedPlotsContext,
+        innovationPrompt,
+        synopsisConsistencyContext,
+        characterConsistencyHint,
+        nameGenerationHint
+    }) {
+        return [
+            `小说标题：《${title || "未命名小说"}》`,
+            "",
+            "故事概念：",
+            concept || "暂无",
+            "",
+            "分卷概要：",
+            volumeSynopsisContext || volumeSummary || "暂无",
+            "",
+            worldbuilding ? `世界观补充：\n${worldbuilding}` : "",
+            currentVolumeOutlineContext ? `【当前卷详细大纲（必须优先执行）】\n${currentVolumeOutlineContext}` : "",
+            adjacentOutlineSummary ? `【相邻卷边界提示】\n${adjacentOutlineSummary}` : "",
+            `当前任务：为【${currentVolumeTaskLabel || `第${volumeNumber}卷`}】生成【恰好${chapterCount}章】的章节大纲。`,
+            nameGenerationHint,
+            mappingHint,
+            characterConsistencyHint,
+            synopsisConsistencyContext,
+            usedPlotsContext,
+            previousSynopsisContext,
+            previousVolumeEnding ? `【上一卷结尾（用于衔接）：】\n${previousVolumeEnding}` : "",
+            storyStateSummary ? `【前文状态摘要】\n${storyStateSummary}` : "",
+            timelineGuard,
+            foreshadowGuard,
+            synopsisClarityGuard,
+            volumeBoundaryGuard,
+            innovationPrompt,
+            existingSynopsis ? `【已有细纲参考】\n${existingSynopsis}` : "",
+            "",
+            `【最终确认】请现在输出第${volumeNumber}卷的全部${chapterCount}个章节大纲（从第1章到第${chapterCount}章,一个都不能少）：`
+        ].filter(Boolean).join("\n\n");
+    }
+
+    buildDesktopSynopsisRepairPrompt({
+        title,
+        worldbuilding,
+        volumeNumber,
+        chapterCount,
+        concept,
+        currentVolumeTaskLabel,
+        volumeSynopsisContext,
+        currentVolumeOutlineContext,
+        adjacentOutlineSummary,
+        mappingHint,
+        previousSynopsisContext,
+        previousVolumeEnding,
+        storyStateSummary,
+        timelineGuard,
+        foreshadowGuard,
+        synopsisClarityGuard,
+        volumeBoundaryGuard,
+        usedPlotsContext,
+        innovationPrompt,
+        synopsisConsistencyContext,
+        characterConsistencyHint,
+        nameGenerationHint,
+        knownLines,
+        missingNumbers,
+        existingSynopsis
+    }) {
+        return [
+            `小说标题：《${title || "未命名小说"}》`,
+            "",
+            "故事概念：",
+            concept || "暂无",
+            "",
+            "分卷概要：",
+            volumeSynopsisContext || "暂无",
+            "",
+            worldbuilding ? `世界观补充：\n${worldbuilding}` : "",
+            currentVolumeOutlineContext ? `【当前卷详细大纲（必须优先执行）】\n${currentVolumeOutlineContext}` : "",
+            adjacentOutlineSummary ? `【相邻卷边界提示】\n${adjacentOutlineSummary}` : "",
+            `当前任务：继续为【${currentVolumeTaskLabel || `第${volumeNumber}卷`}】补齐缺失章节，最终必须凑够${chapterCount}章。`,
+            nameGenerationHint,
+            mappingHint,
+            characterConsistencyHint,
+            synopsisConsistencyContext,
+            usedPlotsContext,
+            previousSynopsisContext,
+            previousVolumeEnding ? `【上一卷结尾（用于衔接）：】\n${previousVolumeEnding}` : "",
+            storyStateSummary ? `【前文状态摘要】\n${storyStateSummary}` : "",
+            timelineGuard,
+            foreshadowGuard,
+            synopsisClarityGuard,
+            volumeBoundaryGuard,
+            innovationPrompt,
+            existingSynopsis ? `【已有细纲参考】\n${existingSynopsis}` : "",
+            "",
+            "【已经成功生成的章节细纲】",
+            knownLines || "暂无",
+            "",
+            "【只允许补齐以下缺失章节】",
+            (missingNumbers || []).map((num) => `第${num}章`).join("、"),
+            "",
+            "请只输出缺失章节，一章一行，严格使用格式：",
+            "第X章：章节标题 - 核心内容（20-40字描述）",
+            "直接输出，不要任何说明，不要重复已经生成过的章节。"
+        ].filter(Boolean).join("\n\n");
     }
 
     prepareSynopsisGenerationInput(project, { concept, volumeSummary, existingSynopsis, volumeNumber }) {
@@ -4679,11 +5442,7 @@ class NovelGenerator {
             return "";
         }
 
-        return [
-            `【前文全部细纲原文（全量，共 ${items.length} 章）】`,
-            items.map((item) => `第${item.volumeNumber}卷 ${item.line}`).join("\n"),
-            "以上全部视为已经发生的事实，续写只能承接其后果，不能改写、倒放或换说法重写。"
-        ].filter(Boolean).join("\n");
+        return items.map((item) => `第${item.volumeNumber}卷 ${item.line}`).join("\n");
     }
 
     buildSynopsisPhaseGuide(chapterCount) {
@@ -4768,23 +5527,18 @@ class NovelGenerator {
     }
 
     buildUsedPlotsSummary(project, currentVolumeNumber) {
-        const historyItems = this.collectSynopsisHistoryItems(project, currentVolumeNumber);
-        if (!historyItems.length) {
+        const previousLines = this.collectSynopsisHistoryLines(project, currentVolumeNumber);
+        if (!previousLines.length) {
             return "";
         }
 
-        const allPrevChapters = historyItems.map((item) => item.line);
-        const repeatRiskSummary = this.buildSynopsisRepeatRiskSummary(allPrevChapters);
-        const recentAnchors = historyItems
-            .slice(-6)
-            .map((item) => this.formatSynopsisHistoryItem(item, 42));
+        const clicheWarning = this.buildSynopsisClicheWarning(project, currentVolumeNumber);
         return [
-            "【生成前防重复护栏】",
-            "下面这些前文已经写完，当前卷只能承接它们造成的后果，不能把它们重新写成新的核心事件。",
-            recentAnchors.length ? `尤其不要重写最近刚发生的事件：\n${recentAnchors.join("\n")}` : "",
-            "如果必须沿用同类桥段，至少同时更换目标、阻力、场景、结果中的两个维度。",
-            repeatRiskSummary,
-            `（已纳入 ${historyItems.length} 条前置细纲记录）`
+            clicheWarning,
+            "【⚠️ 以下情节已经使用过，绝对禁止重复或变相重复！】",
+            previousLines.join("\n"),
+            "",
+            `（共${previousLines.length}章）`
         ].filter(Boolean).join("\n");
     }
 
@@ -4856,59 +5610,89 @@ class NovelGenerator {
     }
 
     buildSynopsisInnovationPrompt(project, volumeNumber, concept, volumeSummary) {
-        const recentSynopsis = [];
-        (project?.outline?.volumes || [])
-            .slice(0, Math.max(0, volumeNumber - 1))
-            .forEach((volume) => {
-                const synopsis = volume.chapterSynopsis || volume.chapter_synopsis || "";
-                if (synopsis) {
-                    recentSynopsis.push(synopsis);
-                }
-            });
+        const currentOutlineText = [concept || "", volumeSummary || ""].filter(Boolean).join("\n");
+        const analysis = this.analyzeSynopsisInnovation(project, volumeNumber, currentOutlineText);
+        const promptParts = [];
 
-        return [
-            "优先规避套路化桥段：重复打脸、机械升级、无意义误会、为了反转而反转。",
-            "如果当前卷需要战斗、修炼、探索、对话桥段，请尽量换角度设计，不要复制前文结构。",
-            recentSynopsis.length ? `最近前文参考：\n${this.limitContext(recentSynopsis.slice(-2).join("\n"), 1200)}` : "",
-            volumeSummary ? `当前卷方向：${this.limitContext(volumeSummary, 400)}` : "",
-            concept ? `故事概念提醒：${this.limitContext(concept, 300)}` : ""
-        ].filter(Boolean).join("\n");
+        if (analysis.allowedRepeatEvents.length) {
+            promptParts.push("【✨ 核心情节创新启发】");
+            promptParts.push("以下情节类型可以再次出现，但必须写出和前文不同的细节、阻力与后果：");
+            promptParts.push("（以下内容仅作启发，鼓励自由发挥，不是硬性选项）");
+            analysis.allowedRepeatEvents.slice(0, 4).forEach((event) => {
+                promptParts.push(`【${event.type}】约已出现 ${event.count} 次`);
+                promptParts.push(`  💡 思考方向：${event.description}`);
+                (event.variations || []).slice(0, 2).forEach((variation) => {
+                    const [dimension] = String(variation || "").split("：");
+                    promptParts.push(`  - 可以从“${dimension || variation}”角度换写法`);
+                });
+                if (event.examples?.[0]) {
+                    promptParts.push(`  ✨ 参考启发：${event.examples[0]}`);
+                }
+                promptParts.push("  以上只给方向，不限制你自由创新。");
+            });
+        }
+
+        const eventTypeSuggestions = this.getSynopsisEventTypeSuggestions();
+        const selectedEventTypes = [];
+        if (/战|斗|打|杀|反杀|交锋/.test(currentOutlineText)) {
+            selectedEventTypes.push("战斗");
+        }
+        if (/修炼|突破|境界|闭关|顿悟/.test(currentOutlineText)) {
+            selectedEventTypes.push("修炼");
+        }
+        if (/探索|秘境|寻宝|探查|调查/.test(currentOutlineText)) {
+            selectedEventTypes.push("探索");
+        }
+        if (/对话|谈判|商量|问答|试探/.test(currentOutlineText)) {
+            selectedEventTypes.push("对话");
+        }
+        if (!selectedEventTypes.length) {
+            selectedEventTypes.push("战斗", "修炼", "探索");
+        }
+
+        promptParts.push("【🎨 创作启发】");
+        promptParts.push("以下内容仅供参考，鼓励大胆创新：");
+        selectedEventTypes.slice(0, 3).forEach((eventType) => {
+            const suggestion = eventTypeSuggestions[eventType];
+            if (!suggestion) {
+                return;
+            }
+            promptParts.push(`【${eventType}类情节】`);
+            if (suggestion.avoid?.[0]) {
+                promptParts.push(`  不建议：${suggestion.avoid[0]}`);
+            }
+            if (suggestion.suggest?.[0]) {
+                promptParts.push(`  可以考虑：${suggestion.suggest[0]}`);
+            }
+            promptParts.push("  更鼓励你突破常规，自由创造。");
+        });
+
+        const plotElements = this.getSynopsisPlotElements();
+        promptParts.push("【🌈 灵感元素】");
+        promptParts.push("可自由组合、拆分、改造、忽略：");
+        Object.entries(plotElements).slice(0, 2).forEach(([type, elements]) => {
+            promptParts.push(`  - ${type}：${(elements || []).slice(0, 2).join("、")}`);
+        });
+        if (analysis.repetitionRisks.length) {
+            promptParts.push("【🔁 重复风险提醒】");
+            analysis.repetitionRisks.slice(0, 3).forEach((risk) => {
+                promptParts.push(`  - ${risk.message}`);
+            });
+        }
+
+        return promptParts.filter(Boolean).join("\n");
     }
 
     buildSynopsisClicheWarning(project, volumeNumber) {
-        const previousText = (project?.outline?.volumes || [])
-            .slice(0, Math.max(0, volumeNumber - 1))
-            .map((volume) => volume.chapterSynopsis || volume.chapter_synopsis || "")
-            .join("\n");
-
-        if (!previousText.trim()) {
-            return "";
-        }
-
-        const checks = [
-            { label: "比赛/考核", pattern: /比武|擂台|竞赛|比赛|考核|测试/g, threshold: 4 },
-            { label: "修炼/突破", pattern: /修炼|闭关|突破|参悟/g, threshold: 4 },
-            { label: "探索/秘境", pattern: /探索|秘境|寻宝|探险/g, threshold: 3 },
-            { label: "身份揭露", pattern: /身份|真相|揭露|曝光/g, threshold: 3 },
-            { label: "冲突对峙", pattern: /争执|对峙|冲突|交锋/g, threshold: 4 }
-        ];
-
-        const warnings = checks
-            .map((item) => ({
-                ...item,
-                count: (previousText.match(item.pattern) || []).length
-            }))
-            .filter((item) => item.count >= item.threshold)
-            .slice(0, 3);
-
+        const analysis = this.analyzeSynopsisInnovation(project, volumeNumber, "");
+        const warnings = analysis.detectedCliches.slice(0, 3);
         if (!warnings.length) {
             return "";
         }
 
         return [
-            "【套路警告】",
-            "以下类型在前面卷细纲里已经出现较多，这一卷请尽量换角度、换结果、换阻力，不要同构重复：",
-            ...warnings.map((item) => `- ${item.label}（近期出现约 ${item.count} 次）`)
+            "【⚠️ 已检测到的套路警告】",
+            ...warnings.map((item) => `• ${item.category}：${item.pattern}${item.suggestion?.[0] ? `\n  建议：${item.suggestion[0]}` : ""}`)
         ].join("\n");
     }
 
