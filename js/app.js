@@ -3249,7 +3249,7 @@ ${(detailedOutline || concept || "未填写").slice(0, 2200)}`;
         if (!("serviceWorker" in navigator) || !window.isSecureContext && location.hostname !== "127.0.0.1" && location.hostname !== "localhost") {
             return;
         }
-        navigator.serviceWorker.register("service-worker.js?v=20260403").then((registration) => {
+        navigator.serviceWorker.register("service-worker.js?v=20260406b").then((registration) => {
             registration.update().catch(() => {});
         }).catch(() => {});
     }

@@ -1,4 +1,4 @@
-const CACHE_NAME = "novel-outline-web-v6";
+const CACHE_NAME = "novel-outline-web-v7";
 const ASSETS = [
   "./",
   "./index.html",
