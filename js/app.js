@@ -4645,7 +4645,6 @@ ${(detailedOutline || concept || "未填写").slice(0, 2200)}`;
             ? snapshot.sourceBreakdown
             : {};
         const keyword = String(context.keyword || snapshot.keyword || this.novelData.idea_lab?.keyword || "").trim();
-        const genreRef = String(context.subgenre || context.genre || snapshot.subgenre || snapshot.genre || "").trim();
         const categoryText = categories
             .map((item) => String(item?.name || "").trim())
             .filter(Boolean)
@@ -4669,7 +4668,7 @@ ${(detailedOutline || concept || "未填写").slice(0, 2200)}`;
             .slice(0, 3);
 
         return [
-            `本次对标关键词：${keyword || genreRef || "未指定"}。`,
+            `本次对标关键词：${keyword || "未指定"}。`,
             categoryText ? `参考入口：${categoryText}。` : "",
             sourceNotes.length ? `样本来源：${sourceNotes.join("，")}。` : "",
             `本次共整理 ${Number(diagnostics.totalItems || 0) || items.length} 个样本，可直接用于分析的简介 ${Number(diagnostics.usableIntroCount || 0)} 个。`,
@@ -4740,9 +4739,7 @@ ${(detailedOutline || concept || "未填写").slice(0, 2200)}`;
             selectedCategories,
             sourceBreakdown
         }, {
-            keyword: this.novelData.idea_lab?.keyword || "",
-            genre: this.novelData.outline?.genre || "",
-            subgenre: this.novelData.outline?.subgenre || ""
+            keyword: this.novelData.idea_lab?.keyword || ""
         });
 
         if (!displaySummary) {
@@ -4822,23 +4819,17 @@ ${(detailedOutline || concept || "未填写").slice(0, 2200)}`;
             throw new Error("请先填写主题关键词。");
         }
 
-        const payload = this.getProjectPayload();
         const versionCount = Math.min(5, Math.max(3, Number(this.elements.ideaVersionCount?.value || 4) || 4));
         await this.runWithLoading("正在生成脑洞方案...", async () => {
             let marketSnapshot = null;
             if (this.novelData.idea_lab.use_market_trends) {
                 marketSnapshot = await this.fetchIdeaMarketSnapshot({
-                    keyword,
-                    genre: payload.genre,
-                    subgenre: payload.subgenre
+                    keyword
                 });
             }
 
             const results = await this.generator.generateStoryIdeas({
                 keyword,
-                theme: payload.theme,
-                genre: payload.genre,
-                subgenre: payload.subgenre,
                 extraNote: String(this.elements.ideaExtraNoteInput?.value || "").trim(),
                 marketTrendSummary: marketSnapshot?.summary || "",
                 marketTrendItems: marketSnapshot?.items || [],
@@ -4873,7 +4864,7 @@ ${(detailedOutline || concept || "未填写").slice(0, 2200)}`;
         });
     }
 
-    async fetchIdeaMarketSnapshot({ keyword, genre, subgenre }) {
+    async fetchIdeaMarketSnapshot({ keyword }) {
         const endpoint = String(this.api.getConfig().rankApiUrl || "").trim();
         if (!endpoint) {
             Utils.log("已开启榜单趋势，但还没配置榜单接口 URL，这次跳过榜单注入。", "info");
@@ -4892,13 +4883,9 @@ ${(detailedOutline || concept || "未填写").slice(0, 2200)}`;
             Utils.log("正在拉取番茄榜单摘要，用于脑洞对标。", "info");
             const snapshot = this.normalizeIdeaMarketSnapshot(await this.api.fetchFanqieTrendSnapshot({
                 keyword,
-                genre,
-                subgenre,
                 limit: 10
             }), {
-                keyword,
-                genre,
-                subgenre
+                keyword
             });
 
             if (snapshot?.summary) {

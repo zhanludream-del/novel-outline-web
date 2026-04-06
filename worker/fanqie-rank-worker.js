@@ -1484,12 +1484,11 @@ function scoreBookForContext(book, context = {}) {
 }
 
 function getContextTerms({ keyword, genre, subgenre } = {}) {
-    return uniqueBy(
-        [keyword, subgenre, genre]
-            .map((item) => cleanText(item))
-            .filter(Boolean),
-        (item) => normalizeKey(item)
-    );
+    const cleanKeyword = cleanText(keyword);
+    const terms = cleanKeyword
+        ? [cleanKeyword]
+        : [subgenre, genre].map((item) => cleanText(item)).filter(Boolean);
+    return uniqueBy(terms, (item) => normalizeKey(item));
 }
 
 function mergeTrendSources({ rankItems, searchItems, keyword, genre, subgenre, limit }) {
@@ -1549,9 +1548,7 @@ function enrichCategoryLink(item) {
 }
 
 function pickBestCategories(categories, context) {
-    const exactTerms = [context.keyword, context.subgenre, context.genre]
-        .map((item) => cleanText(item))
-        .filter(Boolean);
+    const exactTerms = getContextTerms(context);
 
     const exactMatches = uniqueBy(
         categories.filter((item) => exactTerms.some((term) => item.name === term)),
@@ -1886,15 +1883,14 @@ function buildTrendSummary({ keyword, genre, subgenre, categories, items, diagno
         `本次对标关键词：${keyword || "未指定"}。`,
         `参考榜单分类：${categoriesText}。`,
         diagnostics ? `本次共抓到 ${diagnostics.totalItems} 本样本，可直接用于趋势提炼的简介有 ${diagnostics.usableIntroCount} 本，可抢救片段的简介有 ${diagnostics.salvagedIntroCount || 0} 本，书名混淆 ${diagnostics.obfuscatedTitleCount} 本。` : "",
-        hotTags.length ? `当前高位常见卖点：${hotTags.join("、")}。` : "当前榜单文本里可稳定提取到的标签不多，建议结合分类趋势理解赛道方向。",
+        hotTags.length ? `当前高位常见卖点：${hotTags.join("、")}。` : "当前榜单文本里可稳定提取到的标签不多，建议继续围绕关键词补充人工判断。",
         protagonistSignals.length ? `高频主角模板信号：${protagonistSignals.join("、")}。` : "",
         conflictSignals.length ? `高频冲突发动机：${conflictSignals.join("、")}。` : "",
         emotionSignals.length ? `高频情绪抓手：${emotionSignals.join("、")}。` : "",
         openingPatterns.length ? `常见高点击开局方式：${openingPatterns.join("；")}。` : "",
         introSamples.length ? `可用简介片段样本：${introSamples.join("；")}。` : "",
         diffSuggestions.length ? `建议优先做的差异化切口：${diffSuggestions.join("；")}。` : "",
-        `不要照搬榜单书名和现成剧情，更适合提炼“赛道共性 + 读者情绪需求 + 缺口打法”。`,
-        (subgenre || genre) ? `当前项目题材参考：${subgenre || genre}。请在同赛道内做升级或反差切入。` : ""
+        `不要照搬榜单书名和现成剧情，更适合提炼“赛道共性 + 读者情绪需求 + 缺口打法”。`
     ].filter(Boolean).join("\n");
 }
 
@@ -2040,15 +2036,14 @@ function buildTrendSummaryV3({ keyword, genre, subgenre, categories, items, diag
         `参考入口：${categoriesText}。`,
         sourceNotes,
         diagnostics ? `本次共整理 ${diagnostics.totalItems} 个样本，可直接用于分析的简介 ${diagnostics.usableIntroCount} 个，可抢救片段 ${diagnostics.salvagedIntroCount || 0} 个，混淆书名 ${diagnostics.obfuscatedTitleCount} 个。` : "",
-        hotTags.length ? `当前高频卖点：${hotTags.join("、")}。` : "当前样本文本里稳定可提取的标签不多，建议结合题材方向做人工判断。",
+        hotTags.length ? `当前高频卖点：${hotTags.join("、")}。` : "当前样本文本里稳定可提取的标签不多，建议继续围绕关键词做人工判断。",
         protagonistSignals.length ? `高频主角模板信号：${protagonistSignals.join("、")}。` : "",
         conflictSignals.length ? `高频冲突发动机：${conflictSignals.join("、")}。` : "",
         emotionSignals.length ? `高频情绪抓手：${emotionSignals.join("、")}。` : "",
         openingPatterns.length ? `常见高点开局方式：${openingPatterns.join("；")}。` : "",
         introSamples.length ? `可用简介样本：${introSamples.join("；")}。` : "",
         diffSuggestions.length ? `建议优先做的差异化切口：${diffSuggestions.join("；")}。` : "",
-        "不要照搬现成书名和剧情，更适合提炼“赛道共性 + 读者情绪 + 差异切口”。",
-        (subgenre || genre) ? `当前项目题材参考：${subgenre || genre}，优先在同赛道里做升级或反差切入。` : ""
+        "不要照搬现成书名和剧情，更适合提炼“赛道共性 + 读者情绪 + 差异切口”。"
     ].filter(Boolean).join("\n");
 }
 
