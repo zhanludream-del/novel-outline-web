@@ -4836,11 +4836,9 @@ ${(detailedOutline || concept || "未填写").slice(0, 2200)}`;
 
             const results = await this.generator.generateStoryIdeas({
                 keyword,
-                title: payload.title,
                 theme: payload.theme,
                 genre: payload.genre,
                 subgenre: payload.subgenre,
-                concept: payload.concept,
                 extraNote: String(this.elements.ideaExtraNoteInput?.value || "").trim(),
                 marketTrendSummary: marketSnapshot?.summary || "",
                 marketTrendItems: marketSnapshot?.items || [],

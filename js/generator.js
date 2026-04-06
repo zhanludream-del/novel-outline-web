@@ -46,17 +46,17 @@ class NovelGenerator {
 
     async generateStoryIdeas({
         keyword,
-        title,
         theme,
         genre,
         subgenre,
-        concept,
         extraNote,
         marketTrendSummary,
         marketTrendItems,
         versionCount = 4
     }) {
         const safeCount = Math.min(5, Math.max(3, Number(versionCount || 4) || 4));
+        const title = "";
+        const concept = "";
         const genreConstraint = this.buildGenreConstraint(genre, subgenre || genre);
         const systemPrompt = [
             genreConstraint,
@@ -91,7 +91,7 @@ class NovelGenerator {
             "3. seed_summary 必须像创作输入文本，不要写成分析报告口吻。"
         ].filter(Boolean).join("\n");
 
-        const userPrompt = [
+        let userPrompt = [
             `主题关键词：${keyword || "未提供"}`,
             `小说标题参考：${title || "未命名小说"}`,
             `核心主题参考：${theme || "未指定"}`,
@@ -122,6 +122,11 @@ class NovelGenerator {
             "每个版本都必须可写、可连载、可持续制造爽点。",
             marketTrendSummary ? "如果给了榜单摘要，请提炼当前高位作品的共同卖点和缺口，做出对标但不照抄的方案。" : ""
         ].filter(Boolean).join("\n");
+        userPrompt = userPrompt
+            .split("\n")
+            .filter((line, index) => index !== 1 && !line.includes("已有故事概念参考："))
+            .join("\n");
+        userPrompt += "\n不要继承当前项目已有的人名、剧情摘要、世界观设定，把这次当成全新的选题发散。";
 
         const parsed = await this.requestJSONArray(systemPrompt, userPrompt, {
             temperature: 0.9,
