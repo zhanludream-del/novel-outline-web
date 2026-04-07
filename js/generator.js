@@ -289,7 +289,14 @@
             genre,
             subgenre || project?.outline?.subgenre || project?.subgenre || genre
         );
-        const promptContext = this.buildDesktopSynopsisPromptContext({
+        await this.primeSynopsisNameMappings({
+            project,
+            concept,
+            volumeSummary,
+            existingSynopsis,
+            volumeNumber
+        });
+        const promptContext = this.buildSimpleSynopsisPromptContext({
             project,
             concept,
             volumeSummary,
@@ -297,15 +304,13 @@
             volumeNumber,
             chapterCount
         });
-        const systemPrompt = this.buildDesktopSynopsisSystemPrompt({
+        const systemPrompt = this.buildSimpleSynopsisSystemPrompt({
             genreConstraint,
             chapterCount,
             lockedNamesTable: promptContext.lockedNamesTable
         });
-        const userPrompt = this.buildDesktopSynopsisUserPrompt({
+        const userPrompt = this.buildSimpleSynopsisUserPrompt({
             title,
-            genre,
-            subgenre,
             worldbuilding,
             volumeNumber,
             chapterCount,
@@ -320,7 +325,16 @@
             maxTokens: this.getConfiguredMaxTokens(8000)
         });
 
-        const parsed = this.parseChapterSynopsisLines(raw, chapterCount);
+        const parsed = await this.stabilizeGeneratedSynopsisNames(
+            project,
+            this.parseChapterSynopsisLines(raw, chapterCount),
+            volumeNumber,
+            {
+                concept,
+                volumeSummary,
+                existingSynopsis
+            }
+        );
         return await this.ensureChapterSynopsisCount({
             project,
             title,
@@ -400,8 +414,12 @@
 
     buildNormalizedSynopsisItem(item, chapterNumber) {
         const normalizedChapterNumber = Number(chapterNumber || item?.chapter_number || 1);
-        const title = String(item?.title || `第${normalizedChapterNumber}章`).trim() || `第${normalizedChapterNumber}章`;
-        const synopsis = String(item?.synopsis || item?.key_event || "").trim();
+        const title = this.sanitizeSynopsisGeneratedText(
+            String(item?.title || `第${normalizedChapterNumber}章`).trim()
+        ) || `第${normalizedChapterNumber}章`;
+        const synopsis = this.sanitizeSynopsisGeneratedText(
+            String(item?.synopsis || item?.key_event || "").trim()
+        );
         return {
             ...item,
             chapter_number: normalizedChapterNumber,
@@ -410,6 +428,60 @@
             key_event: synopsis,
             line: `第${normalizedChapterNumber}章：${title} - ${synopsis}`
         };
+    }
+
+    sanitizeSynopsisGeneratedText(text) {
+        let output = String(text || "").trim();
+        if (!output) {
+            return "";
+        }
+
+        const roleTerms = [
+            "教习姑姑", "教习嬷嬷", "管事太监", "暗卫首领",
+            "说书人", "小太监", "侍女", "宫女", "丫鬟", "嬷嬷", "太医",
+            "暗卫", "护卫", "侍卫", "厨娘", "稳婆", "裁缝", "乐师", "舞姬",
+            "戏子", "道姑", "萨满", "小厮", "幕僚", "护院", "掌门", "长老",
+            "师兄", "师姐", "师弟", "师妹", "师父", "师母", "同门", "阿哥"
+        ];
+        const actionIndicators = [
+            "奉命", "前去", "赶来", "前来", "归来", "上前", "暗中", "负责",
+            "观察", "监视", "盯着", "伺候", "诊治", "请脉", "探听", "献上",
+            "做法", "斥责", "看守", "登记", "传信", "劝阻", "进言", "截获",
+            "封锁", "送来", "送去", "守着", "唤来", "稳住", "指出", "探望",
+            "探病", "请安", "设宴", "禀报", "呼救", "哭诉", "解释", "服侍",
+            "站在", "跪地", "跪下", "冷眼", "当众", "在", "将", "被", "受"
+        ];
+        const escapeRegex = (value) => String(value || "").replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+        const rolePattern = roleTerms
+            .slice()
+            .sort((left, right) => right.length - left.length)
+            .map(escapeRegex)
+            .join("|");
+        const actionPattern = actionIndicators
+            .slice()
+            .sort((left, right) => right.length - left.length)
+            .map(escapeRegex)
+            .join("|");
+
+        if (rolePattern && actionPattern) {
+            const artifactPattern = new RegExp(`((?:${rolePattern}))([\\u4e00-\\u9fa5]{2,4})(?=(?:${actionPattern}|[，。！？；、\\s]|$))`, "g");
+            output = output.replace(artifactPattern, (full, role, candidate) => {
+                const cleanCandidate = this.normalizeOutlineCharacterLabel(candidate);
+                const looksBroken = cleanCandidate
+                    && !this.isLikelySynopsisPersonName(cleanCandidate)
+                    && (
+                        this.containsSynopsisNameNoise(cleanCandidate)
+                        || this.isLikelyActionLikeCharacterCandidate(cleanCandidate)
+                        || /^(?:而|并|又|还|就|便|把|被|将|其|这|那|原|真|成|互|阿|份|只|个)/.test(cleanCandidate)
+                    );
+                return looksBroken ? role : full;
+            });
+        }
+
+        return output
+            .replace(/\s{2,}/g, " ")
+            .replace(/([，。！？；、])\1+/g, "$1")
+            .trim();
     }
 
     normalizeChapterSynopsisSequence(items, chapterCount = 0) {
@@ -485,7 +557,14 @@
             return synopsisItems;
         }
 
-        const promptContext = this.buildDesktopSynopsisPromptContext({
+        await this.primeSynopsisNameMappings({
+            project,
+            concept,
+            volumeSummary,
+            existingSynopsis,
+            volumeNumber
+        });
+        const promptContext = this.buildSimpleSynopsisPromptContext({
             project,
             concept,
             volumeSummary,
@@ -500,10 +579,8 @@
                 .map((item) => item.line)
                 .join("\n");
 
-            const repairPrompt = this.buildDesktopSynopsisRepairPrompt({
+            const repairPrompt = this.buildSimpleSynopsisRepairPrompt({
                 title,
-                genre,
-                subgenre,
                 worldbuilding,
                 concept,
                 volumeNumber,
@@ -520,7 +597,16 @@
                 maxTokens: this.getConfiguredMaxTokens(6000)
             });
 
-            const repairedParsed = this.parseChapterSynopsisLines(repairedRaw, missingNumbers.length);
+            const repairedParsed = await this.stabilizeGeneratedSynopsisNames(
+                project,
+                this.parseChapterSynopsisLines(repairedRaw, missingNumbers.length),
+                volumeNumber,
+                {
+                    concept,
+                    volumeSummary,
+                    existingSynopsis
+                }
+            );
             const repairedAligned = missingNumbers
                 .map((chapterNumber, index) => this.buildNormalizedSynopsisItem(repairedParsed[index] || {}, chapterNumber))
                 .filter((item) => item.synopsis);
@@ -3195,6 +3281,9 @@
         if (this.containsObfuscatedText(cleanName)) {
             return false;
         }
+        if (this.containsSynopsisNameNoise(cleanName)) {
+            return false;
+        }
         if (this.isGenericCharacterCandidateName(cleanName) || this.isLikelyActionLikeCharacterCandidate(cleanName)) {
             return false;
         }
@@ -3364,7 +3453,42 @@
             }
         });
 
+        this.extractGenericSynopsisTermsFromText(text).forEach((term) => {
+            if (!knownMappings[term]) {
+                pending.add(term);
+            }
+        });
+
         return Array.from(pending).sort((left, right) => right.length - left.length);
+    }
+
+    extractGenericSynopsisTermsFromText(text) {
+        const content = String(text || "");
+        if (!content.trim()) {
+            return [];
+        }
+
+        const rolePattern = "(?:龙神|神胎|审判官|骑士|圣骑士|主教|祭司|侍女|丫鬟|婢女|护卫|下属|手下|师兄|师姐|师弟|师妹|师父|师母|父亲|母亲|亲妈|后妈|养母|养父|继母|继父|哥哥|姐姐|妹妹|弟弟|继姐|继妹|继兄|继弟|老婆|老公|前夫|前妻|丈夫|妻子|未婚夫|未婚妻|婆婆|公公|岳母|岳父|嫂子|姐夫|妹夫|小姨|姨妈|婶子|姑妈|舅妈|舅舅|姑父|同门|同伴|邻居|室友|同事|上司|老板|老师|学生|某人|某助理|某同事|某老师|某医生|某护士|某警官|某秘书|助理|秘书|医生|护士|警官|路人|保镖|司机|管家|校医|同学|学长|学姐|前台|店员|经理|总监|院长|教授|导师|研究员|顾问|学徒|工程师|技工|组长|厂长|副厂长|技术员|组员|科员|检查组长|检查组组长)";
+        const suffixIndexPattern = "[A-Za-z甲乙丙丁戊己庚辛壬癸一二三四五六七八九十0-9]*";
+        const found = new Set();
+
+        const roleRegex = new RegExp(`[\\u4e00-\\u9fa5]{0,4}${rolePattern}${suffixIndexPattern}`, "g");
+        for (const match of content.matchAll(roleRegex)) {
+            const term = String(match[0] || "").trim();
+            if (term && this.matchesGenericRolePattern(term)) {
+                found.add(term);
+            }
+        }
+
+        const placeholderRegex = /(?:原主|原身|真身|本体|那人|这人|此人|那位|这位)/g;
+        for (const match of content.matchAll(placeholderRegex)) {
+            const term = String(match[0] || "").trim();
+            if (term) {
+                found.add(term);
+            }
+        }
+
+        return Array.from(found);
     }
 
     detectSynopsisRoleRequirements(project, text = "", lockedVolume = 1) {
@@ -3896,6 +4020,193 @@
         };
     }
 
+    extractSynopsisNamingContextSnippets(text, term, maxSnippets = 2) {
+        const content = String(text || "").trim();
+        const cleanTerm = String(term || "").trim();
+        if (!content || !cleanTerm) {
+            return [];
+        }
+
+        const fragments = content
+            .replace(/\r/g, "\n")
+            .split(/\n+/)
+            .flatMap((line) => String(line || "").split(/[。！？；]/))
+            .map((line) => String(line || "").trim())
+            .filter(Boolean)
+            .filter((line) => line.includes(cleanTerm));
+
+        return fragments
+            .slice(0, maxSnippets)
+            .map((line) => Utils.summarizeText(line, 48));
+    }
+
+    collectSynopsisNamingCandidates(project, contextText, volumeNumber) {
+        const synopsisData = this.restoreSynopsisMainCharacters(project);
+        const roleRequirement = this.detectSynopsisRoleRequirements(project, contextText, volumeNumber);
+        const pendingTerms = new Set(this.collectPendingSynopsisTerms(contextText, project));
+        (roleRequirement.pendingRoles || []).forEach((term) => pendingTerms.add(term));
+        ["原主", "原身"].forEach((term) => {
+            if (String(contextText || "").includes(term) && !synopsisData.vague_to_name_mapping?.[term]) {
+                pendingTerms.add(term);
+            }
+        });
+
+        const aliasToRole = this.buildSynopsisAliasToRoleMap();
+        return Array.from(pendingTerms)
+            .map((term) => String(term || "").trim())
+            .filter(Boolean)
+            .filter((term) => !synopsisData.vague_to_name_mapping?.[term])
+            .slice(0, 8)
+            .map((term) => ({
+                term,
+                role: aliasToRole[term] || "",
+                snippets: this.extractSynopsisNamingContextSnippets(contextText, term, 2)
+            }));
+    }
+
+    resolveKnownSynopsisNameFromContext(project, term, contextText = "", snippets = []) {
+        const cleanTerm = String(term || "").trim();
+        if (!cleanTerm) {
+            return "";
+        }
+
+        const aliasToRole = this.buildSynopsisAliasToRoleMap();
+        const synopsisData = this.restoreSynopsisMainCharacters(project);
+        const role = aliasToRole[cleanTerm];
+        if (role && synopsisData.main_characters?.[role]) {
+            return String(synopsisData.main_characters[role] || "").trim();
+        }
+
+        const explicit = this.extractExplicitVagueNameMappings(contextText, [cleanTerm])
+            .map((item) => String(item?.specificName || "").trim())
+            .find((name) => this.isLikelySynopsisPersonName(name));
+        if (explicit) {
+            return explicit;
+        }
+
+        const escapedTerm = cleanTerm.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+        const directPatterns = [
+            new RegExp(`${escapedTerm}(?:就是|便是|正是|其实是)([\\u4e00-\\u9fa5]{2,4})`),
+            new RegExp(`${escapedTerm}(?:成了|变成了)([\\u4e00-\\u9fa5]{2,4})`),
+            new RegExp(`([\\u4e00-\\u9fa5]{2,4})(?:就是|便是|正是)${escapedTerm}`)
+        ];
+        for (const pattern of directPatterns) {
+            const match = String(contextText || "").match(pattern);
+            const candidate = this.normalizeOutlineCharacterLabel(match?.[1] || "");
+            if (candidate && this.isLikelySynopsisPersonName(candidate)) {
+                return candidate;
+            }
+        }
+
+        const knownNames = Array.from(new Set([
+            ...Object.values(synopsisData.main_characters || {}),
+            ...Object.keys(synopsisData.locked_character_names || {}),
+            ...(project?.outline?.characters || []).map((character) => String(character?.name || "").trim())
+        ]))
+            .map((name) => String(name || "").trim())
+            .filter((name) => this.isLikelySynopsisPersonName(name));
+
+        const snippetText = [contextText || "", ...(snippets || [])].filter(Boolean).join("\n");
+        const matchedNames = knownNames.filter((name) => snippetText.includes(name));
+        if (matchedNames.length === 1) {
+            return matchedNames[0];
+        }
+
+        return "";
+    }
+
+    async primeSynopsisNameMappings({ project, concept, volumeSummary, existingSynopsis, volumeNumber }) {
+        if (!project) {
+            return { appliedMappings: [] };
+        }
+
+        const outlineSlice = this.extractCurrentVolumeOutlineContext(project, volumeNumber);
+        const contextText = [
+            concept || "",
+            volumeSummary || "",
+            existingSynopsis || "",
+            outlineSlice.currentOutline || ""
+        ].filter(Boolean).join("\n");
+
+        this.detectSynopsisRoleRequirements(project, contextText, volumeNumber);
+        const candidates = this.collectSynopsisNamingCandidates(project, contextText, volumeNumber);
+        if (!candidates.length) {
+            return { appliedMappings: [] };
+        }
+
+        const synopsisData = this.restoreSynopsisMainCharacters(project);
+        const aliasToRole = this.buildSynopsisAliasToRoleMap();
+        synopsisData.vague_supporting_roles = synopsisData.vague_supporting_roles && typeof synopsisData.vague_supporting_roles === "object"
+            ? synopsisData.vague_supporting_roles
+            : {};
+
+        const appliedMappings = [];
+        candidates.forEach((item) => {
+            const term = String(item?.term || "").trim();
+            if (!term || synopsisData.vague_to_name_mapping?.[term]) {
+                return;
+            }
+            const name = this.resolveKnownSynopsisNameFromContext(project, term, contextText, item?.snippets || []);
+            if (!name || !this.isLikelySynopsisPersonName(name) || this.isGenericCharacterCandidateName(name)) {
+                return;
+            }
+
+            const role = aliasToRole[term] || item?.role || "";
+            if (role) {
+                if (this.applySynopsisMainCharacter(project, role, name, volumeNumber)) {
+                    appliedMappings.push(`${term}→${name}`);
+                }
+                return;
+            }
+
+            if (!this.isSafeSynopsisMapping(project, term, name)) {
+                return;
+            }
+            synopsisData.vague_to_name_mapping[term] = name;
+            this.lockSynopsisCharacterName(project, name, "配角", term, volumeNumber);
+            if (synopsisData.vague_supporting_roles[term]) {
+                synopsisData.vague_supporting_roles[term].needs_name = false;
+                synopsisData.vague_supporting_roles[term].suggested_name = name;
+            }
+            appliedMappings.push(`${term}→${name}`);
+        });
+
+        project.synopsis_data = JSON.parse(JSON.stringify(synopsisData));
+        return { appliedMappings };
+    }
+
+    async stabilizeGeneratedSynopsisNames(project, chapters, volumeNumber, inputs = {}) {
+        if (!Array.isArray(chapters) || !chapters.length) {
+            return Array.isArray(chapters) ? chapters : [];
+        }
+
+        const generatedText = chapters
+            .map((chapter) => chapter.line || `第${chapter.chapter_number || chapter.number || "?"}章：${chapter.title || ""} - ${chapter.synopsis || chapter.key_event || ""}`)
+            .filter(Boolean)
+            .join("\n");
+
+        await this.primeSynopsisNameMappings({
+            project,
+            concept: inputs.concept || "",
+            volumeSummary: inputs.volumeSummary || "",
+            existingSynopsis: [inputs.existingSynopsis || "", generatedText].filter(Boolean).join("\n"),
+            volumeNumber
+        });
+
+        return chapters.map((chapter, index) => {
+            const chapterNumber = Number(chapter?.chapter_number || chapter?.number || index + 1);
+            const normalizedTitle = this.normalizeSynopsisReferenceText(project, chapter?.title || "");
+            const normalizedSynopsis = this.normalizeSynopsisReferenceText(project, chapter?.synopsis || chapter?.key_event || "");
+            return this.buildNormalizedSynopsisItem({
+                ...chapter,
+                chapter_number: chapterNumber,
+                title: normalizedTitle,
+                synopsis: normalizedSynopsis,
+                key_event: normalizedSynopsis
+            }, chapterNumber);
+        });
+    }
+
     buildSynopsisNamePatternWarning(names = []) {
         const cleanNames = Array.from(new Set((names || []).map((name) => String(name || "").trim()).filter(Boolean)));
         if (!cleanNames.length) {
@@ -4119,6 +4430,142 @@
             }),
             nameGenerationHint: this.buildSynopsisNameGenerationHint(project, volumeNumber, contextText)
         };
+    }
+
+    buildSimpleSynopsisPromptContext({ project, concept, volumeSummary, existingSynopsis, volumeNumber, chapterCount }) {
+        const outlineSlice = this.extractCurrentVolumeOutlineContext(project, volumeNumber);
+        const currentVolume = project?.outline?.volumes?.[volumeNumber - 1] || {};
+        const contextText = [concept || "", volumeSummary || "", existingSynopsis || "", outlineSlice.currentOutline || ""].filter(Boolean).join("\n");
+        const previousSynopsisItems = this.collectSynopsisHistoryItems(project, volumeNumber).slice(-8);
+        return {
+            lockedNamesTable: this.buildSynopsisLockedNameTable(project),
+            currentVolumeTaskLabel: `${currentVolume.title || `第${volumeNumber}卷`}${volumeSummary ? ` - ${Utils.summarizeText(volumeSummary, 80)}` : ""}`,
+            volumeSynopsisContext: String(volumeSummary || currentVolume.summary || "").trim(),
+            currentVolumeOutlineContext: this.limitContext(String(outlineSlice.currentOutline || "").trim(), 2200),
+            previousVolumeEnding: this.buildPreviousVolumeEnding(project, volumeNumber),
+            previousSynopsisContext: previousSynopsisItems.length
+                ? previousSynopsisItems.map((item) => item.line).join("\n")
+                : "",
+            existingSynopsis: this.limitContext(String(existingSynopsis || "").trim(), 1200),
+            repeatGuard: this.limitContext(this.buildUsedPlotsSummary(project, volumeNumber), 1400),
+            innovationPrompt: this.limitContext(this.buildSynopsisInnovationPrompt(project, volumeNumber, concept, volumeSummary), 1200),
+            continuityGuard: this.limitContext(this.buildSynopsisHardFactHint(project, volumeNumber, contextText), 1000),
+            clarityGuard: this.limitContext(this.buildSynopsisClarityGuard({
+                volumeNumber,
+                chapterCount,
+                hasDetailedOutline: Boolean(String(outlineSlice.currentOutline || "").trim())
+            }), 800),
+            boundaryGuard: this.limitContext(this.buildSynopsisVolumeBoundaryGuard(project, volumeNumber), 500),
+            chapterCount
+        };
+    }
+
+    buildSimpleSynopsisSystemPrompt({ genreConstraint, chapterCount, lockedNamesTable }) {
+        return [
+            genreConstraint,
+            "你是中文网文作者的细纲助手，请像普通对话里那样自然地列出章节细纲。",
+            "",
+            lockedNamesTable,
+            "",
+            "规则很简单：",
+            `1. 一次性输出恰好${chapterCount}章，从第1章到第${chapterCount}章。`,
+            "2. 格式固定：第X章：章节标题 - 核心内容。",
+            "3. 已经锁定的人名必须沿用，不能改名。",
+            "4. 新角色如果确实需要出现，可以自然起一个正常中文名，不要用模糊称呼、职务词、状态词、动作词当名字。",
+            "5. 同一批细纲里，新角色一旦起名，后面必须一直沿用同一个名字。",
+            "6. 不要把上一章已经发生的事换句话再写一遍，也不要在本批细纲里重复同一种桥段。",
+            "7. 同一批细纲里，人物身份、关系、位份、时间线一旦写定，后文必须保持一致。",
+            "8. 可以参考常见爽点和套路，但不能机械复读，必须做出新的推进、新的信息或新的结果。",
+            "9. 直接输出章节列表，不要解释，不要前言，不要 markdown。"
+        ].filter(Boolean).join("\n");
+    }
+
+    buildSimpleSynopsisUserPrompt({
+        title,
+        worldbuilding,
+        volumeNumber,
+        chapterCount,
+        concept,
+        volumeSynopsisContext,
+        currentVolumeOutlineContext,
+        previousVolumeEnding,
+        previousSynopsisContext,
+        existingSynopsis,
+        currentVolumeTaskLabel,
+        repeatGuard,
+        innovationPrompt,
+        continuityGuard,
+        clarityGuard,
+        boundaryGuard
+    }) {
+        return [
+            `小说标题：《${title || "未命名小说"}》`,
+            `当前任务：为【${currentVolumeTaskLabel || `第${volumeNumber}卷`}】生成${chapterCount}章细纲。`,
+            "",
+            concept ? `故事概念：\n${concept}` : "",
+            volumeSynopsisContext ? `当前卷概要：\n${volumeSynopsisContext}` : "",
+            currentVolumeOutlineContext ? `当前卷详细大纲：\n${currentVolumeOutlineContext}` : "",
+            previousVolumeEnding ? `上一卷结尾：\n${previousVolumeEnding}` : "",
+            previousSynopsisContext ? `前文最近细纲（只作衔接参考）：\n${previousSynopsisContext}` : "",
+            existingSynopsis ? `已有细纲参考：\n${existingSynopsis}` : "",
+            worldbuilding ? `世界观补充：\n${this.limitContext(worldbuilding, 800)}` : "",
+            continuityGuard ? `连续性护栏：\n${continuityGuard}` : "",
+            clarityGuard ? `节奏与执行护栏：\n${clarityGuard}` : "",
+            boundaryGuard ? `卷边界提醒：\n${boundaryGuard}` : "",
+            repeatGuard ? `防重复提醒：\n${repeatGuard}` : "",
+            innovationPrompt ? `套路与反套路提醒：\n${innovationPrompt}` : "",
+            "",
+            `现在请直接输出第${volumeNumber}卷的全部${chapterCount}章细纲。`
+        ].filter(Boolean).join("\n\n");
+    }
+
+    buildSimpleSynopsisRepairPrompt({
+        title,
+        worldbuilding,
+        volumeNumber,
+        chapterCount,
+        concept,
+        currentVolumeTaskLabel,
+        volumeSynopsisContext,
+        currentVolumeOutlineContext,
+        previousVolumeEnding,
+        previousSynopsisContext,
+        existingSynopsis,
+        repeatGuard,
+        innovationPrompt,
+        continuityGuard,
+        clarityGuard,
+        boundaryGuard,
+        knownLines,
+        missingNumbers
+    }) {
+        return [
+            `小说标题：《${title || "未命名小说"}》`,
+            `当前任务：继续补齐【${currentVolumeTaskLabel || `第${volumeNumber}卷`}】缺失的章节。`,
+            "",
+            concept ? `故事概念：\n${concept}` : "",
+            volumeSynopsisContext ? `当前卷概要：\n${volumeSynopsisContext}` : "",
+            currentVolumeOutlineContext ? `当前卷详细大纲：\n${currentVolumeOutlineContext}` : "",
+            previousVolumeEnding ? `上一卷结尾：\n${previousVolumeEnding}` : "",
+            previousSynopsisContext ? `前文最近细纲：\n${previousSynopsisContext}` : "",
+            existingSynopsis ? `已有细纲参考：\n${existingSynopsis}` : "",
+            worldbuilding ? `世界观补充：\n${this.limitContext(worldbuilding, 600)}` : "",
+            continuityGuard ? `连续性护栏：\n${continuityGuard}` : "",
+            clarityGuard ? `节奏与执行护栏：\n${clarityGuard}` : "",
+            boundaryGuard ? `卷边界提醒：\n${boundaryGuard}` : "",
+            repeatGuard ? `防重复提醒：\n${repeatGuard}` : "",
+            innovationPrompt ? `套路与反套路提醒：\n${innovationPrompt}` : "",
+            "",
+            "已经生成成功的章节：",
+            knownLines || "暂无",
+            "",
+            "只补这些缺失章节：",
+            (missingNumbers || []).map((num) => `第${num}章`).join("、"),
+            "",
+            "请严格一章一行输出：",
+            "第X章：章节标题 - 核心内容",
+            "不要重复已生成章节，不要解释。"
+        ].filter(Boolean).join("\n\n");
     }
 
     buildDesktopSynopsisSystemPrompt({ genreConstraint, chapterCount, lockedNamesTable }) {
@@ -4345,7 +4792,7 @@
 
     lockSynopsisCharacterName(project, name, charType = "配角", identity = "未知", lockedVolume = 1) {
         const cleanName = String(name || "").trim();
-        if (!/^[\u4e00-\u9fa5]{2,4}$/.test(cleanName)) {
+        if (!this.isLikelySynopsisPersonName(cleanName)) {
             return false;
         }
 
@@ -4375,7 +4822,7 @@
     isSafeSynopsisMapping(project, vagueTerm, specificName, role = "") {
         const cleanVagueTerm = String(vagueTerm || "").trim();
         const cleanName = String(specificName || "").trim();
-        if (!cleanVagueTerm || !/^[\u4e00-\u9fa5]{2,4}$/.test(cleanName)) {
+        if (!cleanVagueTerm || !this.isLikelySynopsisPersonName(cleanName)) {
             return false;
         }
 
@@ -4539,8 +4986,8 @@
 
                 patterns.forEach((pattern) => {
                     for (const match of content.matchAll(pattern)) {
-                        const name = String(match[1] || "").trim();
-                        if (!name || excludedWords.has(name)) {
+                        const name = this.normalizeOutlineCharacterLabel(match[1] || "");
+                        if (!name || excludedWords.has(name) || !this.isLikelySynopsisPersonName(name)) {
                             continue;
                         }
                         const key = `${vagueTerm}=>${name}`;
@@ -4555,9 +5002,50 @@
         return results;
     }
 
+    containsSynopsisNameNoise(name) {
+        const cleanName = String(name || "").trim();
+        if (!cleanName) {
+            return true;
+        }
+
+        const exactNoise = new Set([
+            "时间", "身份", "情绪", "状态", "身体", "皮囊", "光环", "怀孕",
+            "所有", "互换", "带来", "纯粹", "报复", "死死", "完美", "真正",
+            "原本", "对面", "其中", "当众", "一旁", "故事", "章节", "细纲",
+            "卷纲", "正文", "剧情", "内容", "设定", "目标", "核心", "事件",
+            "关系", "背景", "能力", "动机", "系统", "提示", "奖励", "面板",
+            "记录", "总表", "状态表", "世界", "摘要", "东施效颦"
+        ]);
+        if (exactNoise.has(cleanName)) {
+            return true;
+        }
+
+        const fragmentNoise = [
+            "时间", "身份", "情绪", "状态", "身体", "皮囊", "光环", "怀孕",
+            "所有", "互换", "带来", "纯粹", "报复", "死死", "完美", "真正",
+            "原本", "剧情", "内容", "设定", "目标", "核心", "事件", "关系",
+            "背景", "能力", "动机", "系统", "提示", "奖励", "面板", "记录",
+            "总表", "状态表", "摘要", "健康身体", "纯元光环", "纯元皮囊",
+            "东施效颦"
+        ];
+        if (fragmentNoise.some((fragment) => cleanName.includes(fragment))) {
+            return true;
+        }
+
+        if (/^(?:而|并|又|还|就|便|把|被|将|其|这|那|原|真|成|互|第|份|只|个)/.test(cleanName)) {
+            return true;
+        }
+
+        return false;
+    }
+
     isLikelySynopsisPersonName(name) {
         const cleanName = String(name || "").trim();
         if (!/^[\u4e00-\u9fa5]{2,4}$/.test(cleanName)) {
+            return false;
+        }
+
+        if (this.containsSynopsisNameNoise(cleanName)) {
             return false;
         }
 
