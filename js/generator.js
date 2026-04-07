@@ -1146,10 +1146,14 @@
 
         const targetWords = this.getAiHighFrequencyWords();
         const suspiciousPatterns = this.getAiSuspiciousPatterns().map((pattern) => new RegExp(pattern));
-        const structuralPatterns = this.getAiStructuralPatterns();
+        const structuralPatterns = [
+            ...this.getAiStructuralPatterns(),
+            ...this.getAiGenreClichePatterns(project)
+        ];
         const weakModifierWords = this.getAiWeakModifierWords();
         const abstractWords = this.getAiAbstractWords();
         const emotionLabelWords = this.getAiEmotionLabelWords();
+        const genreClicheHint = this.getAiGenreClichePromptHint(project);
         const whitelist = this.getEffectiveAiWhitelist(project);
         const blacklist = this.getEffectiveAiBlacklist(project);
         const segments = this.splitSentencesForAiFilter(sourceText);
@@ -1225,8 +1229,10 @@
             "4. 看起来文绉绉，但信息没有增加，只是在拔高气氛。",
             "5. 上一句已经用动作、对白、现场反应交代清楚，下一句又补一层解释或渲染，也算AI味。",
             "6. 连续几句凑成‘气氛凝固-众人震惊-主角冷静开口-对方恼羞成怒-旁人议论’这种标准冲突推进，也算AI味。",
+            "7. 题材里反复出现的预制描写也算AI味，比如年代文反复‘领口洗得发白’，修仙文反复‘一袭白衣、衣袂翻飞、白衣猎猎’。",
             "",
             `【本轮命中的可疑信号】${hitWordsStr || "句式层面可疑"}`,
+            genreClicheHint ? `【本题材额外提醒】${genreClicheHint}` : "",
             "",
             "【改写规则】",
             "1. 没有问题的句子不改。",
@@ -1241,6 +1247,9 @@
             "10. 如果连续几句形成标准冲突模板，优先删掉‘众人震惊’‘旁人议论’这类凑节奏的句子，只保留真正推进剧情的动作、对白和结果。",
             "11. 如果一句话只是问题轻，可以只削掉AI腔，不必重写得太猛。",
             "12. 直白句、功能句、常见过渡句，只要信息清楚、动作清楚，就不要硬磨成文案腔。",
+            "13. 题材套话优先改成具体可见的信息。不要老写‘居高临下地看着她’‘领口洗得发白’‘一袭白衣’‘白衣猎猎作响’，要换成当下这个人真正的站位、衣料、磨损、动作或现场效果。",
+            "14. 像‘台下安静下来’‘连嗑瓜子的人都停了动作’这种只负责提示围观停顿、又不提供新信息的句子，直接删。",
+            "15. 像‘手上用了死力气，指甲掐进肉里’这种局部受力痕迹模板，也和‘指节因用力而泛白’是一类。要改成实际动作结果，比如拽、拖、按、攥着不放，而不是继续写身体小部位受力。",
             "",
             "【真人感参考】",
             humanStyleGuide,
@@ -1337,6 +1346,9 @@
             "8. 如果几句连起来像‘气氛凝固-众人震惊-主角冷静开口-对方恼羞成怒-旁人议论’这种标准冲突模板，优先删掉凑套路感的环节。",
             "9. 每条只输出一个最终结果，每行一条，不要解释。",
             "10. 直白、顺口、带一点网文口语感也可以，不要硬修成精修文案。",
+            "11. 题材套话也不合格。不要把句子改回‘居高临下’‘领口洗得发白’‘一袭白衣’‘衣袂翻飞’这一类预制描写。",
+            "12. 像‘台下安静下来’‘连嗑瓜子的人都停了动作’这种围观停顿句，优先直接删，不要改成另一种围观静场句。",
+            "13. 像‘手上用了死力气，指甲掐进肉里’这种局部受力痕迹句，也不合格。不要把‘指节泛白’换成同类的‘指甲掐进肉里’‘后槽牙咬紧’‘手背青筋暴起’。",
             "",
             "真人感参考：",
             humanStyleGuide,
@@ -1381,6 +1393,7 @@
         const bodyStatePattern = /(泛白|发白|勾起|上扬|冷笑|闪过|流露|滚动|收缩)/;
         const fakeDetailPartPattern = /(指尖|指腹|喉结|呼吸|眸光|目光|太阳穴|后槽牙|肩线|脊背|手背|眼尾)/;
         const fakeDetailStatePattern = /(微蜷|滚动|微滞|微闪|轻跳|绷紧|发紧|紧绷|一跳)/;
+        const forceTracePattern = /((手上|手里|掌心)[^。！？\n]{0,6}(用了死力气|使了死劲|下了狠劲))|((指甲|指节|骨节|牙关|后槽牙|手背)[^。！？\n]{0,12}(掐进|陷进|嵌进|泛白|发白|绷紧|暴起|咬紧|发酸))/;
         const atmospherePattern = /(安静|寂静|死寂|沉默|没人说话|没有人说话|鸦雀无声|落针可闻|空气|时间|四周|全场|仿佛|似乎)/;
         const literaryPattern = /(命运的齿轮|无形的(?:压迫|巨手)|空气里[^。！？\n]{0,12}(压迫|冷意|危险)|夜色[^。！？\n]{0,12}(吞没|漫过)|沉默[^。！？\n]{0,12}(漫开|席卷)|压迫感[^。！？\n]{0,12}(铺开|漫开)|平整如镜|月光下[^。！？\n]{0,12}反射出[^。！？\n]{0,6}(寒光|冷光))/;
         const casualActionPattern = /(姿势|动作)[^。！？\n]{0,8}(极其|格外|十分|异常|过分)?[^。！？\n]{0,8}(随意|漫不经心|轻飘飘)[^。！？\n]{0,18}(像是|像|到了极点|到了极致)/;
@@ -1393,6 +1406,10 @@
             return true;
         }
         if (fakeDetailPartPattern.test(originalText) && fakeDetailPartPattern.test(rewrittenText) && fakeDetailStatePattern.test(rewrittenText)) {
+            return true;
+        }
+        if ((forceTracePattern.test(originalText) || reasons.some((item) => /用力痕迹模板|微表情模板|假细节模板/.test(String(item || ""))))
+            && forceTracePattern.test(rewrittenText)) {
             return true;
         }
         if (reasons.some((item) => /凝固停顿|空泛比喻|抽象情绪|镜头切换/.test(String(item || ""))) && atmospherePattern.test(rewrittenText)) {
@@ -1411,6 +1428,10 @@
             return true;
         }
         if (reasons.some((item) => /段内重复解释|重复渲染/.test(String(item || ""))) && this.isAiSummaryOrAtmosphereSentence(rewrittenText)) {
+            return true;
+        }
+        if (reasons.some((item) => /围观停顿模板/.test(String(item || "")))
+            && /((台下|场下|人群|众人|周围|围观的人|围观者|旁边的人)[^。！？\n]{0,12}(安静下来|静下来|停了动作|停下动作|都停了动作|齐齐停住|全停了下来))|(连[^。！？\n]{0,12}的人都停了动作)|((大家|众人|周围的人)[^。！？\n]{0,10}(都不说话了|一下子静了))/.test(rewrittenText)) {
             return true;
         }
         if (reasons.some((item) => /标准冲突推进/.test(String(item || ""))) && this.getAiConflictProgressionTag(rewrittenText)) {
@@ -1434,7 +1455,7 @@
         if (role === "action") {
             return false;
         }
-        return reasons.some((item) => /凝固停顿|空泛比喻|抽象情绪|镜头切换|假细节模板|过度文学化|段内重复解释|重复渲染|标准冲突推进/.test(String(item || "")));
+        return reasons.some((item) => /凝固停顿|空泛比喻|抽象情绪|镜头切换|假细节模板|过度文学化|段内重复解释|重复渲染|标准冲突推进|围观停顿模板/.test(String(item || "")));
     }
 
     collectAiSentenceSignals(sentence, config = {}) {
@@ -1560,6 +1581,11 @@
                 pattern: /(空气|时间|四周|全场)[^。！？\n]{0,12}(凝固|停住|停滞|静止|死寂|安静)/
             },
             {
+                label: "围观停顿模板",
+                score: 2,
+                pattern: /((台下|场下|人群|众人|周围|围观的人|围观者|旁边的人)[^。！？\n]{0,12}(安静下来|静下来|停了动作|停下动作|都停了动作|齐齐停住|全停了下来|都停下了手里的动作))|(连[^。！？\n]{0,12}的人都停了动作)/
+            },
+            {
                 label: "抽象情绪模板",
                 score: 1,
                 pattern: /(心头一|心下一|不由得|无法用言语形容|说不清|某个地方|意味不明|不容置疑|异常清晰|显得格外)/
@@ -1568,6 +1594,11 @@
                 label: "假细节模板",
                 score: 2,
                 pattern: /(指尖|指腹|喉结|呼吸|眸光|目光|太阳穴|后槽牙|肩线|脊背|手背|眼尾)[^。！？\n]{0,10}(微蜷|滚动|微滞|微闪|轻跳|绷紧|发紧|紧绷|一跳)/
+            },
+            {
+                label: "用力痕迹模板",
+                score: 2,
+                pattern: /((手上|手里|掌心)[^。！？\n]{0,6}(用了死力气|使了死劲|下了狠劲)[^。！？\n]{0,18}(指甲|指节|骨节|牙关|后槽牙|手背)?)|((指甲|指节|骨节|牙关|后槽牙|手背)[^。！？\n]{0,12}(掐进|陷进|嵌进|泛白|发白|绷紧|暴起|咬紧|发酸)[^。！？\n]{0,10}(肉里|掌心|皮肉)?)/
             },
             {
                 label: "情绪标签堆叠",
@@ -1646,7 +1677,7 @@
         if (!list.length) {
             return false;
         }
-        const strongPattern = /(微表情模板|假细节模板|过度文学化|摆拍比喻|空动作总结|凝固停顿模板|情绪标签堆叠|标准冲突推进|重复渲染|段内重复解释)/;
+        const strongPattern = /(微表情模板|假细节模板|用力痕迹模板|过度文学化|摆拍比喻|空动作总结|凝固停顿模板|围观停顿模板|情绪标签堆叠|标准冲突推进|重复渲染|段内重复解释)/;
         return !list.some((item) => strongPattern.test(String(item || "")));
     }
 
@@ -1730,6 +1761,9 @@
         }
         if (/(全场|空气|四周|气氛|死寂|寂静|沉默|安静|凝固|落针可闻|鸦雀无声)/.test(text)) {
             return "atmosphere";
+        }
+        if (/((台下|场下|人群|众人|周围|围观的人|围观者|旁边的人)[^。！？\n]{0,12}(安静下来|静下来|停了动作|停下动作|都停了动作|齐齐停住|全停了下来))|(连[^。！？\n]{0,12}的人都停了动作)/.test(text)) {
+            return "crowd";
         }
         if (/(众人|所有人|人群|周围|在场|台下|旁人|围观|邻居|弟子|内门弟子)[^。！？\n]{0,16}(震惊|愣住|怔住|倒吸一口凉气|瞪大了眼|哗然|惊呼|面面相觑|瞪出眼眶|吓傻)/.test(text)) {
             return "crowd";
@@ -5414,6 +5448,10 @@
                 "銆愮浉鍏充汉鐗╄瀹氥€?,
                 "{{relevant_characters}}",
                 "",
+                "【角色设定使用规则】",
+                "相关人物设定只用于锁定身份、关系、口吻、目标和外观事实，不要把设定里的原句、标签词、描述短语直接抄进正文。",
+                "同一角色的标志性描述一章里最多点到一次，不要反复拿同一句当出场模板。",
+                "",
                 "銆愬墠鏂囦簲绔犮€?,
                 "鐢ㄩ€旓細鍙敤浜庣户鎵垮悕璇嶃€佺姸鎬併€佸彛鍚诲拰鍔ㄤ綔寤剁画锛屼笉瑕佹嬁瀹冨綋浣滄湰绔犲紑澶寸殑澶嶈堪妯℃澘銆?,
                 "{{prev_content}}",
@@ -5898,6 +5936,57 @@
         }).join("\n");
     }
 
+    sanitizeCharacterPromptField(value, field = "general", max = 80) {
+        const raw = Utils.summarizeText(String(value || "").replace(/\s+/g, " ").trim(), max * 2);
+        if (!raw) {
+            return "";
+        }
+
+        const clauses = raw
+            .split(/[，。；、\n]/)
+            .map((item) => this.rewriteCharacterPromptClause(item, field))
+            .filter(Boolean);
+
+        const deduped = Array.from(new Set(clauses)).slice(0, field === "appearance" ? 3 : 4);
+        return Utils.summarizeText(deduped.join("；"), max);
+    }
+
+    rewriteCharacterPromptClause(clause, field = "general") {
+        let text = String(clause || "").trim();
+        if (!text) {
+            return "";
+        }
+
+        const replacements = [
+            [/(?:居高临下(?:地)?)(?:看着|盯着|望着)?[^，。；！？\n]{0,8}/g, ""],
+            [/(领口|衣领)洗得发白/g, "衣领磨旧"],
+            [/(袖口|衣角|衣摆)洗得发白/g, "$1磨旧"],
+            [/(袖口|衣角|衣摆)磨得发白/g, "$1磨旧"],
+            [/洗得发白的(?:确良|衬衫|衣领|外套)/g, "旧衣服"],
+            [/一袭(白衣|青衣|红衣|黑衣)/g, "常穿$1"],
+            [/(白衣|青衣|红衣|黑衣)猎猎(?:作响)?/g, "$1被风吹起"],
+            [/衣袂(?:翻飞|飘飘|猎猎)/g, "衣摆被风带起"],
+            [/墨发(?:如瀑|飞扬)/g, "长发"],
+            [/仙风道骨/g, "气度出众"],
+            [/手上用了死力气/g, ""],
+            [/(指甲|指节|骨节)[^，。；！？\n]{0,8}(掐进|陷进|嵌进)[^，。；！？\n]{0,8}(肉里|皮肉)/g, ""]
+        ];
+        replacements.forEach(([pattern, replacement]) => {
+            text = text.replace(pattern, replacement);
+        });
+
+        if (field !== "appearance" && /^(常穿白衣|常穿青衣|常穿红衣|常穿黑衣|衣摆被风带起|白衣被风吹起|青衣被风吹起|红衣被风吹起|黑衣被风吹起|衣领磨旧|袖口磨旧|旧衣服|长发|气度出众)$/.test(text)) {
+            return "";
+        }
+
+        text = text
+            .replace(/[，；、]{2,}/g, "；")
+            .replace(/^[，；、\s]+|[，；、\s]+$/g, "")
+            .trim();
+
+        return text;
+    }
+
     buildRelevantCharactersInfo(foundChars) {
         if (!foundChars?.length) {
             return "";
@@ -5906,18 +5995,31 @@
         const body = foundChars.map((character) => {
             const chunks = [];
             const aliases = Utils.ensureArrayFromText(character.aliases || character["鍒悕"] || "");
-            if (character.identity) chunks.push(`韬唤锛?{character.identity}`);
-            if (aliases.length) chunks.push(`鍥哄畾绉板懠/鍒悕锛?{aliases.join("銆?)}`);
-            if (character.personality) chunks.push(`鎬ф牸锛?{Utils.summarizeText(character.personality, 70)}`);
-            if (character.background) chunks.push(`鑳屾櫙锛?{Utils.summarizeText(character.background, 90)}`);
-            if (character.relationships) chunks.push(`鍏崇郴锛?{Utils.summarizeText(character.relationships, 80)}`);
-            if (character.appearance) chunks.push(`澶栬矊锛?{Utils.summarizeText(character.appearance, 70)}`);
-            if (character.abilities) chunks.push(`鑳藉姏锛?{Utils.summarizeText(character.abilities, 70)}`);
-            if (character.goals) chunks.push(`鐩爣锛?{Utils.summarizeText(character.goals, 70)}`);
-            return `- ${character.name || "鏈懡鍚?}\n  ${chunks.join("\n  ")}`;
+            const identity = this.sanitizeCharacterPromptField(character.identity, "identity", 50);
+            const personality = this.sanitizeCharacterPromptField(character.personality, "personality", 60);
+            const background = this.sanitizeCharacterPromptField(character.background, "background", 80);
+            const relationships = this.sanitizeCharacterPromptField(character.relationships, "relationships", 70);
+            const appearance = this.sanitizeCharacterPromptField(character.appearance, "appearance", 55);
+            const abilities = this.sanitizeCharacterPromptField(character.abilities, "abilities", 60);
+            const goals = this.sanitizeCharacterPromptField(character.goals, "goals", 60);
+
+            if (identity) chunks.push(`身份：${identity}`);
+            if (aliases.length) chunks.push(`固定称呼/别名：${aliases.join("、")}`);
+            if (personality) chunks.push(`性格事实：${personality}`);
+            if (background) chunks.push(`背景事实：${background}`);
+            if (relationships) chunks.push(`关系：${relationships}`);
+            if (appearance) chunks.push(`外观事实：${appearance}`);
+            if (abilities) chunks.push(`能力：${abilities}`);
+            if (goals) chunks.push(`目标：${goals}`);
+            return `- ${character.name || "未命名"}\n  ${chunks.join("\n  ")}`;
         }).join("\n");
 
-        return `銆愭湰绔犲嚭鍦?鐩稿叧瑙掕壊璁惧畾锛堥槻宕╁潖鍙傝€冿級銆慭n浠ヤ笅鏄湰绔犵浉鍏宠鑹茬殑璁惧畾鍜屽浐瀹氬悕瀛楋紝鍦ㄦ鏂囦腑蹇呴』涓ユ牸浣跨敤杩欎簺鍚嶅瓧鍜屼汉璁撅紝涓嶅緱鑷鏇存敼锛歕n${body}`;
+        return [
+            "【本章出场相关角色设定（防崩坏参考）】",
+            "以下只用于锁定身份、关系、目标、固定称呼和外观事实。",
+            "不要把设定里的原句、标签词、描写套话直接照抄进正文，更不要在同一章里反复复用同一描述词。",
+            body
+        ].join("\n");
     }
 
     buildVolumeSynopsisContext(project, currentVolumeNumber) {
