@@ -276,11 +276,14 @@
             genre,
             subgenre || project?.outline?.subgenre || project?.subgenre || genre
         );
+        const processedConcept = this.normalizeSynopsisReferenceText(project, concept);
+        const processedVolumeSummary = this.normalizeSynopsisReferenceText(project, volumeSummary);
+        const processedExistingSynopsis = this.normalizeSynopsisReferenceText(project, existingSynopsis);
         const promptContext = this.buildDesktopSynopsisPromptContext({
             project,
-            concept,
-            volumeSummary,
-            existingSynopsis,
+            concept: processedConcept,
+            volumeSummary: processedVolumeSummary,
+            existingSynopsis: processedExistingSynopsis,
             volumeNumber,
             chapterCount
         });
@@ -296,9 +299,9 @@
             worldbuilding,
             volumeNumber,
             chapterCount,
-            concept,
-            volumeSummary,
-            existingSynopsis,
+            concept: processedConcept,
+            volumeSummary: processedVolumeSummary,
+            existingSynopsis: processedExistingSynopsis,
             ...promptContext
         });
 
@@ -307,18 +310,21 @@
             maxTokens: this.getConfiguredMaxTokens(8000)
         });
 
-        const parsed = this.parseChapterSynopsisLines(raw, chapterCount);
+        const parsed = this.normalizeSynopsisGeneratedItems(
+            project,
+            this.parseChapterSynopsisLines(raw, chapterCount)
+        );
         return await this.ensureChapterSynopsisCount({
             project,
             title,
-            concept,
+            concept: processedConcept,
             genre,
             subgenre,
             worldbuilding,
             volumeNumber,
             chapterCount,
-            volumeSummary,
-            existingSynopsis,
+            volumeSummary: processedVolumeSummary,
+            existingSynopsis: processedExistingSynopsis,
             systemPrompt,
             parsedSynopsis: parsed
         });
@@ -462,7 +468,10 @@
         parsedSynopsis
     }) {
         const targetCount = Math.max(0, Number(chapterCount || 0));
-        let synopsisItems = this.normalizeChapterSynopsisSequence(parsedSynopsis || [], targetCount);
+        let synopsisItems = this.normalizeSynopsisGeneratedItems(
+            project,
+            this.normalizeChapterSynopsisSequence(parsedSynopsis || [], targetCount)
+        );
         if (!targetCount) {
             return synopsisItems;
         }
@@ -508,11 +517,17 @@
             });
 
             const repairedParsed = this.parseChapterSynopsisLines(repairedRaw, missingNumbers.length);
-            const repairedAligned = missingNumbers
-                .map((chapterNumber, index) => this.buildNormalizedSynopsisItem(repairedParsed[index] || {}, chapterNumber))
-                .filter((item) => item.synopsis);
+            const repairedAligned = this.normalizeSynopsisGeneratedItems(
+                project,
+                missingNumbers
+                    .map((chapterNumber, index) => this.buildNormalizedSynopsisItem(repairedParsed[index] || {}, chapterNumber))
+                    .filter((item) => item.synopsis)
+            );
 
-            synopsisItems = this.normalizeChapterSynopsisSequence([...synopsisItems, ...repairedAligned], targetCount);
+            synopsisItems = this.normalizeSynopsisGeneratedItems(
+                project,
+                this.normalizeChapterSynopsisSequence([...synopsisItems, ...repairedAligned], targetCount)
+            );
             missingNumbers = this.getMissingChapterNumbers(synopsisItems, targetCount);
         }
 
@@ -520,7 +535,7 @@
             throw new Error(`绔犺妭缁嗙翰鏁伴噺涓嶈冻锛氳姹?${targetCount} 绔狅紝缂哄皯 ${missingNumbers.map((num) => `绗?{num}绔燻).join("銆?)}銆俙);
         }
 
-        return synopsisItems;
+        return this.normalizeSynopsisGeneratedItems(project, synopsisItems);
     }
 
     async generateChapterOutlinesBatch({ project, volume, volumeNumber, startChapter, endChapter, existingChapters }) {
@@ -4067,10 +4082,255 @@
         return output;
     }
 
+    buildSynopsisKnownConcreteNameSet(project) {
+        const synopsisData = this.restoreSynopsisMainCharacters(project);
+        return new Set(
+            [
+                ...Object.keys(synopsisData.locked_character_names || {}),
+                ...Object.values(synopsisData.main_characters || {}),
+                ...(project?.outline?.characters || []).map((character) => String(character?.name || "").trim())
+            ]
+                .map((name) => String(name || "").trim())
+                .filter(Boolean)
+        );
+    }
+
+    getSynopsisFormalAliasPattern() {
+        return /(?:嫡福晋|侧福晋|福晋|王妃|王爷|亲王|郡王|皇后|太后|皇帝|皇上|陛下|殿下|太子妃|太子|世子妃|世子|贵妃|妃嫔|贵人|答应|常在|公主|郡主|县主|娘娘|圣女|圣子|魔尊|帝君|君上|尊上|宗主|掌门|师尊|师父|师母|师兄|师姐|师弟|师妹|家主|族长|少主|府主|厂长|主任|科长|处长|总工|总工程师|军代表|连长|营长|队长|老板|经理|医生|老师|秘书)$/u;
+    }
+
+    getSynopsisFormalAliasFragmentPattern() {
+        return /[\u4e00-\u9fa5]{0,6}(?:嫡福晋|侧福晋|福晋|王妃|王爷|亲王|郡王|皇后|太后|皇帝|皇上|陛下|殿下|太子妃|太子|世子妃|世子|贵妃|妃嫔|贵人|答应|常在|公主|郡主|县主|娘娘|圣女|圣子|魔尊|帝君|君上|尊上|宗主|掌门|师尊|师父|师母|师兄|师姐|师弟|师妹|家主|族长|少主|府主|厂长|主任|科长|处长|总工|总工程师|军代表|连长|营长|队长|老板|经理|医生|老师|秘书)/gu;
+    }
+
+    getSynopsisBlockedAliasTerms() {
+        return new Set([
+            "角色", "人物", "主角", "配角", "龙套", "路人", "众人", "某人", "那人", "这人", "那位", "这位",
+            "男人", "女人", "少年", "少女", "姐姐", "妹妹", "哥哥", "弟弟", "母亲", "父亲", "娘", "爹",
+            "娘亲", "爹爹", "夫人", "老爷", "小姐", "少爷", "夫君", "相公", "娘子", "嫂子", "舅妈", "舅舅",
+            "婶子", "伯母", "伯父", "姑妈", "姑父", "姨妈", "姨父", "师门", "同门", "对手", "敌人"
+        ]);
+    }
+
+    isUsableSynopsisStrictAlias(project, alias, realName, { requireFormal = false } = {}) {
+        const cleanAlias = this.normalizeOutlineCharacterLabel(alias);
+        const cleanName = String(realName || "").trim();
+        if (!cleanAlias || !cleanName || cleanAlias === cleanName) {
+            return false;
+        }
+        if (!/^[\u4e00-\u9fa5]{2,12}$/u.test(cleanAlias)) {
+            return false;
+        }
+        if (this.containsObfuscatedText(cleanAlias) || this.isLikelyActionLikeCharacterCandidate(cleanAlias)) {
+            return false;
+        }
+        if (this.getSynopsisBlockedAliasTerms().has(cleanAlias)) {
+            return false;
+        }
+        if (this.buildSynopsisAliasToRoleMap()[cleanAlias]) {
+            return false;
+        }
+        if (this.buildSynopsisKnownConcreteNameSet(project).has(cleanAlias) && cleanAlias !== cleanName) {
+            return false;
+        }
+        if (requireFormal) {
+            return this.matchesGenericRolePattern(cleanAlias)
+                || this.isPseudoConcreteCharacterAlias(cleanAlias)
+                || this.getSynopsisFormalAliasPattern().test(cleanAlias);
+        }
+        return true;
+    }
+
+    extractSynopsisFormalAliases(project, realName, text = "") {
+        const content = String(text || "").trim();
+        if (!content) {
+            return [];
+        }
+
+        const aliases = new Set();
+        const addAlias = (alias) => {
+            const cleanAlias = this.normalizeOutlineCharacterLabel(alias);
+            if (this.isUsableSynopsisStrictAlias(project, cleanAlias, realName, { requireFormal: true })) {
+                aliases.add(cleanAlias);
+            }
+        };
+
+        Utils.ensureArrayFromText(content).forEach(addAlias);
+        (content.match(/[\u4e00-\u9fa5]{2,12}/gu) || []).forEach(addAlias);
+        (content.match(this.getSynopsisFormalAliasFragmentPattern()) || []).forEach(addAlias);
+        (content.match(/(?:嫡福晋|侧福晋|福晋|王妃|王爷|亲王|郡王|皇后|太后|皇帝|皇上|陛下|殿下|太子妃|太子|世子妃|世子|贵妃|妃嫔|贵人|答应|常在|公主|郡主|县主|娘娘|圣女|圣子|魔尊|帝君|君上|尊上|宗主|掌门|师尊|师父|师母|师兄|师姐|师弟|师妹|家主|族长|少主|府主|厂长|主任|科长|处长|总工|总工程师|军代表|连长|营长|队长|老板|经理|医生|老师|秘书)/gu) || []).forEach(addAlias);
+
+        return Array.from(aliases).sort((left, right) => right.length - left.length);
+    }
+
+    buildSynopsisStrictRealNameMapping(project) {
+        const synopsisData = this.restoreSynopsisMainCharacters(project);
+        const aliasOwners = new Map();
+        const conflictAliases = new Set();
+        const characters = new Map();
+        const ensureCharacter = (name) => {
+            const cleanName = String(name || "").trim();
+            if (!this.isTrustedSynopsisConcreteName(project, cleanName)) {
+                return null;
+            }
+            if (!characters.has(cleanName)) {
+                characters.set(cleanName, {
+                    name: cleanName,
+                    explicitAliases: new Set(),
+                    formalSources: new Set()
+                });
+            }
+            return characters.get(cleanName);
+        };
+        const registerAliasOwner = (alias, realName) => {
+            const cleanAlias = this.normalizeOutlineCharacterLabel(alias);
+            const cleanName = String(realName || "").trim();
+            if (!cleanAlias || !cleanName || cleanAlias === cleanName || conflictAliases.has(cleanAlias)) {
+                return;
+            }
+            const existingOwner = aliasOwners.get(cleanAlias);
+            if (existingOwner && existingOwner !== cleanName) {
+                aliasOwners.delete(cleanAlias);
+                conflictAliases.add(cleanAlias);
+                return;
+            }
+            aliasOwners.set(cleanAlias, cleanName);
+        };
+
+        Object.entries(synopsisData.locked_character_names || {}).forEach(([name, info]) => {
+            const entry = ensureCharacter(name);
+            if (!entry) {
+                return;
+            }
+            this.sanitizeSynopsisNameAliases(
+                project,
+                name,
+                [
+                    ...this.buildSynopsisNameAliases(name),
+                    ...Utils.ensureArrayFromText(info?.aliases || [])
+                ]
+            ).forEach((alias) => entry.explicitAliases.add(alias));
+            if (info?.identity) {
+                entry.formalSources.add(String(info.identity || "").trim());
+            }
+        });
+
+        Object.values(synopsisData.main_characters || {}).forEach((name) => {
+            const entry = ensureCharacter(name);
+            if (!entry) {
+                return;
+            }
+            this.buildSynopsisNameAliases(name).forEach((alias) => entry.explicitAliases.add(alias));
+        });
+
+        (project?.outline?.characters || []).forEach((character) => {
+            const name = this.normalizeOutlineCharacterLabel(character?.name || "");
+            const entry = ensureCharacter(name);
+            if (!entry) {
+                return;
+            }
+            this.buildSynopsisNameAliases(name).forEach((alias) => entry.explicitAliases.add(alias));
+            Utils.ensureArrayFromText(character?.aliases || character?.["别名"] || "").forEach((alias) => entry.explicitAliases.add(alias));
+            [
+                character?.identity,
+                character?.["身份"],
+                character?.role,
+                character?.["标签"]
+            ].forEach((value) => {
+                if (value) {
+                    entry.formalSources.add(String(value || "").trim());
+                }
+            });
+        });
+
+        characters.forEach((entry) => {
+            entry.explicitAliases.forEach((alias) => {
+                if (this.isUsableSynopsisStrictAlias(project, alias, entry.name)) {
+                    registerAliasOwner(alias, entry.name);
+                }
+            });
+            entry.formalSources.forEach((text) => {
+                this.extractSynopsisFormalAliases(project, entry.name, text).forEach((alias) => registerAliasOwner(alias, entry.name));
+            });
+        });
+
+        const strictMapping = {};
+        const addMapping = (alias, realName) => {
+            const cleanAlias = this.normalizeOutlineCharacterLabel(alias);
+            const cleanName = String(realName || "").trim();
+            if (!cleanAlias || !cleanName || cleanAlias === cleanName) {
+                return;
+            }
+            if (strictMapping[cleanAlias] && strictMapping[cleanAlias] !== cleanName) {
+                return;
+            }
+            strictMapping[cleanAlias] = cleanName;
+        };
+
+        Object.entries(synopsisData.vague_to_name_mapping || {}).forEach(([alias, realName]) => addMapping(alias, realName));
+        Object.entries(synopsisData.main_characters || {}).forEach(([role, realName]) => {
+            addMapping(role, realName);
+            (this.getSynopsisRoleAliases()[role] || []).forEach((alias) => addMapping(alias, realName));
+        });
+        aliasOwners.forEach((realName, alias) => {
+            if (this.isSafeSynopsisMapping(project, alias, realName)) {
+                addMapping(alias, realName);
+            }
+        });
+
+        return Object.fromEntries(
+            Object.entries(strictMapping).sort((left, right) => right[0].length - left[0].length)
+        );
+    }
+
+    normalizeSynopsisGeneratedText(project, text) {
+        return this.applyKnownSynopsisMappings(text, this.buildSynopsisStrictRealNameMapping(project));
+    }
+
+    normalizeSynopsisGeneratedItems(project, items = []) {
+        return (items || []).map((item, index) => {
+            const chapterNumber = Number(item?.chapter_number || index + 1);
+            const normalizedTitle = this.normalizeSynopsisGeneratedText(project, item?.title || `第${chapterNumber}章`).trim() || `第${chapterNumber}章`;
+            const normalizedSynopsis = this.normalizeSynopsisGeneratedText(project, item?.synopsis || item?.key_event || "").trim();
+            return this.buildNormalizedSynopsisItem(
+                {
+                    ...item,
+                    title: normalizedTitle,
+                    synopsis: normalizedSynopsis,
+                    key_event: normalizedSynopsis
+                },
+                chapterNumber
+            );
+        });
+    }
+
     collectPendingSynopsisTerms(text, project) {
         const synopsisData = this.restoreSynopsisMainCharacters(project);
         const roleAliases = this.getSynopsisRoleAliases();
         const knownMappings = synopsisData.vague_to_name_mapping || {};
+        const pending = new Set();
+
+        Object.values(roleAliases).forEach((aliases) => {
+            aliases.forEach((alias) => {
+                if (String(text || "").includes(alias) && !knownMappings[alias]) {
+                    pending.add(alias);
+                }
+            });
+        });
+
+        Object.keys(synopsisData.vague_supporting_roles || {}).forEach((term) => {
+            if (String(text || "").includes(term) && !knownMappings[term]) {
+                pending.add(term);
+            }
+        });
+
+        return Array.from(pending).sort((left, right) => right.length - left.length);
+    }
+
+    collectPendingSynopsisTerms(text, project) {
+        const synopsisData = this.restoreSynopsisMainCharacters(project);
+        const roleAliases = this.getSynopsisRoleAliases();
+        const knownMappings = this.buildSynopsisStrictRealNameMapping(project);
         const pending = new Set();
 
         Object.values(roleAliases).forEach((aliases) => {
@@ -4194,6 +4454,72 @@
             mappingLines.join("\n"),
             "",
             "鈿狅笍 缁濆绂佹缁х画浣跨敤鏄犲皠琛ㄤ腑鐨勬ā绯婄О鍛硷紝蹇呴』鍐欏搴旂殑鍏蜂綋鍚嶅瓧锛?
+        ].join("\n");
+    }
+
+    buildSynopsisLockedNameTable(project) {
+        const synopsisData = this.restoreSynopsisMainCharacters(project);
+        const strictMapping = this.buildSynopsisStrictRealNameMapping(project);
+        const protagonistLines = Object.entries(synopsisData.main_characters || {})
+            .filter(([, name]) => String(name || "").trim())
+            .map(([role, name]) => `【${role}】${name}`);
+        const supportingLines = Object.entries(synopsisData.locked_character_names || {})
+            .filter(([, info]) => info?.type !== "主角")
+            .slice(0, 30)
+            .map(([name]) => name);
+        const aliasFallbackLines = Object.entries(strictMapping)
+            .filter(([alias, realName]) =>
+                alias
+                && realName
+                && alias !== realName
+                && !this.buildSynopsisAliasToRoleMap()[alias]
+            )
+            .slice(0, 20)
+            .map(([alias, realName]) => `【${alias}】必须写成：${realName}`);
+
+        if (!protagonistLines.length && !supportingLines.length) {
+            return "";
+        }
+
+        return [
+            "【🔒🔒🔒 角色名字锁定表 - 已锁定的名字绝对禁止修改！🔒🔒🔒】",
+            "",
+            "一、主角名字（最高优先级 - 绝对不可修改）：",
+            protagonistLines.length ? protagonistLines.join("\n") : "（暂无主角设定）",
+            "",
+            "二、配角名字（已出场配角 - 必须沿用原名）：",
+            supportingLines.length ? supportingLines.join("、") : "（暂无配角）",
+            "",
+            aliasFallbackLines.length ? "三、已知别名 / 简称 / 身份称呼回写表（后续细纲只能用真名）：" : "",
+            aliasFallbackLines.length ? aliasFallbackLines.join("\n") : "",
+            aliasFallbackLines.length ? "" : "",
+            "【强制性规则】：",
+            "1. 以上所有名字均已锁定，AI 只能使用这些完整真名，不能做任何修改。",
+            "2. 禁止使用任何别名、简称、小名、封号、身份称呼、关系称呼、职位称呼代替真名。",
+            "3. 同一角色一旦出现过真名，后续所有卷、所有章都不允许退回成别名或称呼。",
+            "4. 新角色可以起名，但一旦定名就必须全程沿用，不能后面再换成别的写法。",
+            "5. 如果前文已经存在别名映射，生成时必须把这些写法统一回写成真名，而不是继续沿用别名。",
+            "",
+            "【违反锁定表的后果】：生成的章节将被视为错误，需要重新生成！"
+        ].join("\n");
+    }
+
+    buildSynopsisMappingHint(project) {
+        const mappingLines = Object.entries(this.buildSynopsisStrictRealNameMapping(project) || {})
+            .filter(([, specificName]) => String(specificName || "").trim())
+            .slice(0, 24)
+            .map(([alias, realName]) => `  - "${alias}" -> ${realName}`);
+
+        if (!mappingLines.length) {
+            return "";
+        }
+
+        return [
+            "【所有别名 / 简称 / 称呼 -> 真名映射表（必须遵守）】",
+            "以下写法都不能继续留在细纲里，必须统一改回真实姓名：",
+            mappingLines.join("\n"),
+            "",
+            "⚠️ 绝对禁止继续使用这些别名或称呼，必须写对应真名。"
         ].join("\n");
     }
 
@@ -4850,6 +5176,7 @@
             "浣犳槸涓栫晫涔︽瀯寤轰笓瀹垛€滈粯榛樷€濓紝涓€浣嶈祫娣辩綉鏂囩瓥鍒掔紪杈戙€傝鐢熸垚绔犺妭澶х翰銆?,
             "",
             lockedNamesTable,
+            "【额外铁律】只要某个角色已经有真名，细纲里就只能写真名。任何别名、简称、小名、身份称呼、关系称呼、封号、职位称呼，都必须改回真名。",
             "",
             "銆愨槄鈽呪槄 鏈€閲嶈鐨勮鍒?鈽呪槄鈽呫€?,
             `1. 浣犲繀椤讳竴娆℃€ц緭鍑恒€愭伆濂?{chapterCount}绔犮€?浠庣1绔犲埌绗?{chapterCount}绔?涓嶈兘澶氫篃涓嶈兘灏戯紒`,
@@ -5348,6 +5675,10 @@
     normalizeSynopsisReferenceText(project, text) {
         const synopsisData = this.restoreSynopsisMainCharacters(project);
         return this.applyKnownSynopsisMappings(text, synopsisData.vague_to_name_mapping || {});
+    }
+
+    normalizeSynopsisReferenceText(project, text) {
+        return this.applyKnownSynopsisMappings(text, this.buildSynopsisStrictRealNameMapping(project));
     }
 
     mergeSynopsisStateFromGeneratedChapters(project, chapters, volumeNumber, inputs = {}) {
@@ -7328,6 +7659,7 @@
 
         const synopsisData = this.restoreSynopsisMainCharacters(project) || {};
         Object.entries(synopsisData.vague_to_name_mapping || {}).forEach(([alias, realName]) => addAlias(alias, realName));
+        Object.entries(this.buildSynopsisStrictRealNameMapping(project) || {}).forEach(([alias, realName]) => addAlias(alias, realName));
         Object.entries(synopsisData.main_characters || {}).forEach(([role, realName]) => {
             addAlias(role, realName);
             (this.getSynopsisRoleAliases()[role] || []).forEach((alias) => addAlias(alias, realName));
