@@ -35,85 +35,98 @@
         }
 
         return [
-            "銆愰鏉愮害鏉熴€?,
-            genreInfo.description ? `棰樻潗璇存槑锛?{genreInfo.description}` : "",
-            `1. 涓ユ牸闄愬畾涓?{genre}棰樻潗${subgenre ? `锛屽叿浣撳瓙棰樻潗涓?{subgenre}` : ""}銆俙,
-            `2. 鍏佽鐨勫厓绱狅細${(genreInfo.allowed || []).join("锛?) || "鏃?}`,
-            `3. 绂佹鐨勫厓绱狅細${(genreInfo.forbidden || []).join("锛?) || "鏃?}`,
-            `4. 鍒涗綔椋庢牸搴旂鍚?{genre}棰樻潗鐗瑰緛锛岃瑷€椋庢牸瑕佷笌棰樻潗鍖归厤銆俙
+            "【题材约束】",
+            genreInfo.description ? `题材说明：${genreInfo.description}` : "",
+            `1. 严格限定为${genre}题材${subgenre ? `，具体子题材为${subgenre}` : ""}。`,
+            `2. 允许的元素：${(genreInfo.allowed || []).join("；") || "无"}`,
+            `3. 禁止的元素：${(genreInfo.forbidden || []).join("；") || "无"}`,
+            `4. 创作风格应符合${genre}题材特征，语言风格要与题材匹配。`
         ].filter(Boolean).join("\n");
     }
 
     async generateStoryIdeas({
         keyword,
+        theme,
+        genre,
+        subgenre,
         extraNote,
         marketTrendSummary,
         marketTrendItems,
         versionCount = 4
     }) {
         const safeCount = Math.min(5, Math.max(3, Number(versionCount || 4) || 4));
+        const title = "";
+        const concept = "";
+        const genreConstraint = this.buildGenreConstraint(genre, subgenre || genre);
         const systemPrompt = [
-            "你是资深网文选题策划编辑，负责输出可连载、可商业化、差异明显的小说脑洞方案。",
-            "这是独立的选题发散任务，不是续写当前项目。",
+            genreConstraint,
+            "你是专业的网络小说选题策划师，擅长为男频、女频、双向受众作品设计可长篇展开的商业化脑洞。",
+            "现在请围绕用户给出的主题关键词，生成多个差异明显的小说脑洞版本，供作者在正式写细纲前筛选。",
             "",
-            "硬性要求：",
-            `1. 必须输出 ${safeCount} 个版本，格式只能是 JSON 数组。`,
-            "2. 每个版本都要明显不同，不能只是换皮。",
-            "3. 差异至少来自主角身份、核心能力、冲突发动机、情绪方向、世界规则中的三个以上。",
-            "4. 不要沿用当前项目已经存在的人名、旧剧情、旧设定、旧世界观，除非用户在补充要求里明确要求保留。",
-            "5. 不要吃当前项目题材、子题材、主题、故事概念，只围绕关键词、补充要求和榜单趋势发散。",
-            "6. 不写正文，不写细纲，不写章节列表，只做选题方案。",
-            "7. 每个方案都要能支撑长篇连载，前30章有爆点，中后期有升级空间。",
+            "【硬性要求】",
+            `1. 你必须输出 ${safeCount} 个版本，格式必须是 JSON 数组。`,
+            "2. 每个版本必须是明显不同的书，不允许只是换皮。",
+            "3. 差异至少来自：主角身份、金手指/特殊能力、核心冲突、故事气质、感情线模式、世界规则中的三个以上。",
+            "4. 不能只偏女频，必须根据关键词自动判断适合的赛道，可以出现男频、女频或双向受众版本。",
+            "5. 每个版本都要具备长篇潜力，前30章有爆点，中后期有升级空间。",
+            "6. 不要写正文，不要写细纲，不要写章节列表。",
+            "7. 表达要具体可写，少空话，少行业黑话。",
             "",
-            "每个版本必须包含这些字段：",
-            "id: 唯一ID，例如 idea_1",
-            "title: 方案标题",
+            "【每个版本必须包含这些字段】",
+            "id: 唯一ID，可用 idea_1 这种格式",
+            "title: 标题，格式必须是【主题词+赛道标签+核心卖点】",
             "positioning: 题材定位与读者方向",
             "hook: 一句话故事钩子",
             "core_setup: 核心设定",
             "conflict_engine: 核心冲突与剧情发动机",
-            "selling_points: 爽点或情绪点设计",
+            "selling_points: 爽点/情绪点设计",
             "world_highlights: 适配世界观与前30章名场面",
             "longline: 长线展开与升级空间",
             "relationship_notes: 人物关系与感情线建议",
-            "seed_summary: 150到250字的浓缩版故事方案",
+            "seed_summary: 一段150到250字的浓缩版故事方案，可直接给作者继续做后续细化",
             "",
-            "输出要求：",
-            "1. 只能返回 JSON 数组，不要返回 markdown、说明文字或代码块。",
-            "2. 全部字段都用中文填写，内容具体可写。",
-            "3. seed_summary 要像创作输入，不要写成分析报告口吻。"
+            "【输出要求】",
+            "1. 只能返回 JSON 数组，不要输出 markdown、说明文字或代码块。",
+            "2. 每个字段都必须是中文字符串，内容充实。",
+            "3. seed_summary 必须像创作输入文本，不要写成分析报告口吻。"
         ].filter(Boolean).join("\n");
 
-        const marketSamples = Array.isArray(marketTrendItems) && marketTrendItems.length
-            ? marketTrendItems.slice(0, 12).map((item, index) => {
-                const safeTitle = this.containsObfuscatedText(item.title || "") ? "书名已混淆" : (item.title || "未命名");
-                const cleanedIntro = String(item.analysisIntro || item.intro || "").trim();
-                const safeIntro = this.containsObfuscatedText(cleanedIntro) ? "" : this.limitContext(cleanedIntro, 100);
-                const tags = Array.isArray(item.tags)
-                    ? item.tags.filter((tag) => !this.containsObfuscatedText(tag || "")).join("、")
-                    : "";
-                return [
-                    `${index + 1}. ${safeTitle} / ${item.author || "未知作者"}`,
-                    item.category ? `分类：${item.category}` : "",
-                    tags ? `标签：${tags}` : "",
-                    safeIntro ? `简介：${safeIntro}` : "",
-                    item.readingCount ? `在读：${item.readingCount}` : ""
-                ].filter(Boolean).join(" | ");
-            }).join("\n")
-            : "";
-
-        const userPrompt = [
+        let userPrompt = [
             `主题关键词：${keyword || "未提供"}`,
+            `小说标题参考：${title || "未命名小说"}`,
+            `核心主题参考：${theme || "未指定"}`,
+            `当前题材参考：${subgenre || genre || "未指定"}`,
+            concept ? `已有故事概念参考：${this.limitContext(concept, 600)}` : "",
             marketTrendSummary ? `当前番茄榜摘要：\n${this.limitContext(marketTrendSummary, 2200)}` : "",
-            marketSamples ? `榜单样本：\n${marketSamples}` : "",
+            Array.isArray(marketTrendItems) && marketTrendItems.length
+                ? `榜单样本：\n${marketTrendItems.slice(0, 12).map((item, index) => {
+                    const safeTitle = this.containsObfuscatedText(item.title || "") ? "书名已混淆" : (item.title || "未命名");
+                    const cleanedIntro = String(item.analysisIntro || item.intro || "").trim();
+                    const safeIntro = this.containsObfuscatedText(cleanedIntro) ? "" : this.limitContext(cleanedIntro, 100);
+                    const tags = Array.isArray(item.tags)
+                        ? item.tags.filter((tag) => !this.containsObfuscatedText(tag || "")).join("、")
+                        : "";
+                    return [
+                        `${index + 1}. ${safeTitle} / ${item.author || "未知作者"}`,
+                        item.category ? `分类：${item.category}` : "",
+                        tags ? `标签：${tags}` : "",
+                        safeIntro ? `简介：${safeIntro}` : "",
+                        item.readingCount ? `在读：${item.readingCount}` : ""
+                    ].filter(Boolean).join(" | ");
+                }).join("\n")}`
+                : "",
             extraNote ? `用户补充要求：${this.limitContext(extraNote, 800)}` : "",
             "",
             "请围绕这个关键词输出多个差异明显的故事脑洞版本。",
-            "不要吸收当前项目已经写过的剧情摘要，不要沿用现有人名、旧设定、旧世界观。",
-            "把这次当成全新的选题发散，只允许参考关键词、补充要求和榜单趋势。",
+            "至少覆盖两种不同创作方向，例如：不同赛道、不同故事气质、不同冲突发动机。",
             "每个版本都必须可写、可连载、可持续制造爽点。",
-            marketTrendSummary ? "如果给了榜单摘要，请提炼高位作品的共同卖点与缺口，做出对标但不照抄的方案。" : ""
+            marketTrendSummary ? "如果给了榜单摘要，请提炼当前高位作品的共同卖点和缺口，做出对标但不照抄的方案。" : ""
         ].filter(Boolean).join("\n");
+        userPrompt = userPrompt
+            .split("\n")
+            .filter((line, index) => index !== 1 && !line.includes("已有故事概念参考："))
+            .join("\n");
+        userPrompt += "\n不要继承当前项目已有的人名、剧情摘要、世界观设定，把这次当成全新的选题发散。";
 
         const parsed = await this.requestJSONArray(systemPrompt, userPrompt, {
             temperature: 0.9,
@@ -122,7 +135,7 @@
 
         return parsed.slice(0, safeCount).map((item, index) => ({
             id: item.id || `idea_${index + 1}`,
-            title: item.title || `【${keyword || "主题"}】方案 ${index + 1}`,
+            title: item.title || `【${keyword || "主题"}+方案${index + 1}】`,
             positioning: item.positioning || "",
             hook: item.hook || "",
             core_setup: item.core_setup || "",
@@ -144,7 +157,7 @@
         if (privateUseChars.length >= 2) {
             return true;
         }
-        const weirdGlyphs = text.match(/[類€-羁縘/g) || [];
+        const weirdGlyphs = text.match(/[-]/g) || [];
         return weirdGlyphs.length >= 2;
     }
 
@@ -152,33 +165,33 @@
         const genreConstraint = this.buildGenreConstraint(genre, subgenre || genre);
         const systemPrompt = [
             genreConstraint,
-            "浣犳槸涓栫晫涔︽瀯寤轰笓瀹垛€滈粯榛樷€濓紝涓€浣嶈祫娣辩綉鏂囩瓥鍒掔紪杈戯紝鎿呴暱鏋勫缓瀹忓ぇ涓斿瘜鏈夊垱鎰忕殑涓栫晫瑙傝瀹氥€?,
-            "璇锋牴鎹敤鎴锋彁渚涚殑涓栫晫瑙傚厓绱犲拰鏁呬簨姒傚康锛岀敓鎴愪竴娈靛畬鏁寸殑涓栫晫瑙傝瀹氭弿杩般€?,
+            "你是世界书构建专家“默默”，一位资深网文策划编辑，擅长构建宏大且富有创意的世界观设定。",
+            "请根据用户提供的世界观元素和故事概念，生成一段完整的世界观设定描述。",
             "",
-            "銆愯緭鍑烘牸寮忚姹傘€?,
-            "杈撳嚭涓€娈佃繛璐殑涓栫晫瑙傛弿杩版枃瀛楋紙200-350瀛楋級锛屽寘鍚互涓嬭绱狅細",
-            "1. 涓栫晫鑳屾櫙璁惧畾锛堟椂浠ｃ€佸湴鐐广€佸熀鏈鍒欙級",
-            "2. 鏍稿績鑳介噺/淇偧浣撶郴",
-            "3. 涓昏鍔垮姏鎴栫粍缁?,
-            "4. 鐗规畩璁惧畾锛堢郴缁熴€侀噾鎵嬫寚绛夛級",
-            "5. 鏍稿績鍐茬獊鎴栫煕鐩?,
+            "【输出格式要求】",
+            "输出一段连贯的世界观描述文字（200-350字），包含以下要素：",
+            "1. 世界背景设定（时代、地点、基本规则）",
+            "2. 核心能量/修炼体系",
+            "3. 主要势力或组织",
+            "4. 特殊设定（系统、金手指等）",
+            "5. 核心冲突或矛盾",
             "",
-            "銆愬唴瀹归鏍奸搧寰嬨€?,
-            "- 绠€鍗曟槗鎳傘€佺洿鐧姐€佸彛璇寲",
-            "- 鍍忚鏁呬簨涓€鏍锋弿杩帮紝涓嶈鐢ㄨ鏂囧紡璇█",
-            "- 绂佹浣跨敤鏅︽订銆佹娊璞＄殑璇嶆眹",
-            "- 鐩存帴杈撳嚭涓栫晫瑙傛弿杩帮紝涓嶈浠讳綍鏍囬銆佹爣璁版垨棰濆璇存槑"
+            "【内容风格铁律】",
+            "- 简单易懂、直白、口语化",
+            "- 像讲故事一样描述，不要用论文式语言",
+            "- 禁止使用晦涩、抽象的词汇",
+            "- 直接输出世界观描述，不要任何标题、标记或额外说明"
         ].filter(Boolean).join("\n");
 
         const userPrompt = [
-            `灏忚鏍囬锛氥€?{title || "鏈懡鍚嶅皬璇?}銆媊,
-            `棰樻潗锛?{subgenre || genre || "鏈寚瀹?}`,
-            `鏍稿績涓婚锛?{theme || "鏈寚瀹?}`,
+            `小说标题：《${title || "未命名小说"}》`,
+            `题材：${subgenre || genre || "未指定"}`,
+            `核心主题：${theme || "未指定"}`,
             "",
-            "銆愭晠浜嬫蹇点€?,
-            concept || "鏆傛棤",
+            "【故事概念】",
+            concept || "暂无",
             "",
-            "璇锋牴鎹互涓婁俊鎭紝鐢熸垚涓€娈靛畬鏁寸殑涓栫晫瑙傝瀹氭弿杩帮紙200-350瀛楋級锛岃姹傚唴瀹瑰厖瀹炪€佸眰娆′赴瀵屻€侀€昏緫娓呮櫚銆?
+            "请根据以上信息，生成一段完整的世界观设定描述（200-350字），要求内容充实、层次丰富、逻辑清晰。"
         ].filter(Boolean).join("\n");
 
         return (await this.api.callLLM(userPrompt, systemPrompt, {
@@ -192,59 +205,59 @@
         const innovationPrompt = this.buildVolumeInnovationPrompt(project, concept, worldbuilding);
         const systemPrompt = [
             genreConstraint,
-            `浣犳槸涓栫晫涔︽瀯寤轰笓瀹垛€滈粯榛樷€濓紝涓€浣嶈祫娣辩綉鏂囩瓥鍒掔紪杈戯紝鎿呴暱鏋勫缓瀹忓ぇ涓斿瘜鏈夊垱鎰忕殑鏁呬簨鏋舵瀯銆俙,
-            `璇锋牴鎹敤鎴锋彁渚涚殑涓栫晫瑙傚厓绱犲拰鏁呬簨姒傚康锛岃鍒掍竴閮?{volumeCount}鍗风殑缃戠粶灏忚鐨勫嵎姒傝銆俙,
+            `你是世界书构建专家“默默”，一位资深网文策划编辑，擅长构建宏大且富有创意的故事架构。`,
+            `请根据用户提供的世界观元素和故事概念，规划一部${volumeCount}卷的网络小说的卷概要。`,
             "",
-            "銆愬唴瀹归鏍奸搧寰嬨€?,
-            "浣犵殑鎵€鏈夎緭鍑洪兘蹇呴』绠€鍗曟槗鎳傘€佺洿鐧姐€佸彛璇寲銆傝鍍忎竴涓紭绉€鐨勬晠浜嬪憳瀵规湅鍙嬭鏁呬簨涓€鏍凤紝鑰屼笉鏄竴涓鑰呭湪鍐欒鏂囥€傜粷瀵圭姝娇鐢ㄤ换浣曟櫐娑┿€佹娊璞°€佹嫍鍙ｆ垨鈥滈珮姒傚康鈥濈殑璇嶆眹鍜屽彞瀛愩€?,
+            "【内容风格铁律】",
+            "你的所有输出都必须简单易懂、直白、口语化。要像一个优秀的故事员对朋友讲故事一样，而不是一个学者在写论文。绝对禁止使用任何晦涩、抽象、拗口或“高概念”的词汇和句子。",
             "",
-            "銆愬垱鎰忚璁″師鍒欍€?,
-            "1. 浣跨敤鍒嗘敮鑺傜偣鎬濈淮锛氭瘡鍗烽兘鏄竴涓叧閿殑鈥滄晠浜嬭妭鐐光€濓紝浠ｈ〃鏁呬簨涓殑閲嶈杞姌鐐?,
-            "2. 璁剧疆鏄庣‘鐨勮鑹茬洰鏍囧拰鍔ㄦ満锛氭棤璁哄墽鎯呭浣曞彂灞曪紝涓昏閮芥湁娓呮櫚鐨勯暱鏈熺洰鏍?,
-            "3. 鍒╃敤涓栫晫璁惧畾浣滀负鏁呬簨妗嗘灦锛氶噸瑕佸湴鐐广€佷簨浠跺拰娼滃湪鍐茬獊瑕佽疮绌垮缁?,
-            "4. 璁捐琚姩鍝嶅簲鑰岄潪涓诲鍙欎簨锛氳璇昏€呮劅瑙変粬浠湪璺熼殢鏁呬簨锛屽悓鏃舵晠浜嬭嚜鐒跺紩瀵?,
+            "【创意设计原则】",
+            "1. 使用分支节点思维：每卷都是一个关键的“故事节点”，代表故事中的重要转折点",
+            "2. 设置明确的角色目标和动机：无论剧情如何发展，主角都有清晰的长期目标",
+            "3. 利用世界设定作为故事框架：重要地点、事件和潜在冲突要贯穿始终",
+            "4. 设计被动响应而非主导叙事：让读者感觉他们在跟随故事，同时故事自然引导",
             "",
-            "銆愬鍒嗘敮鍓ф儏璁捐銆?,
-            "- 姣忓嵎蹇呴』鍖呭惈涓荤嚎鍓ф儏鍜岃嚦灏戜竴鏉℃綔鍦ㄦ敮绾?,
-            "- 涓荤嚎鏄帹鍔ㄦ晠浜嬪墠杩涚殑鏍稿績浜嬩欢",
-            "- 鏀嚎鏄赴瀵屼笘鐣岃銆佹繁鍖栦汉鐗╃殑杈呭姪鍓ф儏",
-            "- 鍚勫嵎涔嬮棿瑕佹湁鈥滈挬瀛愨€濃€斺€斿墠涓€鍗峰煁涓嬬殑浼忕瑪鍦ㄥ悗缁嵎涓彮鏅?,
+            "【多分支剧情设计】",
+            "- 每卷必须包含主线剧情和至少一条潜在支线",
+            "- 主线是推动故事前进的核心事件",
+            "- 支线是丰富世界观、深化人物的辅助剧情",
+            "- 各卷之间要有“钩子”——前一卷埋下的伏笔在后续卷中揭晓",
             "",
-            "銆愭瘡鍗风粨灞€鎸囦护锛堝繀椤讳弗鏍兼墽琛岋級銆?,
-            `1. 闈炴渶缁堝嵎锛堢1鍗峰埌绗?{Math.max(1, volumeCount - 1)}鍗凤級锛氭瘡鍗风粨灏惧繀椤昏缃己鎮康閽╁瓙锛屽紩鍑轰笅涓€鍗风殑鏂板啿绐乣,
-            "- 鍗锋湯蹇呴』鍑虹幇锛氭柊鐨勬晫浜?鏂扮殑绉樺瘑/鏂扮殑鐩爣/鏂扮殑鍦扮偣/鏂扮殑浜虹墿",
-            "- 绂佹鏅€氱粨灏撅紝绂佹鈥滄晠浜嬪憡涓€娈佃惤鈥濈殑鎰熻",
-            "- 蹇呴』璁╄鑰呭己鐑堟湡寰呬笅涓€鍗风殑鍐呭",
-            `2. 鏈€缁堝嵎锛堢${volumeCount}鍗凤級锛氬繀椤绘槸鐪熸鐨勫ぇ缁撳眬`,
-            "- 瑙ｅ喅鎵€鏈変富瑕佹偓蹇靛拰浼忕瑪",
-            "- 涓昏瀹屾垚鏈€缁堢洰鏍囨垨鑾峰緱鏈€缁堟垚闀?,
-            "- 缁欎簣璇昏€呮弧瓒虫劅鍜屽畬鏁存劅锛屽彲浠ユ湁寮€鏀惧紡浣欓煹锛屼絾涓嶈兘鏄€滃緟缁€?,
+            "【每卷结局指令（必须严格执行）】",
+            `1. 非最终卷（第1卷到第${Math.max(1, volumeCount - 1)}卷）：每卷结尾必须设置强悬念钩子，引出下一卷的新冲突`,
+            "- 卷末必须出现：新的敌人/新的秘密/新的目标/新的地点/新的人物",
+            "- 禁止普通结尾，禁止“故事告一段落”的感觉",
+            "- 必须让读者强烈期待下一卷的内容",
+            `2. 最终卷（第${volumeCount}卷）：必须是真正的大结局`,
+            "- 解决所有主要悬念和伏笔",
+            "- 主角完成最终目标或获得最终成长",
+            "- 给予读者满足感和完整感，可以有开放式余韵，但不能是“待续”",
             "",
-            "銆愯緭鍑鸿姹傘€?,
-            "1. 杈撳嚭蹇呴』鏄?JSON 鏁扮粍锛屼笉瑕佽緭鍑轰换浣曢澶栬鏄庢垨 markdown 鏍囪",
-            "2. 姣忓嵎蹇呴』浣撶幇鐩爣銆佸洶闅俱€佽浆鎶樸€侀珮娼拰鍗锋湯閽╁瓙",
-            "3. 鍚勫嵎涔嬮棿瑕佹湁鏄庣‘鐨勫墽鎯呴€掕繘鍏崇郴锛屼綋鐜扳€滈摵鍨?鍐茬獊-楂樻疆-缂撳拰-鏂板啿绐佲€濈殑鑺傚",
-            "4. 缁濆涓嶈兘鏈夐噸澶嶇殑鍓ф儏鍏冪礌",
-            "5. 涓嶈兘鍑虹幇閫昏緫婕忔礊锛堝瑙掕壊姝昏€屽鐢熴€佽兘鍔涘拷楂樺拷浣庛€佹椂闂寸嚎娣蜂贡绛夛級"
+            "【输出要求】",
+            "1. 输出必须是 JSON 数组，不要输出任何额外说明或 markdown 标记",
+            "2. 每卷必须体现目标、困难、转折、高潮和卷末钩子",
+            "3. 各卷之间要有明确的剧情递进关系，体现“铺垫-冲突-高潮-缓和-新冲突”的节奏",
+            "4. 绝对不能有重复的剧情元素",
+            "5. 不能出现逻辑漏洞（如角色死而复生、能力忽高忽低、时间线混乱等）"
         ].filter(Boolean).join("\n");
 
         const userPrompt = [
-            `灏忚鏍囬锛氥€?{title || "鏈懡鍚嶅皬璇?}銆媊,
-            `棰樻潗锛?{subgenre || genre || "鏈寚瀹?}`,
-            `鏍稿績涓婚锛?{theme || "鏈寚瀹?}`,
-            `鏁呬簨姒傚康锛?{concept || "鏆傛棤"}`,
-            `璁″垝鍗锋暟锛?{volumeCount}`,
-            `姣忓嵎璁″垝绔犺妭鏁帮細${chaptersPerVolume}`,
-            `涓栫晫瑙傦細${worldbuilding || "鏆傛棤"}`,
-            innovationPrompt ? `銆愬弽濂楄矾涓庡垱鏂板缓璁€慭n${innovationPrompt}` : "",
+            `小说标题：《${title || "未命名小说"}》`,
+            `题材：${subgenre || genre || "未指定"}`,
+            `核心主题：${theme || "未指定"}`,
+            `故事概念：${concept || "暂无"}`,
+            `计划卷数：${volumeCount}`,
+            `每卷计划章节数：${chaptersPerVolume}`,
+            `世界观：${worldbuilding || "暂无"}`,
+            innovationPrompt ? `【反套路与创新建议】\n${innovationPrompt}` : "",
             "",
-            "璇疯緭鍑?JSON 鏁扮粍锛屾瘡涓璞″寘鍚細",
-            "volume_number: 鍗峰簭鍙?,
-            "title: 鍗峰悕",
-            "summary: 鏈嵎 150-250 瀛楀墽鎯呮瑕侊紝鍔″繀鍖呭惈涓荤嚎鍜岃嚦灏戜竴鏉℃敮绾匡紝骞惰鏄庝富瑙掔洰鏍囥€佸洶闅俱€佸叧閿浆鎶樸€佹垚闀挎垨鏂颁俊鎭?,
-            "cliffhanger: 鍗锋湯閽╁瓙锛屼竴鍙ヨ瘽",
+            "请输出 JSON 数组，每个对象包含：",
+            "volume_number: 卷序号",
+            "title: 卷名",
+            "summary: 本卷 150-250 字剧情概要，务必包含主线和至少一条支线，并说明主角目标、困难、关键转折、成长或新信息",
+            "cliffhanger: 卷末钩子，一句话",
             "",
-            "涓嶈杈撳嚭 JSON 涔嬪鐨勮鏄庛€?
+            "不要输出 JSON 之外的说明。"
         ].join("\n");
 
         const parsed = await this.requestJSONArray(systemPrompt, userPrompt, {
@@ -254,7 +267,7 @@
 
         return parsed.map((item, index) => ({
             volume_number: Number(item.volume_number || index + 1),
-            title: item.title || `绗?{index + 1}鍗穈,
+            title: item.title || `第${index + 1}卷`,
             summary: item.summary || "",
             cliffhanger: item.cliffhanger || ""
         }));
@@ -276,20 +289,11 @@
             genre,
             subgenre || project?.outline?.subgenre || project?.subgenre || genre
         );
-        const currentOutlineContext = this.extractCurrentVolumeOutlineContext(project, volumeNumber)?.currentOutline || "";
-        this.autoAssignSynopsisConcreteNames(
-            project,
-            `${concept || ""}\n${volumeSummary || ""}\n${existingSynopsis || ""}\n${currentOutlineContext}`,
-            volumeNumber
-        );
-        const processedConcept = this.normalizeSynopsisReferenceText(project, concept);
-        const processedVolumeSummary = this.normalizeSynopsisReferenceText(project, volumeSummary);
-        const processedExistingSynopsis = this.normalizeSynopsisReferenceText(project, existingSynopsis);
         const promptContext = this.buildDesktopSynopsisPromptContext({
             project,
-            concept: processedConcept,
-            volumeSummary: processedVolumeSummary,
-            existingSynopsis: processedExistingSynopsis,
+            concept,
+            volumeSummary,
+            existingSynopsis,
             volumeNumber,
             chapterCount
         });
@@ -305,9 +309,9 @@
             worldbuilding,
             volumeNumber,
             chapterCount,
-            concept: processedConcept,
-            volumeSummary: processedVolumeSummary,
-            existingSynopsis: processedExistingSynopsis,
+            concept,
+            volumeSummary,
+            existingSynopsis,
             ...promptContext
         });
 
@@ -316,22 +320,18 @@
             maxTokens: this.getConfiguredMaxTokens(8000)
         });
 
-        this.autoAssignSynopsisConcreteNames(project, raw, volumeNumber);
-        const parsed = this.normalizeSynopsisGeneratedItems(
-            project,
-            this.parseChapterSynopsisLines(raw, chapterCount)
-        );
+        const parsed = this.parseChapterSynopsisLines(raw, chapterCount);
         return await this.ensureChapterSynopsisCount({
             project,
             title,
-            concept: processedConcept,
+            concept,
             genre,
             subgenre,
             worldbuilding,
             volumeNumber,
             chapterCount,
-            volumeSummary: processedVolumeSummary,
-            existingSynopsis: processedExistingSynopsis,
+            volumeSummary,
+            existingSynopsis,
             systemPrompt,
             parsedSynopsis: parsed
         });
@@ -342,33 +342,33 @@
             .split(/\r?\n/)
             .map((line) => line.trim())
             .filter(Boolean)
-            .map((line) => line.replace(/^[\-鈥?]\s*/, ""))
-            .filter((line) => /绗琝s*\d+\s*绔?.test(line));
+            .map((line) => line.replace(/^[\-•*]\s*/, ""))
+            .filter((line) => /第\s*\d+\s*章/.test(line));
 
         const parsed = [];
         lines.forEach((line, index) => {
-            const match = line.match(/^绗琝s*(\d+)\s*绔燵锛?銆?\-锛?]?\s*(.+?)\s*[鈥擻-锛嶁€揮\s*(.+)$/);
+            const match = line.match(/^第\s*(\d+)\s*章[：:、.\-）)]?\s*(.+?)\s*[—\-－–]\s*(.+)$/);
             if (match) {
                 const chapterNumber = Number(match[1] || index + 1);
                 const title = String(match[2] || "").trim();
                 const synopsis = String(match[3] || "").trim();
                 parsed.push({
                     chapter_number: chapterNumber,
-                    title: title || `绗?{chapterNumber}绔燻,
+                    title: title || `第${chapterNumber}章`,
                     key_event: synopsis,
                     emotion_curve: "",
                     synopsis,
-                    line: `绗?{chapterNumber}绔狅細${title || `绗?{chapterNumber}绔燻} - ${synopsis}`
+                    line: `第${chapterNumber}章：${title || `第${chapterNumber}章`} - ${synopsis}`
                 });
                 return;
             }
 
-            const fallback = line.match(/^绗琝s*(\d+)\s*绔燵锛?銆?\-锛?]?\s*(.+)$/);
+            const fallback = line.match(/^第\s*(\d+)\s*章[：:、.\-）)]?\s*(.+)$/);
             if (fallback) {
                 const chapterNumber = Number(fallback[1] || index + 1);
                 const content = String(fallback[2] || "").trim();
-                const parts = content.split(/\s*[鈥擻-锛嶁€揮\s*/);
-                const title = String(parts.shift() || `绗?{chapterNumber}绔燻).trim();
+                const parts = content.split(/\s*[—\-－–]\s*/);
+                const title = String(parts.shift() || `第${chapterNumber}章`).trim();
                 const synopsis = String(parts.join(" - ") || content).trim();
                 parsed.push({
                     chapter_number: chapterNumber,
@@ -376,13 +376,13 @@
                     key_event: synopsis,
                     emotion_curve: "",
                     synopsis,
-                    line: `绗?{chapterNumber}绔狅細${title} - ${synopsis}`
+                    line: `第${chapterNumber}章：${title} - ${synopsis}`
                 });
             }
         });
 
         if (!parsed.length) {
-            throw new Error("AI 娌℃湁鎸夌粏绾叉牸寮忚繑鍥炲唴瀹广€?);
+            throw new Error("AI 没有按细纲格式返回内容。");
         }
 
         const targetCount = Math.max(0, Number(chapterCount || 0));
@@ -391,16 +391,16 @@
         return (targetCount ? parsed.slice(0, targetCount) : parsed).map((item, index) => ({
             ...item,
             chapter_number: Number(item.chapter_number || index + 1),
-            title: item.title || `绗?{Number(item.chapter_number || index + 1)}绔燻,
+            title: item.title || `第${Number(item.chapter_number || index + 1)}章`,
             synopsis: item.synopsis || item.key_event || "",
             key_event: item.key_event || item.synopsis || "",
-            line: item.line || `绗?{Number(item.chapter_number || index + 1)}绔狅細${item.title || `绗?{Number(item.chapter_number || index + 1)}绔燻} - ${item.synopsis || item.key_event || ""}`
+            line: item.line || `第${Number(item.chapter_number || index + 1)}章：${item.title || `第${Number(item.chapter_number || index + 1)}章`} - ${item.synopsis || item.key_event || ""}`
         }));
     }
 
     buildNormalizedSynopsisItem(item, chapterNumber) {
         const normalizedChapterNumber = Number(chapterNumber || item?.chapter_number || 1);
-        const title = String(item?.title || `绗?{normalizedChapterNumber}绔燻).trim() || `绗?{normalizedChapterNumber}绔燻;
+        const title = String(item?.title || `第${normalizedChapterNumber}章`).trim() || `第${normalizedChapterNumber}章`;
         const synopsis = String(item?.synopsis || item?.key_event || "").trim();
         return {
             ...item,
@@ -408,7 +408,7 @@
             title,
             synopsis,
             key_event: synopsis,
-            line: `绗?{normalizedChapterNumber}绔狅細${title} - ${synopsis}`
+            line: `第${normalizedChapterNumber}章：${title} - ${synopsis}`
         };
     }
 
@@ -475,10 +475,7 @@
         parsedSynopsis
     }) {
         const targetCount = Math.max(0, Number(chapterCount || 0));
-        let synopsisItems = this.normalizeSynopsisGeneratedItems(
-            project,
-            this.normalizeChapterSynopsisSequence(parsedSynopsis || [], targetCount)
-        );
+        let synopsisItems = this.normalizeChapterSynopsisSequence(parsedSynopsis || [], targetCount);
         if (!targetCount) {
             return synopsisItems;
         }
@@ -523,32 +520,20 @@
                 maxTokens: this.getConfiguredMaxTokens(6000)
             });
 
-            this.autoAssignSynopsisConcreteNames(project, repairedRaw, volumeNumber);
             const repairedParsed = this.parseChapterSynopsisLines(repairedRaw, missingNumbers.length);
-            const repairedAligned = this.normalizeSynopsisGeneratedItems(
-                project,
-                missingNumbers
-                    .map((chapterNumber, index) => this.buildNormalizedSynopsisItem(repairedParsed[index] || {}, chapterNumber))
-                    .filter((item) => item.synopsis)
-            );
+            const repairedAligned = missingNumbers
+                .map((chapterNumber, index) => this.buildNormalizedSynopsisItem(repairedParsed[index] || {}, chapterNumber))
+                .filter((item) => item.synopsis);
 
-            synopsisItems = this.normalizeSynopsisGeneratedItems(
-                project,
-                this.normalizeChapterSynopsisSequence([...synopsisItems, ...repairedAligned], targetCount)
-            );
+            synopsisItems = this.normalizeChapterSynopsisSequence([...synopsisItems, ...repairedAligned], targetCount);
             missingNumbers = this.getMissingChapterNumbers(synopsisItems, targetCount);
         }
 
         if (missingNumbers.length) {
-            throw new Error(`绔犺妭缁嗙翰鏁伴噺涓嶈冻锛氳姹?${targetCount} 绔狅紝缂哄皯 ${missingNumbers.map((num) => `绗?{num}绔燻).join("銆?)}銆俙);
+            throw new Error(`章节细纲数量不足：要求 ${targetCount} 章，缺少 ${missingNumbers.map((num) => `第${num}章`).join("、")}。`);
         }
 
-        this.autoAssignSynopsisConcreteNames(
-            project,
-            synopsisItems.map((item) => item.line || `${item.title || ""} ${item.synopsis || ""}`).join("\n"),
-            volumeNumber
-        );
-        return this.normalizeSynopsisGeneratedItems(project, synopsisItems);
+        return synopsisItems;
     }
 
     async generateChapterOutlinesBatch({ project, volume, volumeNumber, startChapter, endChapter, existingChapters }) {
@@ -576,93 +561,93 @@
         const plotUnitSuggestions = this.buildPlotUnitSuggestionText(project, volumeNumber, startChapter);
 
         const systemPrompt = [
-            "浣犳槸涓€涓墽琛屽姏鏋佸己鐨勭綉鏂囦富缂栧姪鎵嬨€?,
-            "浣犵殑鍞竴浠诲姟鏄皢鐢ㄦ埛鎻愪緵鐨勩€愯缁嗙粏绾层€戣浆鍖栦负鏍囧噯鏍煎紡鐨勭珷鑺傚ぇ绾层€?,
-            "涓嶈鑷繁缂栵紒涓嶈鑷繁缂栵紒涓ユ牸鐓х潃缁嗙翰鍐欙紒",
-            "蹇呴』 100% 涓ユ牸鎸夌収缁嗙翰鍐呭杩涜鎵╁厖锛屼弗绂佸亸绂诲師瀹氬墽鎯呰蛋鍚戙€?,
-            "濡傛灉缁嗙翰宸茬粡缁欏嚭鏌愮珷鍙戠敓浠€涔堬紝灏卞繀椤诲啓浠€涔堬紱濡傛灉鏌愮珷鑺備俊鎭緝灏戯紝涔熷繀椤昏ˉ婊℃墍鏈夊瓧娈碉紝浣嗕笉鑳芥敼涓荤嚎缁撴灉銆?,
-            "蹇呴』涓ユ牸閬靛畧褰撳墠鍗疯竟鐣岋紝涓嶅緱鎻愬墠涓插嵎锛屼笉寰楁搮鑷敼鍐欎富绾裤€?,
-            "缁啓蹇呴』绱ф帴鍓嶆枃鏈€鍚庝竴绔犵殑鍓ф儏鍙戝睍锛屼笉鑳借烦璺冦€佷笉鑳介噸澶嶃€佷笉鑳藉洖閫€銆?,
-            "濡傛灉鍓嶆枃澶х翰瀛樺湪鐭涚浘銆佷笉鍚堢悊鎴栬妭濂忓け褰擄紝浣犺鍦ㄦ柊绔犵翰閲岃嚜鐒朵慨椤猴紝浣嗕笉鑳芥敼鎺夋棦瀹氫富绾跨粨鏋溿€?,
-            "姣忔壒鐢熸垚鐨勭涓€绔狅紝蹇呴』鐩存帴鎵挎帴鍓嶆枃鏈€鍚庝竴绔犵殑銆愪笅绔犻摵鍨€戜笌鎯呯华灏捐皟銆?,
-            startChapter <= 1 ? "濡傛灉褰撳墠鏄嵎棣栵紝蹇呴』杩呴€熷垏鍏ユ湰鍗锋柊涓婚涓庢柊姘旇薄锛屼笉瑕侀噸澶嶄笂涓€鍗风殑绾犺憶銆? : "",
-            "涓栫晫瑙傝瀹氫笉鍙繚鍙嶏紝瑙掕壊琛屼负蹇呴』绗﹀悎宸插缓绔嬬殑浜鸿涓庡叧绯汇€?,
+            "你是一个执行力极强的网文主编助手。",
+            "你的唯一任务是将用户提供的【详细细纲】转化为标准格式的章节大纲。",
+            "不要自己编！不要自己编！严格照着细纲写！",
+            "必须 100% 严格按照细纲内容进行扩充，严禁偏离原定剧情走向。",
+            "如果细纲已经给出某章发生什么，就必须写什么；如果某章节信息较少，也必须补满所有字段，但不能改主线结果。",
+            "必须严格遵守当前卷边界，不得提前串卷，不得擅自改写主线。",
+            "续写必须紧接前文最后一章的剧情发展，不能跳跃、不能重复、不能回退。",
+            "如果前文大纲存在矛盾、不合理或节奏失当，你要在新章纲里自然修顺，但不能改掉既定主线结果。",
+            "每批生成的第一章，必须直接承接前文最后一章的【下章铺垫】与情绪尾调。",
+            startChapter <= 1 ? "如果当前是卷首，必须迅速切入本卷新主题与新气象，不要重复上一卷的纠葛。" : "",
+            "世界观设定不可违反，角色行为必须符合已建立的人设与关系。",
             guardContext,
             consistencyContext
         ].filter(Boolean).join("\n\n");
 
         const userPrompt = [
-            detailedOutlineContext ? `銆愯缁嗗ぇ绾诧紙蹇呴』涓ユ牸鎵ц锛夈€慭n${detailedOutlineContext}` : "",
-            `灏忚鏍囬锛?{project.outline.title || ""}`,
-            `棰樻潗锛?{project.outline.subgenre || project.outline.genre || "鏈寚瀹?}`,
-            `鏁呬簨姒傚康锛?{project.outline.storyConcept || "鏆傛棤"}`,
-            `涓栫晫瑙傦細${project.outline.worldbuilding || "鏆傛棤"}`,
-            volumeSynopsisContext ? `銆愬嵎绾插墠缃€慭n${volumeSynopsisContext}` : "",
-            allChapterSynopsisContext ? `銆愮粏绾插墠缃€慭n${allChapterSynopsisContext}` : "",
-            outlineSlice.adjacentSummary ? `銆愮浉閭诲嵎琛旀帴鎻愮ず銆慭n${outlineSlice.adjacentSummary}` : "",
-            storyStateSummary ? `銆愬綋鍓嶆晠浜嬬姸鎬侊紙蹇呴』寤剁画锛夈€慭n${storyStateSummary}` : "",
+            detailedOutlineContext ? `【详细大纲（必须严格执行）】\n${detailedOutlineContext}` : "",
+            `小说标题：${project.outline.title || ""}`,
+            `题材：${project.outline.subgenre || project.outline.genre || "未指定"}`,
+            `故事概念：${project.outline.storyConcept || "暂无"}`,
+            `世界观：${project.outline.worldbuilding || "暂无"}`,
+            volumeSynopsisContext ? `【卷纲前置】\n${volumeSynopsisContext}` : "",
+            allChapterSynopsisContext ? `【细纲前置】\n${allChapterSynopsisContext}` : "",
+            outlineSlice.adjacentSummary ? `【相邻卷衔接提示】\n${outlineSlice.adjacentSummary}` : "",
+            storyStateSummary ? `【当前故事状态（必须延续）】\n${storyStateSummary}` : "",
             setupContinuityGuard || "",
-            plotUnitContext ? `銆?绔犲墽鎯呭崟鍏冭鍒欍€慭n${plotUnitContext}` : "",
+            plotUnitContext ? `【8章剧情单元规则】\n${plotUnitContext}` : "",
             plotUnitReport,
             plotUnitSuggestions,
-            `褰撳墠鍗凤細绗?{volumeNumber}鍗?${volume.title || ""}`,
-            `褰撳墠鍗锋憳瑕侊細${volume.summary || "鏆傛棤"}`,
-            `褰撳墠鍗风珷鑺傜粏绾诧細${volume.chapterSynopsis || volume.chapter_synopsis || "鏆傛棤"}`,
-            characterDigest ? `銆愬凡鏈夎鑹蹭笌浜鸿銆慭n${characterDigest}` : "",
-            existingSummary ? `銆愬墠鎯呮彁瑕併€慭n${existingSummary}` : "",
+            `当前卷：第${volumeNumber}卷 ${volume.title || ""}`,
+            `当前卷摘要：${volume.summary || "暂无"}`,
+            `当前卷章节细纲：${volume.chapterSynopsis || volume.chapter_synopsis || "暂无"}`,
+            characterDigest ? `【已有角色与人设】\n${characterDigest}` : "",
+            existingSummary ? `【前情提要】\n${existingSummary}` : "",
             existingEventsContext,
             "",
-            "銆愮粷瀵瑰師鍒欍€?,
-            "1. 鍓ф儏涓嶅彲閲嶅锛氬凡鏈夌珷鑺傚凡缁忓啓杩囩殑浜嬩欢锛屽悗闈笉寰楀啀娆″嚭鐜扮浉鍚屾垨楂樺害鐩镐技鐨勬ˉ娈点€?,
-            "2. 浣犳湰娆＄敓鎴愮殑澶氫釜绔犺妭涔嬮棿涔熶笉鑳介噸澶嶏紝姣忎竴绔犵殑鏍稿績浜嬩欢閮藉繀椤绘槸鍏ㄦ柊鐨勩€?,
-            "3. 瑙掕壊鐘舵€佸繀椤诲欢缁墠鏂囷細浣嶇疆銆佷激鍔裤€佹儏缁€佽澶囥€佹椂闂寸嚎閮戒笉鑳芥柇瑁傘€?,
-            "4. 鏂板紩鍏ヨ鑹插繀椤荤鍚堝綋鍓嶅満鏅拰鍓ф儏閫昏緫銆?,
-            "5. 濡傛灉缁嗙翰閲屽寘鍚悗缁嵎鍐呭锛屼弗绂佸帇缂╁啓杩涘綋鍓嶅嵎銆?,
-            "6. 濡傛灉鏌愪釜缁嗙翰浜嬩欢宸茬粡鍦ㄥ凡鏈夌珷鑺備腑鍐欒繃浜嗭紝蹇呴』璺宠繃锛屾敼鍐欎笅涓€涓柊浜嬩欢銆?,
-            "7. 姣忕珷銆愪笅绔犻摵鍨€戝繀椤昏兘琚笅涓€绔犮€愮珷鑺傜洰鏍囥€戞垨銆愭牳蹇冧簨浠躲€戠洿鎺ユ帴浣忋€?,
-            "8. 鍓嶄竴绔犳儏缁洸绾跨殑缁撳熬锛岃鑳借嚜鐒惰繃娓″埌涓嬩竴绔犳儏缁洸绾跨殑寮€澶淬€?,
-            "9. 濡傛灉鍓嶆枃鎽樿閲屾煇涓簨浠跺凡缁忓彂鐢燂紝鍚庣画绔犵翰涓嶈兘鍐嶅啓瀹冣€滃嵆灏嗗彂鐢熲€濄€?,
-            "10. 涓栫晫瑙傝瀹氫笉鍙繚鍙嶃€?,
-            startChapter <= 1 ? "11. 濡傛灉褰撳墠鏄嵎棣栵紝鏂扮殑涓€鍗峰簲褰撴湁鏂扮殑姘涘洿鍜岃妭濂忥紝涓嶈閲嶅涓婁竴鍗风殑绾犺憶锛屽揩閫熷垏鍏ユ柊涓婚銆? : "",
+            "【绝对原则】",
+            "1. 剧情不可重复：已有章节已经写过的事件，后面不得再次出现相同或高度相似的桥段。",
+            "2. 你本次生成的多个章节之间也不能重复，每一章的核心事件都必须是全新的。",
+            "3. 角色状态必须延续前文：位置、伤势、情绪、装备、时间线都不能断裂。",
+            "4. 新引入角色必须符合当前场景和剧情逻辑。",
+            "5. 如果细纲里包含后续卷内容，严禁压缩写进当前卷。",
+            "6. 如果某个细纲事件已经在已有章节中写过了，必须跳过，改写下一个新事件。",
+            "7. 每章【下章铺垫】必须能被下一章【章节目标】或【核心事件】直接接住。",
+            "8. 前一章情绪曲线的结尾，要能自然过渡到下一章情绪曲线的开头。",
+            "9. 如果前文摘要里某个事件已经发生，后续章纲不能再写它“即将发生”。",
+            "10. 世界观设定不可违反。",
+            startChapter <= 1 ? "11. 如果当前是卷首，新的一卷应当有新的氛围和节奏，不要重复上一卷的纠葛，快速切入新主题。" : "",
             "",
-            "銆愯緭鍑烘牸寮忔爣鍑嗭紙System 9锛夈€?,
-            "summary 瀛楁蹇呴』涓ユ牸鍖呭惈浠ヤ笅鏍囩锛屽苟淇濈暀绌鸿缁撴瀯锛?,
-            "銆愮珷鑺傜洰鏍囥€戯紙鏈珷鏍稿績鐩爣锛屼笉灏戜簬20瀛楋級",
-            "銆愬嚭鍦轰汉鐗┿€?,
-            "銆愬満鏅€戯紙鍏蜂綋鍦烘櫙鎻忚堪锛?,
-            "銆愭牳蹇冧簨浠躲€戯紙鏍稿績浜嬩欢鎻忚堪锛屼笉灏戜簬50瀛楋級",
-            "銆愭儏缁洸绾裤€慉鈫払鈫扖",
-            "銆愭儏鑺傛帹杩涖€?,
-            "銆愪紡绗斿鐞嗐€?,
-            "銆愪笅绔犻摵鍨€戯紙鈿狅笍閾哄灚鈮犻鍛婏紒鍙啓鐘舵€?姘涘洿/鎮康锛屼笉鍐欏叿浣撲簨浠剁粨鏋滐級",
+            "【输出格式标准（System 9）】",
+            "summary 字段必须严格包含以下标签，并保留空行结构：",
+            "【章节目标】（本章核心目标，不少于20字）",
+            "【出场人物】",
+            "【场景】（具体场景描述）",
+            "【核心事件】（核心事件描述，不少于50字）",
+            "【情绪曲线】A→B→C",
+            "【情节推进】",
+            "【伏笔处理】",
+            "【下章铺垫】（⚠️铺垫≠预告！只写状态/氛围/悬念，不写具体事件结果）",
             "",
-            `璇风敓鎴愮 ${startChapter} 绔犲埌绗?${endChapter} 绔犵殑绔犺妭澶х翰銆俙,
-            "杈撳嚭 JSON 鏁扮粍锛屾瘡涓璞″繀椤诲寘鍚細",
-            "chapter_number: 绔犺妭鍙?,
-            "title: 绔犺妭鏍囬",
-            "summary: 涓ユ牸閬靛畧 System 9 妯℃澘锛屽唴瀹瑰厖瀹烇紝涓嶈缂哄瓧娈?,
-            "key_event: 鏍稿績浜嬩欢",
-            "emotion_curve: 鎯呯华鏇茬嚎",
-            "characters: 鍑哄満浜虹墿鏁扮粍",
-            "foreshadows: 鏈珷鍩嬩笅鎴栧洖鏀剁殑浼忕瑪鏁扮粍",
+            `请生成第 ${startChapter} 章到第 ${endChapter} 章的章节大纲。`,
+            "输出 JSON 数组，每个对象必须包含：",
+            "chapter_number: 章节号",
+            "title: 章节标题",
+            "summary: 严格遵守 System 9 模板，内容充实，不要缺字段",
+            "key_event: 核心事件",
+            "emotion_curve: 情绪曲线",
+            "characters: 出场人物数组",
+            "foreshadows: 本章埋下或回收的伏笔数组",
             "plot_unit: { unit_number, unit_phase, unit_position, connects_to_previous, sets_up_next }",
             "next_chapter_setup: { state_setup, atmosphere_setup, suspense_hook, clue_hint, countdown }",
-            "uuid: 绔犺妭 UUID",
+            "uuid: 章节 UUID",
             "",
-            "鐗瑰埆瑕佹眰锛?,
-            "1. next_chapter_setup 鏄笅绔犻摵鍨紝涓嶆槸棰勫憡锛涘彧鑳藉啓鐘舵€併€佹皼鍥淬€佹偓蹇点€佹殫绀猴紝涓嶈兘鐩存帴鍐欑粨鏋溿€?,
-            "2. summary 涓殑銆愪笅绔犻摵鍨€戜篃蹇呴』閬靛畧鍚屾牱瑙勫垯锛氬彧鍩嬪洜锛屼笉鍐欐灉銆?,
-            "2.1 缁濆绂佹鍐欌€滀笅绔犲皢浼?涓嬩竴绔犱細/韬唤灏嗘洕鍏?鏁屼汉灏嗘潵琚?椹笂浼氬彂鐢熶粈涔堚€濊繖绫婚鍛婂彞銆?,
-            "2.2 姝ｇ‘鍐欐硶鏄細閲嶄激鏄忚糠銆佸紓鏍风溂绁炪€佽繙澶勫紓鍔ㄣ€佸彂鐜扮嚎绱€佺┖姘旈娌夈€佽鎶ュ搷璧凤紱閿欒鍐欐硶鏄洿鎺ユ妸涓嬬珷浜嬩欢鍜岀粨鏋滆鍑烘潵銆?,
-            "3. summary 涓殑銆愭儏鑺傛帹杩涖€戝繀椤讳繚鐣欌€?.銆愮被鍨嬫爣绛俱€戝唴瀹光€濈殑鏍煎紡銆?,
-            "4. 銆愬嚭鍦轰汉鐗┿€戝繀椤讳娇鐢ㄢ€? 濮撳悕锛堢畝浠嬶級鈥濈殑鏍煎紡銆?,
-            "5. 銆愮珷鑺傜洰鏍囥€戜笉寰楀皯浜?0瀛楋紝銆愭牳蹇冧簨浠躲€戜笉寰楀皯浜?0瀛椼€?,
-            "6. 銆愭儏鑺傛帹杩涖€戣嚦灏戝啓 5 鏉★紝姣忔潯涓嶅皯浜?0瀛楋紝涓斾繚鐣欌€滃簭鍙?+ 绫诲瀷鏍囩鈥濈殑鏍煎紡銆?,
-            "7. 缁嗙翰閲屾秹鍙婄殑浜虹墿绉板懠蹇呴』灏介噺浣跨敤鐪熷疄濮撳悕銆?,
-            "8. 浜虹墿琛屼负鍜屽叧绯绘帹杩涘繀椤讳笌鏃㈡湁浜鸿涓€鑷淬€?,
-            "9. 绗?8 绔犮€佺 16 绔犵瓑鍗曞厓鏀舵潫绔犺璐熻矗涓轰笅涓€鍗曞厓鍋氭偓蹇甸摵鍨€?,
-            "10. 娈佃惤涔嬮棿蹇呴』淇濈暀绌鸿锛屼笉瑕佹妸鎵€鏈夋爣绛炬尋鎴愪竴鍥€?,
-            "11. JSON 涓弗绂佽緭鍑?markdown 浠ｇ爜鍧楁爣璁般€?
+            "特别要求：",
+            "1. next_chapter_setup 是下章铺垫，不是预告；只能写状态、氛围、悬念、暗示，不能直接写结果。",
+            "2. summary 中的【下章铺垫】也必须遵守同样规则：只埋因，不写果。",
+            "2.1 绝对禁止写“下章将会/下一章会/身份将曝光/敌人将来袭/马上会发生什么”这类预告句。",
+            "2.2 正确写法是：重伤昏迷、异样眼神、远处异动、发现线索、空气骤沉、警报响起；错误写法是直接把下章事件和结果说出来。",
+            "3. summary 中的【情节推进】必须保留“1.【类型标签】内容”的格式。",
+            "4. 【出场人物】必须使用“- 姓名（简介）”的格式。",
+            "5. 【章节目标】不得少于20字，【核心事件】不得少于50字。",
+            "6. 【情节推进】至少写 5 条，每条不少于80字，且保留“序号 + 类型标签”的格式。",
+            "7. 细纲里涉及的人物称呼必须尽量使用真实姓名。",
+            "8. 人物行为和关系推进必须与既有人设一致。",
+            "9. 第 8 章、第 16 章等单元收束章要负责为下一单元做悬念铺垫。",
+            "10. 段落之间必须保留空行，不要把所有标签挤成一团。",
+            "11. JSON 中严禁输出 markdown 代码块标记。"
         ].filter(Boolean).join("\n");
 
         const parsed = await this.requestJSONArray(systemPrompt, userPrompt, {
@@ -681,7 +666,7 @@
             uuid: item.uuid || Utils.uid("chapter"),
             number: Number(item.chapter_number || startChapter + index),
             chapter_number: Number(item.chapter_number || startChapter + index),
-            title: item.title || `绗?{startChapter + index}绔燻,
+            title: item.title || `第${startChapter + index}章`,
             summary: normalized.summary || "",
             content: item.content || "",
             keyEvent: item.key_event || "",
@@ -703,42 +688,42 @@
             return [];
         }
 
-        const title = project.outline?.title || "鏈懡鍚嶅皬璇?;
-        const theme = project.outline?.theme || "鏆傛棤";
+        const title = project.outline?.title || "未命名小说";
+        const theme = project.outline?.theme || "暂无";
         const detailedOutline = project.outline?.detailed_outline || "";
         const worldbuilding = project.outline?.worldbuilding || "";
         const existingCharacters = project.outline?.characters || [];
         const establishedRelationshipText = this.buildEstablishedRelationshipText(project, rawItems.map(([name]) => name));
         const existingCharsText = existingCharacters.length
             ? existingCharacters.map((character) => [
-                `- ${character.name || "鏈懡鍚?}`,
-                character.identity ? `韬唤锛?{character.identity}` : "",
-                (character.aliases || character["鍒悕"]) ? `鍒悕锛?{Utils.ensureArrayFromText(character.aliases || character["鍒悕"]).join("銆?)}` : "",
-                character.personality ? `鎬ф牸锛?{Utils.summarizeText(character.personality, 80)}` : "",
-                character.background ? `鑳屾櫙锛?{Utils.summarizeText(character.background, 80)}` : "",
-                character.relationships ? `鍏崇郴锛?{Utils.summarizeText(character.relationships, 80)}` : ""
+                `- ${character.name || "未命名"}`,
+                character.identity ? `身份：${character.identity}` : "",
+                (character.aliases || character["别名"]) ? `别名：${Utils.ensureArrayFromText(character.aliases || character["别名"]).join("、")}` : "",
+                character.personality ? `性格：${Utils.summarizeText(character.personality, 80)}` : "",
+                character.background ? `背景：${Utils.summarizeText(character.background, 80)}` : "",
+                character.relationships ? `关系：${Utils.summarizeText(character.relationships, 80)}` : ""
             ].filter(Boolean).join(" | ")).join("\n")
-            : "鏆傛棤宸叉湁瑙掕壊";
+            : "暂无已有角色";
 
         const exampleChar = {
-            name: "瑙掕壊鍚?,
-            identity: "韬唤瀹氫綅",
-            age: "骞撮緞",
-            gender: "鎬у埆",
-            personality: "鏍稿績鎬ф牸鐗圭偣锛屼笉灏戜簬30瀛?,
-            background: "鑳屾櫙鏁呬簨锛屼笉灏戜簬50瀛?,
-            appearance: "澶栬矊鎻忚堪锛屼笉灏戜簬30瀛?,
-            abilities: "鑳藉姏鐗归暱",
-            goals: "鐩爣鍔ㄦ満",
-            relationships: "涓庡凡鏈夎鑹茬殑鍏崇郴",
-            aliases: ["鍒悕1"],
-            鎬ф牸鐗圭偣: "鍚?personality",
-            鑳屾櫙鏁呬簨: "鍚?background",
-            澶栬矊鎻忚堪: "鍚?appearance",
-            鑳藉姏鐗归暱: "鍚?abilities",
-            鐩爣鍔ㄦ満: "鍚?goals",
-            浜虹墿鍏崇郴: "鍚?relationships",
-            鍒悕: "鍒悕1"
+            name: "角色名",
+            identity: "身份定位",
+            age: "年龄",
+            gender: "性别",
+            personality: "核心性格特点，不少于30字",
+            background: "背景故事，不少于50字",
+            appearance: "外貌描述，不少于30字",
+            abilities: "能力特长",
+            goals: "目标动机",
+            relationships: "与已有角色的关系",
+            aliases: ["别名1"],
+            性格特点: "同 personality",
+            背景故事: "同 background",
+            外貌描述: "同 appearance",
+            能力特长: "同 abilities",
+            目标动机: "同 goals",
+            人物关系: "同 relationships",
+            别名: "别名1"
         };
 
         const CHAR_BATCH_SIZE = 8;
@@ -754,12 +739,12 @@
                     : { description: String(meta || "").trim(), needsNaming: false, aliases: [] };
                 const desc = String(detail.description || "").trim();
                 const aliasText = Array.isArray(detail.aliases) && detail.aliases.length
-                    ? `锛涘師绉板懠/鍒悕锛?{detail.aliases.join("銆?)}`
+                    ? `；原称呼/别名：${detail.aliases.join("、")}`
                     : "";
                 const namingHint = detail.needsNaming
-                    ? "锛涖€愰渶瑕佸厛璧蜂竴涓叿浣撲腑鏂囧悕瀛楋紝绂佹缁х画鐢ㄦā绯婄О鍛煎仛name锛屽苟鎶婂師绉板懠鍐欏叆aliases銆?
+                    ? "；【需要先起一个具体中文名字，禁止继续用模糊称呼做name，并把原称呼写入aliases】"
                     : "";
-                return `- ${label}${desc ? `锛?{desc}锛塦 : ""}${aliasText}${namingHint}`;
+                return `- ${label}${desc ? `（${desc}）` : ""}${aliasText}${namingHint}`;
             }).join("\n");
 
             if (typeof onProgress === "function") {
@@ -773,59 +758,59 @@
             }
 
             const systemPrompt = [
-                "浣犳槸涓€浣嶈祫娣辩綉鏂囦富缂栵紝鎿呴暱璁惧畾澶嶆潅銆佺珛浣撱€佹湁鍙嶅樊鎰熺殑浜虹墿瑙掕壊銆?,
-                `鐜板湪闇€瑕佷负灏忚銆?{title}銆嬩腑鐨勫涓鑹叉壒閲忓垱寤哄畬鏁寸殑浜虹墿璁惧畾銆俙,
+                "你是一位资深网文主编，擅长设定复杂、立体、有反差感的人物角色。",
+                `现在需要为小说《${title}》中的多个角色批量创建完整的人物设定。`,
                 "",
-                "銆愬皬璇翠俊鎭€?,
-                `鏍囬锛氥€?{title}銆媊,
-                `涓婚锛?{theme}`,
+                "【小说信息】",
+                `标题：《${title}》`,
+                `主题：${theme}`,
                 "",
-                "銆愪笘鐣岃銆?,
-                this.limitContext(worldbuilding, 600) || "鏆傛棤涓栫晫瑙?,
+                "【世界观】",
+                this.limitContext(worldbuilding, 600) || "暂无世界观",
                 "",
-                "銆愯缁嗗ぇ绾层€?,
-                this.limitContext(detailedOutline, 800) || "鏆傛棤缁嗙翰",
+                "【详细大纲】",
+                this.limitContext(detailedOutline, 800) || "暂无细纲",
                 "",
-                "銆愬凡鏈夎鑹插強鍏惰儗鏅紙蹇呴』淇濇寔鍏崇郴涓€鑷存€э紒锛夈€?,
+                "【已有角色及其背景（必须保持关系一致性！）】",
                 existingCharsText,
                 "",
-                "銆愬凡寤虹珛鐨勪汉鐗╁叧绯汇€?,
+                "【已建立的人物关系】",
                 establishedRelationshipText,
                 "",
-                "銆愰渶瑕佺敓鎴愪汉璁剧殑瑙掕壊鎻忚堪銆?,
+                "【需要生成人设的角色描述】",
                 batchStr,
                 "",
-                "銆愪弗鏍艰姹傘€?,
-                `1. 杈撳嚭蹇呴』鏄?JSON 鏁扮粍锛屽寘鍚?${batchItems.length} 涓鑹插璞°€俙,
-                "2. 姣忎釜瑙掕壊蹇呴』鍖呭惈鎵€鏈夊瓧娈碉細name, identity, age, gender, personality, background, appearance, abilities, goals, relationships 浠ュ強瀵瑰簲涓枃瀛楁銆?,
-                "3. personality / 鎬ф牸鐗圭偣锛氬繀椤诲寘鍚牳蹇冩€ф牸鐗圭偣锛屽瓧鏁颁笉灏戜簬30瀛椼€?,
-                "4. background / 鑳屾櫙鏁呬簨锛氬繀椤诲寘鍚牳蹇冨啿绐佸拰涓庢晠浜嬬殑鍏宠仈锛屽瓧鏁颁笉灏戜簬50瀛椼€?,
-                "5. appearance / 澶栬矊鎻忚堪锛氬繀椤绘湁鐢婚潰鎰燂紝瀛楁暟涓嶅皯浜?0瀛椼€?,
-                "6. 鍏崇郴涓€鑷存€ф瀬鍏堕噸瑕侊細鏂拌鑹茬殑韬唤鍜岃儗鏅繀椤讳笌宸叉湁瑙掕壊淇濇寔閫昏緫涓€鑷淬€?,
-                "7. 鑻ュ凡鏈夎鑹茶瀹氫簡鏌愪釜鍦颁綅锛屾柊瑙掕壊涓嶈兘鏃犳晠鍙栦唬锛屽繀椤诲湪 relationships 瀛楁涓槑纭鏄庝笌宸叉湁瑙掕壊鐨勫叧绯汇€?,
-                "8. 瑙掕壊璁惧畾蹇呴』绗﹀悎褰撳墠灏忚鐨勪笘鐣岃鍜屽墽鎯呭彂灞曘€?,
-                "9. 鍚勮鑹蹭箣闂磋鏈夊樊寮傚寲锛岄伩鍏嶉浄鍚屻€?,
-                "10. 濡傛灉杈撳叆椤规湰韬凡缁忔槸鏄庣‘瀹炲悕锛屽繀椤讳繚鐣欏師鍚嶅瓧锛屼笉寰楁搮鑷敼鍚嶏紱濡傛灉宸叉湁鍒悕鎴栧父瑙佺О鍛硷紝璇峰啓鍏?aliases / 鍒悕 瀛楁銆?,
-                "11. 濡傛灉鏂拌鑹插拰宸叉湁瑙掕壊瀛樺湪浜插睘銆佸笀闂ㄣ€佹晫瀵广€佷笂涓嬬骇銆佹棫璇嗗叧绯伙紝蹇呴』鍦?relationships 瀛楁涓啓娓呮銆?,
-                "12. 涓嶈璁╂柊瑙掕壊鏃犳晠椤舵浛宸叉湁瑙掕壊鐨勯噸瑕佽韩浠斤紝涔熶笉瑕佹妸宸叉湁瑙掕壊鐨勫埆鍚嶉噸澶嶅彂缁欏叾浠栦汉銆?,
-                "13. 濡傛灉杈撳叆椤规槸鈥滀富瑙掋€佸コ涓汇€佺敺涓汇€侀緳绁炪€佸鍒ゅ畼銆佸悓浜婣銆佹煇鍔╃悊鈥濊繖绫绘ā绯婄О鍛兼垨鍗犱綅绉板懠锛屼笖灏氭湭閿佸畾瀹炲悕锛屼綘蹇呴』鍦ㄦ湰娆¤緭鍑洪噷鐩存帴璧蜂竴涓叿浣撲腑鏂囧悕瀛椼€?,
-                "14. 瀵硅繖绫诲緟鍛藉悕瑙掕壊锛宯ame 瀛楁缁濆涓嶈兘缁х画鍐欐垚鍘熺О鍛笺€佷唬绉般€佸崰浣嶇銆佺紪鍙峰悗缂€鎴栨ā绯婅韩浠借瘝锛涘師绉板懠鍙兘鏀捐繘 aliases / 鍒悕銆?,
-                "15. 濡傛灉鏌愪釜妯＄硦绉板懠鍏跺疄宸茬粡瀵瑰簲宸叉湁瑙掕壊锛屽繀椤绘部鐢ㄥ凡鏈夊悕瀛楋紝涓嶈兘閲嶅閫犱竴涓柊瑙掕壊銆?,
-                "16. 璇稿鈥滃悓浜婣銆佸悓浜婤銆佺涔︾敳銆佸姪鐞嗕箼銆佷富瑙掋€佸コ涓汇€佺敺涓汇€佷粬銆佸ス銆佽繖浜恒€侀偅浜恒€侀粦琛ｅ鍒ゅ畼鈥濋兘涓嶈兘鐩存帴鍑虹幇鍦?name 瀛楁銆?,
-                "17. relationships / 浜虹墿鍏崇郴 鍙兘鍐欎笌宸叉湁瀹炲悕瑙掕壊鎴栨槑纭鑹茬殑鍏崇郴锛屽敖閲忓帇缂╂垚 1-3 鏉＄煭鍙ワ紝渚嬪鈥滄灄涔﹂煶鐨勭户濮愶紙鏁屽锛夆€濃€滄潕妗傞鐨勫コ鍎匡紙鍚屼紮锛夆€濄€?,
-                "18. 绂佹鎶婂ぇ娈佃儗鏅晠浜嬨€佸墽鎯呯粡杩囥€佸績鐞嗘椿鍔ㄥ杩?relationships 瀛楁锛涘叧绯诲瓧娈典笉鑳借嚜鐩哥煕鐩撅紝涔熶笉鑳藉悓鏃舵妸涓€涓鑹插啓鎴愪袱绉嶅啿绐佽韩浠姐€?,
-                "19. 涓嶈鍖呭惈浠讳綍 markdown 鏍囪锛岀洿鎺ヨ繑鍥炵函 JSON 鏁扮粍銆?,
+                "【严格要求】",
+                `1. 输出必须是 JSON 数组，包含 ${batchItems.length} 个角色对象。`,
+                "2. 每个角色必须包含所有字段：name, identity, age, gender, personality, background, appearance, abilities, goals, relationships 以及对应中文字段。",
+                "3. personality / 性格特点：必须包含核心性格特点，字数不少于30字。",
+                "4. background / 背景故事：必须包含核心冲突和与故事的关联，字数不少于50字。",
+                "5. appearance / 外貌描述：必须有画面感，字数不少于30字。",
+                "6. 关系一致性极其重要：新角色的身份和背景必须与已有角色保持逻辑一致。",
+                "7. 若已有角色设定了某个地位，新角色不能无故取代，必须在 relationships 字段中明确说明与已有角色的关系。",
+                "8. 角色设定必须符合当前小说的世界观和剧情发展。",
+                "9. 各角色之间要有差异化，避免雷同。",
+                "10. 如果输入项本身已经是明确实名，必须保留原名字，不得擅自改名；如果已有别名或常见称呼，请写入 aliases / 别名 字段。",
+                "11. 如果新角色和已有角色存在亲属、师门、敌对、上下级、旧识关系，必须在 relationships 字段中写清楚。",
+                "12. 不要让新角色无故顶替已有角色的重要身份，也不要把已有角色的别名重复发给其他人。",
+                "13. 如果输入项是“主角、女主、男主、龙神、审判官、同事A、某助理”这类模糊称呼或占位称呼，且尚未锁定实名，你必须在本次输出里直接起一个具体中文名字。",
+                "14. 对这类待命名角色，name 字段绝对不能继续写成原称呼、代称、占位符、编号后缀或模糊身份词；原称呼只能放进 aliases / 别名。",
+                "15. 如果某个模糊称呼其实已经对应已有角色，必须沿用已有名字，不能重复造一个新角色。",
+                "16. 诸如“同事A、同事B、秘书甲、助理乙、主角、女主、男主、他、她、这人、那人、黑衣审判官”都不能直接出现在 name 字段。",
+                "17. relationships / 人物关系 只能写与已有实名角色或明确角色的关系，尽量压缩成 1-3 条短句，例如“林书音的继姐（敌对）”“李桂香的女儿（同伙）”。",
+                "18. 禁止把大段背景故事、剧情经过、心理活动塞进 relationships 字段；关系字段不能自相矛盾，也不能同时把一个角色写成两种冲突身份。",
+                "19. 不要包含任何 markdown 标记，直接返回纯 JSON 数组。",
                 "",
-                "銆愯緭鍑烘牸寮忕ず渚嬨€?,
+                "【输出格式示例】",
                 `[${JSON.stringify(exampleChar, null, 2)}]`,
                 "",
-                "銆愬緟鍛藉悕瑙掕壊绀轰緥銆?,
-                "杈撳叆锛? 鍚屼簨A锛堟€婚拡瀵规灄涔﹂煶鐨勫姙鍏鍚屼簨锛?,
-                "姝ｇ‘杈撳嚭锛歯ame 蹇呴』鏄叿浣撲腑鏂囧悕瀛楋紝渚嬪鈥滃懆鏁忊€濇垨鈥滄潕闆呭矚鈥濓紱aliases 閲屽啀鍐欌€滃悓浜婣鈥濄€?,
-                "閿欒杈撳嚭锛歯ame 鍐欐垚鈥滃悓浜婣鈥濃€滃コ鍚屼簨鈥濃€滃姙鍏鍚屼簨鈥濋兘绠椾笉鍚堟牸銆?
+                "【待命名角色示例】",
+                "输入：- 同事A（总针对林书音的办公室同事）",
+                "正确输出：name 必须是具体中文名字，例如“周敏”或“李雅岚”；aliases 里再写“同事A”。",
+                "错误输出：name 写成“同事A”“女同事”“办公室同事”都算不合格。"
             ].join("\n");
 
-            const parsed = await this.requestJSONArray(systemPrompt, `璇蜂负浠ヤ笂 ${batchItems.length} 涓鑹叉壒閲忕敓鎴愬畬鏁寸殑浜虹墿璁惧畾锛岀‘淇濇瘡涓鑹查兘鏈夊畬鏁寸殑涓嫳鏂囧瓧娈点€俙, {
+            const parsed = await this.requestJSONArray(systemPrompt, `请为以上 ${batchItems.length} 个角色批量生成完整的人物设定，确保每个角色都有完整的中英文字段。`, {
                 temperature: 0.75,
                 maxTokens: this.getConfiguredMaxTokens(12000),
                 timeout: this.getTaskTimeoutMs(240000)
@@ -847,7 +832,7 @@
                 const inputAliases = Array.isArray(sourceMeta.aliases) ? sourceMeta.aliases : [];
                 const returnedAliases = Array.isArray(character.aliases)
                     ? character.aliases
-                    : Utils.ensureArrayFromText(character.aliases || character["鍒悕"]);
+                    : Utils.ensureArrayFromText(character.aliases || character["别名"]);
                 const returnedConcreteName = this.isLikelySynopsisPersonName(rawReturnedName) && !this.isGenericCharacterCandidateName(rawReturnedName)
                     ? rawReturnedName
                     : "";
@@ -867,20 +852,20 @@
                     identity: character.identity || "",
                     age: character.age || "",
                     gender: character.gender || "",
-                    personality: character.personality || character["鎬ф牸鐗圭偣"] || "",
-                    background: character.background || character["鑳屾櫙鏁呬簨"] || "",
-                    appearance: character.appearance || character["澶栬矊鎻忚堪"] || "",
-                    abilities: character.abilities || character["鑳藉姏鐗归暱"] || "",
-                    goals: character.goals || character["鐩爣鍔ㄦ満"] || "",
-                    relationships: this.sanitizeGeneratedRelationshipText(project, chosenName || candidateName, character.relationships || character["浜虹墿鍏崇郴"] || "", sourceMeta),
+                    personality: character.personality || character["性格特点"] || "",
+                    background: character.background || character["背景故事"] || "",
+                    appearance: character.appearance || character["外貌描述"] || "",
+                    abilities: character.abilities || character["能力特长"] || "",
+                    goals: character.goals || character["目标动机"] || "",
+                    relationships: this.sanitizeGeneratedRelationshipText(project, chosenName || candidateName, character.relationships || character["人物关系"] || "", sourceMeta),
                     aliases: mergedAliases,
-                    鎬ф牸鐗圭偣: character.personality || character["鎬ф牸鐗圭偣"] || "",
-                    鑳屾櫙鏁呬簨: character.background || character["鑳屾櫙鏁呬簨"] || "",
-                    澶栬矊鎻忚堪: character.appearance || character["澶栬矊鎻忚堪"] || "",
-                    鑳藉姏鐗归暱: character.abilities || character["鑳藉姏鐗归暱"] || "",
-                    鐩爣鍔ㄦ満: character.goals || character["鐩爣鍔ㄦ満"] || "",
-                    浜虹墿鍏崇郴: this.sanitizeGeneratedRelationshipText(project, chosenName || candidateName, character.relationships || character["浜虹墿鍏崇郴"] || "", sourceMeta),
-                    鍒悕: mergedAliases.join("銆?)
+                    性格特点: character.personality || character["性格特点"] || "",
+                    背景故事: character.background || character["背景故事"] || "",
+                    外貌描述: character.appearance || character["外貌描述"] || "",
+                    能力特长: character.abilities || character["能力特长"] || "",
+                    目标动机: character.goals || character["目标动机"] || "",
+                    人物关系: this.sanitizeGeneratedRelationshipText(project, chosenName || candidateName, character.relationships || character["人物关系"] || "", sourceMeta),
+                    别名: mergedAliases.join("、")
                 };
 
                 if (normalized.name && (!sourceMeta.needsNaming || !this.isGenericCharacterCandidateName(normalized.name))) {
@@ -951,18 +936,18 @@
         const stateOutputProtocol = this.buildStateOutputProtocol(project, chapter, relevantCharacters);
 
         const systemPrompt = [
-            "浣犳槸涓€鍚嶆搮闀垮皢绔犺妭澶х翰鎵╁啓鎴愪腑鏂囩綉鏂囨鏂囩殑绔犺妭鍐欐墜銆?,
-            "璇锋牴鎹凡缁忕‘璁ょ殑绔犺妭澶х翰鎵╁啓姝ｆ枃鑽夌銆?,
-            "浣犲繀椤讳弗鏍奸伒瀹堟湰绔犲ぇ绾层€佸叏灞€璁惧畾銆佹湰绔犺瀹氥€佽鑹查攣瀹氥€佷笘鐣岃銆佷汉鐗╀竴鑷存€с€佸姩鎬佺姸鎬佸拰绔犳湯蹇収琛旀帴銆?,
-            "浣犲彲浠ュ湪涓嶆敼鍙樹富绾跨殑鍓嶆彁涓嬭繘琛岃鑲夊～鍏呫€佸姩浣滃欢灞曘€佸績鐞嗚ˉ寮哄拰鍦烘櫙娓叉煋锛屼絾缁濅笉鑳藉亸绂诲ぇ绾蹭富绾裤€?,
-            "姝ｆ枃瀛楁暟榛樿鐩爣涓?000-6000瀛楋紝鑷冲皯涓嶈灏戜簬2500瀛楋紱濡傛灉鏈珷澶х翰淇℃伅寰堝锛屽氨瑕佷竴娆℃€у厖鍒嗗睍寮€锛屼笉瑕佸帇缂╂垚涓€鍗冨瀛楃殑鐭珷銆?,
-            "蹇呴』瀹屾垚鏈珷缁撳熬閾哄灚浠诲姟锛屼絾缁濆涓嶈兘鎶婁笅涓€绔犳牳蹇冧簨浠舵彁鍓嶅啓鍑烘潵銆?,
-            "姝ｆ枃蹇呴』绱ф帴鍓嶆枃鏈€鍚庝竴涓湁鏁堝満鏅拰鐘舵€佸睍寮€锛屼笉鍑嗗钩鍦伴噸寮€锛屼笉鍑嗘妸宸茬粡鍙戠敓鐨勪簨鍐嶅啓鎴愰鍛娿€?,
-            "鍓嶆枃浜旂珷鍘熸枃鍙敤浜庣户鎵夸簨瀹炪€佸悕璇嶃€佺姸鎬併€佸鐧藉彛鍚诲拰鍔ㄤ綔寤剁画锛屼笉鏄粰浣犲綋浣滃墠鎯呭洖椤炬ā鏉裤€?,
-            "濡傛灉鏈珷澶х翰鎴栧墠鏂囪鎺ョ暐鏄剧敓纭紝浣犺鍦ㄦ鏂囬噷鑷劧琛ヨ冻鍥犳灉涓庤繃妗ュ姩浣滐紝璁╄鑰呰璧锋潵椤猴紝浣嗕笉鑳界鏀逛富绾跨粨鏋溿€?,
-            "鎷掔粷AI鍛筹細涓嶈鍫嗙爩鍢磋銆佺溂绁炪€佺灣瀛斻€佸枆缁撱€佹寚鑺傜瓑妯℃澘鍖栧井琛ㄦ儏锛涗笉瑕佸啓绌烘硾姣斿柣銆佹€荤粨鑵斿拰鏂囩粔缁夌殑鎶借薄鎶掓儏銆?,
-            "鐭彞浼樺厛锛屽姩璇嶄紭鍏堬紝鍙ｈ鍖栵紝灏戝壇璇嶏紝灏戝舰瀹硅瘝锛屽皯濂楄矾姣斿柣銆?,
-            "姝ｆ枃鍐欏畬鍚庯紝蹇呴』鎸夎姹傝拷鍔犵姸鎬佽緭鍑哄拰杩借釜杈撳嚭銆?,
+            "你是一名擅长将章节大纲扩写成中文网文正文的章节写手。",
+            "请根据已经确认的章节大纲扩写正文草稿。",
+            "你必须严格遵守本章大纲、全局设定、本章设定、角色锁定、世界观、人物一致性、动态状态和章末快照衔接。",
+            "你可以在不改变主线的前提下进行血肉填充、动作延展、心理补强和场景渲染，但绝不能偏离大纲主线。",
+            "正文字数默认目标为3000-6000字，至少不要少于2500字；如果本章大纲信息很多，就要一次性充分展开，不要压缩成一千多字的短章。",
+            "必须完成本章结尾铺垫任务，但绝对不能把下一章核心事件提前写出来。",
+            "正文必须紧接前文最后一个有效场景和状态展开，不准平地重开，不准把已经发生的事再写成预告。",
+            "前文五章原文只用于继承事实、名词、状态、对白口吻和动作延续，不是给你当作前情回顾模板。",
+            "如果本章大纲或前文衔接略显生硬，你要在正文里自然补足因果与过桥动作，让读者读起来顺，但不能篡改主线结果。",
+            "拒绝AI味：不要堆砌嘴角、眼神、瞳孔、喉结、指节等模板化微表情；不要写空泛比喻、总结腔和文绉绉的抽象抒情。",
+            "短句优先，动词优先，口语化，少副词，少形容词，少套路比喻。",
+            "正文写完后，必须按要求追加状态输出和追踪输出。",
             guardContext,
             characterConsistencyContext
         ].filter(Boolean).join("\n\n");
@@ -998,99 +983,99 @@
                 theme: project?.outline?.theme || "",
                 genre: project?.outline?.subgenre || project?.outline?.genre || "",
                 currentVolume: volume?.title || "",
-                currentChapter: `绗?{chapter.number || "?"}绔燻,
+                currentChapter: `第${chapter.number || "?"}章`,
                 outlineLength: String(chapter.summary || "").trim().length,
                 templateLength: String(promptTemplate || "").trim().length,
                 finalUserPromptLength: String(userPrompt || "").length,
                 finalSystemPromptLength: String(systemPrompt || "").length,
                 injectedBlocks: [
                     {
-                        label: "鏈珷澶х翰",
+                        label: "本章大纲",
                         length: String(chapter.summary || "").trim().length,
                         preview: this.limitContext(chapter.summary || "", 160)
                     },
                     {
-                        label: "寮€绡囨帴鍔涙",
+                        label: "开篇接力棒",
                         length: String(openingRelayPacket || "").trim().length,
                         preview: this.limitContext(openingRelayPacket || "", 160)
                     },
                     {
-                        label: "鍓嶆枃浜旂珷",
+                        label: "前文五章",
                         length: String(prevContent || "").trim().length,
                         preview: this.limitContext(prevContent || "", 160)
                     },
                     {
-                        label: "鍓嶆枃澶х翰鎽樿",
+                        label: "前文大纲摘要",
                         length: String(previousOutlineContext || "").trim().length,
                         preview: this.limitContext(previousOutlineContext || "", 160)
                     },
                     {
-                        label: "褰撳墠鍗风粏绾插弬鑰?,
+                        label: "当前卷细纲参考",
                         length: String(currentVolumeOutlineContext || "").trim().length,
                         preview: this.limitContext(currentVolumeOutlineContext || "", 160)
                     },
                     {
-                        label: "涓栫晫瑙備笌璇︾粏澶х翰",
+                        label: "世界观与详细大纲",
                         length: String(worldAndPlanContext || "").trim().length,
                         preview: this.limitContext(worldAndPlanContext || "", 160)
                     },
                     {
-                        label: "鐩稿叧瑙掕壊璁惧畾",
+                        label: "相关角色设定",
                         length: String(characterDigest || "").trim().length,
                         preview: this.limitContext(characterDigest || "", 160)
                     },
                     {
-                        label: "鍏ㄥ眬璁惧畾鎻愰啋",
+                        label: "全局设定提醒",
                         length: String(project?.global_setting_note || "").trim().length,
                         preview: this.limitContext(project?.global_setting_note || "", 120)
                     },
                     {
-                        label: "鏈珷璁惧畾鎻愰啋",
+                        label: "本章设定提醒",
                         length: String(chapter.chapter_setting_note || "").trim().length,
                         preview: this.limitContext(chapter.chapter_setting_note || "", 120)
                     },
                     {
-                        label: "鏁呬簨鐘舵€佹憳瑕?,
+                        label: "故事状态摘要",
                         length: String(storyStateSummary || "").trim().length,
                         preview: this.limitContext(storyStateSummary || "", 160)
                     },
                     {
-                        label: "绔犺妭鎵ц楠ㄦ灦",
+                        label: "章节执行骨架",
                         length: String(narrativeBridgePlan || "").trim().length,
                         preview: this.limitContext(narrativeBridgePlan || "", 160)
                     },
                     {
-                        label: "绔犳湯蹇収琛旀帴鎸囧",
+                        label: "章末快照衔接指导",
                         length: String(transitionGuide || "").trim().length,
                         preview: this.limitContext(transitionGuide || "", 160)
                     },
                     {
-                        label: "寮€澶撮槻閲嶅绾︽潫",
+                        label: "开头防重复约束",
                         length: String(openingAntiRepeatGuard || "").trim().length,
                         preview: this.limitContext(openingAntiRepeatGuard || "", 160)
                     },
                     {
-                        label: "鏅鸿兘鎵╁厖寤鸿",
+                        label: "智能扩充建议",
                         length: String(expansionHint || "").trim().length,
                         preview: this.limitContext(expansionHint || "", 160)
                     },
                     {
-                        label: "鏈珷缁撳熬閾哄灚浠诲姟",
+                        label: "本章结尾铺垫任务",
                         length: String(nextChapterSetupInstruction || "").trim().length,
                         preview: this.limitContext(nextChapterSetupInstruction || "", 160)
                     },
                     {
-                        label: "涓嬩竴绔犵姝㈤鍐欓璀?,
+                        label: "下一章禁止预写预警",
                         length: String(nextChapterForbiddenPreview || "").trim().length,
                         preview: this.limitContext(nextChapterForbiddenPreview || "", 160)
                     },
                     {
-                        label: "鐘舵€佽緭鍑哄崗璁?,
+                        label: "状态输出协议",
                         length: String(stateOutputProtocol || "").trim().length,
                         preview: this.limitContext(stateOutputProtocol || "", 120)
                     },
                     {
-                        label: "闄勫姞杩借釜杈撳嚭",
+                        label: "附加追踪输出",
                         length: String(extraOutputProtocol || "").trim().length,
                         preview: this.limitContext(extraOutputProtocol || "", 120)
                     }
@@ -1135,26 +1120,26 @@
         const stateOutputProtocol = this.buildStateOutputProtocol(project, chapter, relevantCharacters);
 
         const systemPrompt = [
-            "浣犳槸涓€涓弗鏍肩殑涓枃灏忚鐘舵€佹娊鍙栧櫒銆?,
-            "浣犵殑浠诲姟鏄牴鎹珷鑺傛鏂囧拰涓婁笅鏂囷紝杈撳嚭鏈珷缁撴潫鏃剁殑鐘舵€?JSON銆?,
-            "浣犲彧鑳借緭鍑轰竴涓悎娉?JSON 瀵硅薄銆?,
-            "绂佹杈撳嚭瑙ｉ噴銆佺姝㈣緭鍑?markdown 浠ｇ爜鍧椼€佺姝㈣緭鍑?<<<STATE_JSON>>> 鍒嗛殧绗︺€佺姝㈠杩版鏂囥€?,
-            "濡傛灉姝ｆ枃閲屾病鏈夋槑纭粰鍑虹殑淇℃伅锛岃浣跨敤绌哄瓧绗︿覆銆佺┖鏁扮粍鎴栫┖瀵硅薄锛屼笉瑕佺紪閫犮€?
+            "你是一个严格的中文小说状态抽取器。",
+            "你的任务是根据章节正文和上下文，输出本章结束时的状态 JSON。",
+            "你只能输出一个合法 JSON 对象。",
+            "禁止输出解释、禁止输出 markdown 代码块、禁止输出 <<<STATE_JSON>>> 分隔符、禁止复述正文。",
+            "如果正文里没有明确给出的信息，请使用空字符串、空数组或空对象，不要编造。"
         ].join("\n");
 
         const userPrompt = [
-            `銆愬綋鍓嶇珷鑺傘€戠${chapter.number || "?"}绔犮€?{chapter.title || "鏈懡鍚嶇珷鑺?}銆媊,
-            chapter.summary ? `銆愭湰绔犲ぇ绾层€慭n${chapter.summary}` : "",
-            previousOutlineContext ? `銆愬墠鏂囧ぇ绾叉憳瑕併€慭n${this.limitContext(previousOutlineContext, 1400)}` : "",
-            storyStateSummary ? `銆愬墠鏂囩姸鎬佹憳瑕併€慭n${storyStateSummary}` : "",
-            currentVolumeOutlineContext ? `銆愬綋鍓嶅嵎缁嗙翰鍙傝€冦€慭n${this.limitContext(currentVolumeOutlineContext, 1600)}` : "",
-            characterDigest ? `銆愮浉鍏充汉鐗╄瀹氥€慭n${characterDigest}` : "",
-            transitionGuide ? `銆愯鎺ユ彁閱掋€慭n${transitionGuide}` : "",
-            nextChapterSetupInstruction ? `銆愭湰绔犵粨灏鹃摵鍨换鍔°€慭n${nextChapterSetupInstruction}` : "",
-            rawStateBlock ? `銆愪笂娆″け璐ョ殑鐘舵€佽緭鍑烘畫鐗囥€慭n${this.limitContext(rawStateBlock, 1800)}` : "",
-            `銆愮珷鑺傛鏂囥€慭n${this.limitContext(cleanedContent, 12000)}`,
+            `【当前章节】第${chapter.number || "?"}章《${chapter.title || "未命名章节"}》`,
+            chapter.summary ? `【本章大纲】\n${chapter.summary}` : "",
+            previousOutlineContext ? `【前文大纲摘要】\n${this.limitContext(previousOutlineContext, 1400)}` : "",
+            storyStateSummary ? `【前文状态摘要】\n${storyStateSummary}` : "",
+            currentVolumeOutlineContext ? `【当前卷细纲参考】\n${this.limitContext(currentVolumeOutlineContext, 1600)}` : "",
+            characterDigest ? `【相关人物设定】\n${characterDigest}` : "",
+            transitionGuide ? `【衔接提醒】\n${transitionGuide}` : "",
+            nextChapterSetupInstruction ? `【本章结尾铺垫任务】\n${nextChapterSetupInstruction}` : "",
+            rawStateBlock ? `【上次失败的状态输出残片】\n${this.limitContext(rawStateBlock, 1800)}` : "",
+            `【章节正文】\n${this.limitContext(cleanedContent, 12000)}`,
             stateOutputProtocol,
-            "鐜板湪鍙緭鍑?JSON 瀵硅薄鏈韩锛屼笉瑕佽緭鍑轰换浣曢澶栨枃瀛椼€?
+            "现在只输出 JSON 对象本身，不要输出任何额外文字。"
         ].filter(Boolean).join("\n\n");
 
         const raw = await this.api.callLLM(userPrompt, systemPrompt, {
@@ -1173,56 +1158,55 @@
         }
 
         const targetWords = this.getAiHighFrequencyWords();
-        const suspiciousPatterns = this.getAiSuspiciousPatterns().map((pattern) => new RegExp(pattern));
-        const structuralPatterns = [
-            ...this.getAiStructuralPatterns(),
-            ...this.getAiGenreClichePatterns(project)
-        ];
-        const weakModifierWords = this.getAiWeakModifierWords();
-        const abstractWords = this.getAiAbstractWords();
-        const emotionLabelWords = this.getAiEmotionLabelWords();
-        const genreClicheHint = this.getAiGenreClichePromptHint(project);
+        const suspiciousPatterns = this.getAiSuspiciousPatterns();
         const whitelist = this.getEffectiveAiWhitelist(project);
         const blacklist = this.getEffectiveAiBlacklist(project);
         const segments = this.splitSentencesForAiFilter(sourceText);
-        const conflictProgressionMap = this.detectAiConflictProgressionSequence(segments);
-        const taintedEntries = [];
+        const taintedIndices = [];
         const hitWords = new Set();
 
         segments.forEach((segment, index) => {
-            const detection = this.collectAiSentenceSignals(segment, {
-                targetWords,
-                suspiciousPatterns,
-                structuralPatterns,
-                weakModifierWords,
-                abstractWords,
-                emotionLabelWords,
-                whitelist,
-                blacklist,
-                previousSentence: index > 0 ? segments[index - 1] : "",
-                nextSentence: index < segments.length - 1 ? segments[index + 1] : "",
-                conflictProgressionReason: conflictProgressionMap.get(index) || ""
-            });
-            if (detection.flagged) {
-                taintedEntries.push({
-                    index,
-                    score: detection.score,
-                    reasons: detection.reasons
+            const sentence = String(segment || "");
+            if (!sentence.trim()) {
+                return;
+            }
+            if (whitelist.some((item) => item && sentence.includes(item))) {
+                return;
+            }
+
+            const forced = blacklist.some((item) => item && sentence.includes(item));
+            let flagged = forced;
+
+            if (forced) {
+                blacklist.forEach((item) => {
+                    if (item && sentence.includes(item)) {
+                        hitWords.add(item);
+                    }
                 });
-                detection.reasons.forEach((item) => hitWords.add(item));
+            }
+
+            targetWords.forEach((word) => {
+                if (word && sentence.includes(word)) {
+                    hitWords.add(word);
+                    flagged = true;
+                }
+            });
+
+            if (!flagged) {
+                flagged = suspiciousPatterns.some((pattern) => new RegExp(pattern).test(sentence));
+            }
+
+            if (flagged) {
+                taintedIndices.push(index);
             }
         });
 
-        if (!taintedEntries.length) {
+        if (!taintedIndices.length) {
             return sourceText;
         }
 
-        const taintedIndexSet = new Set(taintedEntries.map((item) => item.index));
-        const taintedReasonMap = new Map(
-            taintedEntries.map((item) => [item.index, (item.reasons || []).slice(0, 3).join("、") || "可疑句式"])
-        );
         const contextIndices = new Set();
-        taintedEntries.forEach(({ index }) => {
+        taintedIndices.forEach((index) => {
             contextIndices.add(index);
             if (index > 0) {
                 contextIndices.add(index - 1);
@@ -1234,69 +1218,44 @@
 
         const excerptLines = Array.from(contextIndices)
             .sort((a, b) => a - b)
-            .map((index) => taintedIndexSet.has(index)
-                ? `【需改｜${taintedReasonMap.get(index) || "可疑句式"}】${segments[index].trim()}`
-                : `【勿动】${segments[index].trim()}`);
+            .map((index) => `${taintedIndices.includes(index) ? "【需改】" : "【勿动】"}${segments[index].trim()}`);
         const excerptText = excerptLines.join("\n");
         const hitWordsStr = Array.from(hitWords).slice(0, 50).join("、");
 
-        const humanStyleGuide = this.getHumanStyleReferenceGuide();
         const polishPrompt = [
-            "你是一位资深网文编辑，请对以下文本进行精准去AI味处理。",
+            "你是一位资深网文编辑，请对以下文本进行【精准去AI味】处理。",
             "",
             "【最高原则】",
             "- 只改标记为【需改】的句子，标记为【勿动】的句子一个字都不要动。",
-            "- 改完后的句子必须更自然、更像人写的网文，优先短句、动作、对白，少抽象总结。",
-            "- 宁可少改，也不要乱改。如果一句话只是信息普通、但不明显AI味，就不要动。",
-            "- 你是编辑，不是续写作者。不要改剧情，不要改设定，不要补新信息，只改表达。",
+            "- 改完之后的句子必须比原句更简洁或同等简洁，绝对不能变复杂。",
+            "- 宁可少改，也不要乱改。如果一句话不确定有没有AI味，就不要改。",
+            "- 你是编辑不是审核员，不要改题材，不要改事件，只改措辞。",
             "",
-            "【什么算AI味】",
-            "1. 没有固定关键词，但句式明显模板化，比如微表情堆砌、抽象情绪标签、假细节、空泛比喻、万能形容词。",
-            "2. 明明可以直接写动作或对白，却绕成‘气氛凝固’‘时间停住’‘心里某处一震’这种空话。",
-            "3. 同一句里副词、形容词太多，显得像在摆句子，不像人物在动。",
-            "4. 看起来文绉绉，但信息没有增加，只是在拔高气氛。",
-            "5. 上一句已经用动作、对白、现场反应交代清楚，下一句又补一层解释或渲染，也算AI味。",
-            "6. 连续几句凑成‘气氛凝固-众人震惊-主角冷静开口-对方恼羞成怒-旁人议论’这种标准冲突推进，也算AI味。",
-            "7. 题材里反复出现的预制描写也算AI味，比如年代文反复‘领口洗得发白’，修仙文反复‘一袭白衣、衣袂翻飞、白衣猎猎’。",
+            "【什么是AI味】",
+            "1. 模板化微表情：嘴角、眼神、瞳孔、喉结、指节等套路描写。",
+            "2. 烂大街比喻：像一记重锤、空气凝滞、时间仿佛暂停等。",
+            "3. 抽象情绪标签：心中一凛、心下了然、无法用言语形容等。",
+            "4. 万能形容词堆砌：深邃、锐利、复杂的光芒、不容置疑等。",
+            "5. 副词修饰依赖：缓缓地、死死地、精准地、平静地等。",
             "",
-            `【本轮命中的可疑信号】${hitWordsStr || "句式层面可疑"}`,
-            genreClicheHint ? `【本题材额外提醒】${genreClicheHint}` : "",
+            `【文中检测到的AI味词汇】${hitWordsStr || "已命中可疑句式"}`,
             "",
             "【改写规则】",
-            "1. 没有问题的句子不改。",
-            "2. 微表情模板句必须整句重写，尽量换成动作、对白、现场反应，而不是同义替换。",
-            "3. 抽象情绪标签如果一连两个以上，要落回动作、对白或场上变化，不要继续堆‘冷静、克制、危险、深邃、压迫感’这种词。",
-            "4. 假细节句不要保留‘指尖微蜷、喉结滚动、呼吸微滞、眸光微闪、太阳穴轻跳’这种部位模板，改成真正有用的动作，或者直接删。",
-            "5. 过度文学化的句子，比如硬拔高气氛、硬造比喻、硬写‘命运的齿轮’这类，可以直接删或改回朴素表达。",
-            "6. 如果上一句已经把情绪或局势说明白了，后一句只是重复解释、重复渲染，可以直接删。",
-            "7. 句子宁可更短更直，也不要更华丽。",
-            "8. 纯气氛句、空镜头句、只负责渲染没有承载信息的句子，可以直接删掉。",
-            "9. 禁止同义替换式去味。比如‘全场死寂’不能只改成‘没人说话’，‘骨节因用力而泛白’不能只改成‘骨节泛白’。",
-            "10. 如果连续几句形成标准冲突模板，优先删掉‘众人震惊’‘旁人议论’这类凑节奏的句子，只保留真正推进剧情的动作、对白和结果。",
-            "11. 如果一句话只是问题轻，可以只削掉AI腔，不必重写得太猛。",
-            "12. 直白句、功能句、常见过渡句，只要信息清楚、动作清楚，就不要硬磨成文案腔。",
-            "13. 题材套话优先改成具体可见的信息。不要老写‘居高临下地看着她’‘领口洗得发白’‘一袭白衣’‘白衣猎猎作响’，要换成当下这个人真正的站位、衣料、磨损、动作或现场效果。",
-            "14. 像‘台下安静下来’‘连嗑瓜子的人都停了动作’这种只负责提示围观停顿、又不提供新信息的句子，直接删。",
-            "15. 像‘手上用了死力气，指甲掐进肉里’这种局部受力痕迹模板，也和‘指节因用力而泛白’是一类。要改成实际动作结果，比如拽、拖、按、攥着不放，而不是继续写身体小部位受力。",
-            "16. 少写‘胸口剧烈起伏’‘衣服随着呼吸上下起伏’‘手指用力抠住纸张边缘’这种假身体反应句。能删就删，能改就改成实际动作结果。",
-            "17. 少用‘死死、狠狠、剧烈、用力’这类副词硬压强度。不要把力道和情绪全靠副词顶出来。",
-            "18. 严禁错误句横跳。不要把一种坏句改成另一种坏句，比如把‘指节泛白’改成‘指甲掐进肉里’，把‘全场死寂’改成‘台下安静下来’，把‘死死抓着’改成‘狠狠攥着’。",
-            "19. 不要老写‘连眼皮都没抬’‘看都没看’‘头也不抬’这种冷淡摆拍短句。人物可以冷淡，但要靠动作、对白、处理方式来体现，不要靠高频模板句。",
-            "",
-            "【真人感参考】",
-            humanStyleGuide,
+            "1. 短句优先，动词优先，口语化，少比喻。",
+            "2. 微表情类句子必须整句重写，换成动作、对话或直接删掉，不要只换个说法。",
+            "3. 不要总结，不要拔高，不要文绉绉。",
+            "4. 不要改没问题的句子。",
             "",
             "【输出格式】",
             "- 只输出【需改】句子的改写结果，每行一句。",
             "- 输出行数尽量与【需改】句子数量一致。",
-            "- 如果整句应该删除，直接输出【删除】。",
-            "- 不要解释，不要加标题，不要把【勿动】句子重写出来。",
+            "- 不要解释，不要加标题。",
             "",
             "【待润色文本】",
             excerptText
         ].join("\n");
 
-        const systemPrompt = "你是网文老编辑。你要识别的是句子层面的AI腔，不只是关键词。只改真正有AI味的句子，没问题的句子一个字都不要动。";
+        const systemPrompt = "你是一位网文老编辑。只改真正有AI味的句子，没AI味的一个字不动。微表情必须整句换成动作或对话。改完后要更简洁，短句为主，动词优先，口语化，少比喻。";
 
         try {
             const response = await this.api.callLLM(polishPrompt, systemPrompt, {
@@ -1306,7 +1265,7 @@
             });
             const rewrittenLines = String(response || "")
                 .split(/\r?\n/)
-                .map((line) => line.replace(/^【(?:需改|勿动)(?:｜[^】]+)?】/g, "").trim())
+                .map((line) => line.replace(/^【需改】|^【勿动】/g, "").trim())
                 .filter(Boolean);
 
             if (!rewrittenLines.length) {
@@ -1314,690 +1273,17 @@
             }
 
             const updated = [...segments];
-            const weakRewriteEntries = [];
-            taintedEntries.forEach((entry, position) => {
-                const { index } = entry;
+            taintedIndices.forEach((index, position) => {
                 const rewritten = rewrittenLines[position];
                 if (rewritten) {
-                    if (this.isWeakAiFlavorRewrite(segments[index], rewritten, entry.reasons)) {
-                        weakRewriteEntries.push({
-                            ...entry,
-                            original: segments[index],
-                            rewritten
-                        });
-                    } else {
-                        updated[index] = this.applyAiFlavorRewrite(segments[index], rewritten);
-                    }
+                    updated[index] = this.preserveSentenceEnding(segments[index], rewritten);
                 }
             });
-
-            if (weakRewriteEntries.length) {
-                const strictRewriteMap = await this.rewriteWeakAiFlavorText(weakRewriteEntries);
-                weakRewriteEntries.forEach((entry) => {
-                    const retryRewrite = strictRewriteMap.get(entry.index) || entry.rewritten;
-                    if (this.isWeakAiFlavorRewrite(entry.original, retryRewrite, entry.reasons)) {
-                        const safeFallback = this.buildSafeAiFlavorRewriteFallback(entry.original, retryRewrite, entry.reasons);
-                        if (safeFallback) {
-                            updated[entry.index] = this.applyAiFlavorRewrite(entry.original, safeFallback);
-                            return;
-                        }
-                        updated[entry.index] = this.canDeleteAiFlavorSentence(entry.original, entry.reasons)
-                            ? ""
-                            : entry.original;
-                        return;
-                    }
-                    updated[entry.index] = this.applyAiFlavorRewrite(entry.original, retryRewrite);
-                });
-            }
 
             return updated.join("").replace(/\n{3,}/g, "\n\n").trim();
         } catch (error) {
             return sourceText;
         }
-    }
-
-    async rewriteWeakAiFlavorText(entries = []) {
-        if (!Array.isArray(entries) || !entries.length) {
-            return new Map();
-        }
-
-        const humanStyleGuide = this.getHumanStyleReferenceGuide();
-        const prompt = entries.map((entry, index) => [
-            `【第${index + 1}条】`,
-            `原句：${String(entry.original || "").trim()}`,
-            `失败改法：${String(entry.rewritten || "").trim()}`,
-            `问题：${(entry.reasons || []).join("、") || "同义替换式去味"}`
-        ].join("\n")).join("\n\n");
-
-        const userPrompt = [
-            "下面这些句子第一次去AI味失败了，问题是只是换了个说法，AI腔还在。",
-            "",
-            "处理规则：",
-            "1. 纯气氛句、空镜头句、没有承载信息的句子，直接输出【删除】。",
-            "2. 像‘全场死寂 -> 没人说话’这种同义降级是不合格的。",
-            "3. 像‘骨节因用力而泛白 -> 骨节泛白’这种保留同一部位模板的不合格，要改成动作、反应，或者直接删。",
-            "4. 像‘嘴角勾起一抹冷笑’可以改成‘他笑了笑’这种更自然的写法。",
-            "5. ‘冷静、克制、危险、压迫感’这种情绪标签串不能原样保留，必须落地。",
-            "6. ‘指尖微蜷、喉结滚动、呼吸微滞、眸光微闪、太阳穴轻跳’这类假细节不能继续保留部位模板。",
-            "7. ‘命运的齿轮再次咬合’‘空气里浮着无形的压迫’这类过度文学化句子，优先删或改朴素。",
-            "8. 如果几句连起来像‘气氛凝固-众人震惊-主角冷静开口-对方恼羞成怒-旁人议论’这种标准冲突模板，优先删掉凑套路感的环节。",
-            "9. 每条只输出一个最终结果，每行一条，不要解释。",
-            "10. 直白、顺口、带一点网文口语感也可以，不要硬修成精修文案。",
-            "11. 题材套话也不合格。不要把句子改回‘居高临下’‘领口洗得发白’‘一袭白衣’‘衣袂翻飞’这一类预制描写。",
-            "12. 像‘台下安静下来’‘连嗑瓜子的人都停了动作’这种围观停顿句，优先直接删，不要改成另一种围观静场句。",
-            "13. 像‘手上用了死力气，指甲掐进肉里’这种局部受力痕迹句，也不合格。不要把‘指节泛白’换成同类的‘指甲掐进肉里’‘后槽牙咬紧’‘手背青筋暴起’。",
-            "14. 像‘胸口剧烈起伏’‘衣服随着呼吸上下起伏’‘手指用力抠住纸张边缘’这种句子，也不要只换个近义说法，要么删掉，要么改成真实动作结果。",
-            "15. 不要把‘死死抓着’改成‘狠狠攥着’‘用力抓着’这种同类强度副词句。",
-            "16. 不能把一种错误句改成另一种错误句。只要还落在任何坏句家族里，就算改写失败。",
-            "17. 不要把‘连眼皮都没抬’改成‘看都没看’‘头也不抬’‘眼皮都没掀一下’这种同一家族的冷淡摆拍句。",
-            "",
-            "真人感参考：",
-            humanStyleGuide,
-            "",
-            prompt
-        ].join("\n");
-
-        const systemPrompt = "你是苛刻的网文编辑。你不接受同义替换式去AI味。要么改出自然动作，要么直接删掉。";
-
-        try {
-            const response = await this.api.callLLM(userPrompt, systemPrompt, {
-                temperature: 0.25,
-                maxTokens: Math.min(this.getConfiguredMaxTokens(4000), prompt.length * 2 + 800),
-                timeout: this.getTaskTimeoutMs(180000)
-            });
-            const lines = String(response || "")
-                .split(/\r?\n/)
-                .map((line) => line.replace(/^\d+[.、]\s*/, "").replace(/^【第\d+条】/, "").trim())
-                .filter(Boolean);
-            return new Map(entries.map((entry, index) => [entry.index, lines[index] || entry.rewritten]));
-        } catch (_error) {
-            return new Map(entries.map((entry) => [entry.index, entry.rewritten]));
-        }
-    }
-
-    applyAiFlavorRewrite(original, rewritten) {
-        const trimmed = String(rewritten || "").trim();
-        if (!trimmed || /^【?删除】?$/.test(trimmed)) {
-            return "";
-        }
-        return this.preserveSentenceEnding(original, trimmed);
-    }
-
-    stripAiFlavorFragmentsFromSentence(sentence, reasons = []) {
-        let text = String(sentence || "");
-        if (!text) {
-            return "";
-        }
-
-        const shouldStrip = (pattern) => Array.isArray(reasons) && reasons.some((item) => pattern.test(String(item || "")));
-        if (shouldStrip(/冷淡摆拍模板/)) {
-            text = text.replace(/(?:，|,)?\s*((连)?眼皮都没抬|眼皮都没掀(?:一下)?|看都没看|头也不抬|连头都没抬|连眼都没抬|连个眼神都没给|连余光都没分过去|连眼风都没扫过去)/g, "");
-        }
-        if (shouldStrip(/呼吸起伏模板/)) {
-            text = text
-                .replace(/(?:，|,)?\s*(胸口|胸膛|胸脯)(?:剧烈|明显|轻轻|微微)?起伏/g, "")
-                .replace(/(衣襟|衣料|衣服|褂子|蓝布褂子|身上那件[^，。；！？\n]{0,12})(?:随着呼吸|随呼吸)(?:上下起伏|起伏)/g, "$1");
-        }
-        if (shouldStrip(/局部抠抓模板/)) {
-            text = text.replace(/(?:，|,)?\s*(手指|指尖|手)(?:用力|死死|狠狠)?(?:抠住|扣住|攥住|抓住|捏住)(?:纸张边缘|纸页边缘|边缘|衣角|袖口|桌角|门框|杯沿)/g, "");
-        }
-        if (shouldStrip(/用力痕迹模板/)) {
-            text = text
-                .replace(/(?:，|,)?\s*(手上|手里|掌心)[^，。；！？\n]{0,6}(用了死力气|使了死劲|下了狠劲)/g, "")
-                .replace(/(?:，|,)?\s*(指甲|指节|骨节|牙关|后槽牙|手背)[^，。；！？\n]{0,12}(掐进|陷进|嵌进|泛白|发白|绷紧|暴起|咬紧|发酸)(?:[^，。；！？\n]{0,10}(肉里|掌心|皮肉))?/g, "");
-        }
-        if (shouldStrip(/硬压强度词/)) {
-            text = text.replace(/(死死|狠狠|剧烈|用力|拼命|死命)(?=(抓着|抓住|攥着|攥住|按着|按住|盯着|瞪着|咬着|咬住|抠住|扣住|拽着|扯着|起伏|喘息|呼吸))/g, "");
-        }
-        if (shouldStrip(/围观停顿模板/)) {
-            text = text.replace(/(?:，|,)?\s*((台下|场下|人群|众人|周围|围观的人|围观者|旁边的人)[^，。；！？\n]{0,12}(安静下来|静下来|停了动作|停下动作|都停了动作|齐齐停住|全停了下来|都停下了手里的动作)|连[^，。；！？\n]{0,12}的人都停了动作)/g, "");
-        }
-
-        text = text
-            .replace(/[，,]{2,}/g, "，")
-            .replace(/^[，,\s]+|[，,\s]+$/g, "")
-            .replace(/，([。！？])/g, "$1")
-            .replace(/([。！？]){2,}/g, "$1")
-            .trim();
-
-        return text;
-    }
-
-    buildSafeAiFlavorRewriteFallback(original, rewritten, reasons = []) {
-        const candidates = [rewritten, original]
-            .map((item) => this.stripAiFlavorFragmentsFromSentence(item, reasons))
-            .filter(Boolean);
-
-        for (const candidate of candidates) {
-            if (!this.collectAiRewriteBlockingSignals(candidate).length) {
-                return candidate;
-            }
-        }
-        return "";
-    }
-
-    isWeakAiFlavorRewrite(original, rewritten, reasons = []) {
-        const originalText = String(original || "").trim();
-        const rewrittenText = String(rewritten || "").trim();
-        if (!rewrittenText || /^【?删除】?$/.test(rewrittenText)) {
-            return false;
-        }
-
-        const bodyPartPattern = /(嘴角|唇角|眼神|目光|瞳孔|喉结|指节|骨节|下颌|眉梢|神情)/;
-        const bodyStatePattern = /(泛白|发白|勾起|上扬|冷笑|闪过|流露|滚动|收缩)/;
-        const fakeDetailPartPattern = /(指尖|指腹|喉结|呼吸|眸光|目光|太阳穴|后槽牙|肩线|脊背|手背|眼尾)/;
-        const fakeDetailStatePattern = /(微蜷|滚动|微滞|微闪|轻跳|绷紧|发紧|紧绷|一跳)/;
-        const forceTracePattern = /((手上|手里|掌心)[^。！？\n]{0,6}(用了死力气|使了死劲|下了狠劲))|((指甲|指节|骨节|牙关|后槽牙|手背)[^。！？\n]{0,12}(掐进|陷进|嵌进|泛白|发白|绷紧|暴起|咬紧|发酸))/;
-        const breathMotionPattern = /((胸口|胸膛|胸脯)[^。！？\n]{0,8}(剧烈|明显|轻轻|微微)?[^。！？\n]{0,6}(起伏|上下起伏))|((衣襟|衣料|衣服|褂子|蓝布褂子|身上那件[^。！？\n]{0,12})[^。！？\n]{0,10}(随着呼吸|随呼吸)[^。！？\n]{0,6}(起伏|上下起伏))/;
-        const fingerGripPattern = /((手指|指尖|手)[^。！？\n]{0,8}(用力|死死|狠狠)?[^。！？\n]{0,8}(抠住|扣住|攥住|抓住|捏住)[^。！？\n]{0,12}(纸张边缘|纸页边缘|边缘|衣角|袖口|桌角|门框|杯沿))/;
-        const hardForceAdverbPattern = /(死死|狠狠|剧烈|用力|拼命|死命)[^。！？\n]{0,8}(抓着|抓住|攥着|攥住|按着|按住|盯着|瞪着|咬着|咬住|抠住|扣住|拽着|扯着|起伏|喘息|呼吸)/;
-        const dismissivePosePattern = /((连)?眼皮都没抬|眼皮都没掀(?:一下)?|看都没看|头也不抬|连头都没抬|连眼都没抬|连个眼神都没给|连余光都没分过去|连眼风都没扫过去)/;
-        const atmospherePattern = /(安静|寂静|死寂|沉默|没人说话|没有人说话|鸦雀无声|落针可闻|空气|时间|四周|全场|仿佛|似乎)/;
-        const literaryPattern = /(命运的齿轮|无形的(?:压迫|巨手)|空气里[^。！？\n]{0,12}(压迫|冷意|危险)|夜色[^。！？\n]{0,12}(吞没|漫过)|沉默[^。！？\n]{0,12}(漫开|席卷)|压迫感[^。！？\n]{0,12}(铺开|漫开)|平整如镜|月光下[^。！？\n]{0,12}反射出[^。！？\n]{0,6}(寒光|冷光))/;
-        const casualActionPattern = /(姿势|动作)[^。！？\n]{0,8}(极其|格外|十分|异常|过分)?[^。！？\n]{0,8}(随意|漫不经心|轻飘飘)[^。！？\n]{0,18}(像是|像|到了极点|到了极致)/;
-        const emotionLabelWords = this.getAiEmotionLabelWords();
-
-        if (/(骨节|指节)/.test(originalText) && /(骨节|指节)/.test(rewrittenText)) {
-            return true;
-        }
-        if (bodyPartPattern.test(originalText) && bodyPartPattern.test(rewrittenText) && bodyStatePattern.test(rewrittenText)) {
-            return true;
-        }
-        if (fakeDetailPartPattern.test(originalText) && fakeDetailPartPattern.test(rewrittenText) && fakeDetailStatePattern.test(rewrittenText)) {
-            return true;
-        }
-        if ((forceTracePattern.test(originalText) || reasons.some((item) => /用力痕迹模板|微表情模板|假细节模板/.test(String(item || ""))))
-            && forceTracePattern.test(rewrittenText)) {
-            return true;
-        }
-        if (reasons.some((item) => /呼吸起伏模板/.test(String(item || ""))) && breathMotionPattern.test(rewrittenText)) {
-            return true;
-        }
-        if (reasons.some((item) => /局部抠抓模板/.test(String(item || ""))) && fingerGripPattern.test(rewrittenText)) {
-            return true;
-        }
-        if (reasons.some((item) => /硬压强度词/.test(String(item || ""))) && hardForceAdverbPattern.test(rewrittenText)) {
-            return true;
-        }
-        if (reasons.some((item) => /冷淡摆拍模板/.test(String(item || ""))) && dismissivePosePattern.test(rewrittenText)) {
-            return true;
-        }
-        if (reasons.some((item) => /凝固停顿|空泛比喻|抽象情绪|镜头切换/.test(String(item || ""))) && atmospherePattern.test(rewrittenText)) {
-            return true;
-        }
-        if (/(全场|空气|时间|四周)/.test(originalText) && /(全场|空气|时间|没人说话|沉默|安静|寂静)/.test(rewrittenText)) {
-            return true;
-        }
-        if (reasons.some((item) => /情绪标签堆叠/.test(String(item || ""))) && this.countAiKeywordHits(rewrittenText, emotionLabelWords) >= 2) {
-            return true;
-        }
-        if (reasons.some((item) => /过度文学化/.test(String(item || ""))) && literaryPattern.test(rewrittenText)) {
-            return true;
-        }
-        if (reasons.some((item) => /摆拍比喻|空动作总结/.test(String(item || ""))) && casualActionPattern.test(rewrittenText)) {
-            return true;
-        }
-        if (reasons.some((item) => /段内重复解释|重复渲染/.test(String(item || ""))) && this.isAiSummaryOrAtmosphereSentence(rewrittenText)) {
-            return true;
-        }
-        if (reasons.some((item) => /围观停顿模板/.test(String(item || "")))
-            && /((台下|场下|人群|众人|周围|围观的人|围观者|旁边的人)[^。！？\n]{0,12}(安静下来|静下来|停了动作|停下动作|都停了动作|齐齐停住|全停了下来))|(连[^。！？\n]{0,12}的人都停了动作)|((大家|众人|周围的人)[^。！？\n]{0,10}(都不说话了|一下子静了))/.test(rewrittenText)) {
-            return true;
-        }
-        if (reasons.some((item) => /标准冲突推进/.test(String(item || ""))) && this.getAiConflictProgressionTag(rewrittenText)) {
-            return true;
-        }
-        if (this.collectAiRewriteBlockingSignals(rewrittenText).length) {
-            return true;
-        }
-        return false;
-    }
-
-    canDeleteAiFlavorSentence(sentence, reasons = []) {
-        const text = String(sentence || "").trim();
-        if (!text) {
-            return false;
-        }
-        if (Array.isArray(reasons) && reasons.some((item) => /冷淡摆拍模板/.test(String(item || "")))) {
-            return true;
-        }
-        if (/[“”「」『』]/.test(text)) {
-            return false;
-        }
-        if (/(说|问|答|喊|骂|叫道|开口)/.test(text)) {
-            return false;
-        }
-        const role = this.classifyAiSentenceRole(text);
-        if (role === "action") {
-            return false;
-        }
-        return reasons.some((item) => /凝固停顿|空泛比喻|抽象情绪|镜头切换|假细节模板|过度文学化|段内重复解释|重复渲染|标准冲突推进|围观停顿模板|呼吸起伏模板|局部抠抓模板|硬压强度词/.test(String(item || "")));
-    }
-
-    collectAiRewriteBlockingSignals(sentence) {
-        const text = String(sentence || "").trim();
-        if (!text || /^【?删除】?$/.test(text)) {
-            return [];
-        }
-
-        const blockingLabels = new Set([
-            "微表情模板",
-            "假细节模板",
-            "用力痕迹模板",
-            "呼吸起伏模板",
-            "局部抠抓模板",
-            "硬压强度词",
-            "冷淡摆拍模板",
-            "过度文学化",
-            "摆拍比喻",
-            "空动作总结",
-            "凝固停顿模板",
-            "围观停顿模板",
-            "情绪标签堆叠",
-            "万能气息句"
-        ]);
-        const hits = [];
-
-        this.getAiStructuralPatterns().forEach((rule) => {
-            if (rule?.label && blockingLabels.has(rule.label) && rule.pattern?.test?.(text)) {
-                hits.push(rule.label);
-            }
-        });
-
-        const suspiciousHit = this.getAiSuspiciousPatterns().some((pattern) => {
-            try {
-                return new RegExp(pattern).test(text);
-            } catch (_error) {
-                return false;
-            }
-        });
-        if (suspiciousHit) {
-            hits.push("模板句式");
-        }
-
-        if (this.countAiKeywordHits(text, this.getAiEmotionLabelWords()) >= 2) {
-            hits.push("情绪标签堆叠");
-        }
-        if (this.countAiKeywordHits(text, this.getAiWeakModifierWords()) >= 3 && text.length >= 16) {
-            hits.push("副词过密");
-        }
-
-        return Array.from(new Set(hits)).slice(0, 6);
-    }
-
-    collectAiSentenceSignals(sentence, config = {}) {
-        const text = String(sentence || "").trim();
-        if (!text) {
-            return { flagged: false, score: 0, reasons: [] };
-        }
-
-        const role = this.classifyAiSentenceRole(text);
-
-        const whitelist = Array.isArray(config.whitelist) ? config.whitelist : [];
-        if (whitelist.some((item) => item && text.includes(item))) {
-            return { flagged: false, score: 0, reasons: [] };
-        }
-
-        const blacklistHits = (Array.isArray(config.blacklist) ? config.blacklist : [])
-            .filter((item) => item && text.includes(item));
-        const targetHits = (Array.isArray(config.targetWords) ? config.targetWords : [])
-            .filter((item) => item && text.includes(item))
-            .slice(0, 4);
-        const reasons = [...blacklistHits, ...targetHits];
-        let score = blacklistHits.length ? 4 + blacklistHits.length : 0;
-        score += targetHits.length * 2;
-
-        (Array.isArray(config.suspiciousPatterns) ? config.suspiciousPatterns : []).forEach((pattern) => {
-            if (pattern?.test?.(text)) {
-                score += 2;
-                reasons.push("模板句式");
-            }
-        });
-
-        (Array.isArray(config.structuralPatterns) ? config.structuralPatterns : []).forEach((rule) => {
-            if (rule?.pattern?.test?.(text)) {
-                score += Number(rule.score || 1);
-                reasons.push(rule.label || "结构可疑");
-            }
-        });
-
-        const weakModifierHits = this.countAiKeywordHits(text, config.weakModifierWords || []);
-        if (weakModifierHits >= 2 && text.length >= 18) {
-            score += 1;
-            reasons.push("副词过密");
-        }
-
-        const abstractHits = this.countAiKeywordHits(text, config.abstractWords || []);
-        if (abstractHits >= 2 && text.length >= 18) {
-            score += 1;
-            reasons.push("抽象判断");
-        }
-
-        const emotionLabelHits = this.countAiKeywordHits(text, config.emotionLabelWords || []);
-        if (emotionLabelHits >= 2 && role !== "dialogue") {
-            score += emotionLabelHits >= 3 ? 2 : 1;
-            reasons.push("情绪标签堆叠");
-        }
-
-        if (this.getAiOpeningTemplate(text)) {
-            score += 1;
-            reasons.push("段首模板");
-        }
-
-        if (this.isAiRedundantFollowup(text, config.previousSentence, {
-            abstractWords: config.abstractWords,
-            emotionLabelWords: config.emotionLabelWords
-        })) {
-            score += 1;
-            reasons.push(role === "atmosphere" ? "重复渲染" : "段内重复解释");
-        }
-
-        if (config.conflictProgressionReason) {
-            score += 1;
-            reasons.push(config.conflictProgressionReason);
-        }
-
-        if (/，/.test(text) && text.length >= 32 && reasons.length >= 2) {
-            score += 1;
-            reasons.push("长句堆砌");
-        }
-
-        const normalizedReasons = Array.from(new Set(reasons)).slice(0, 6);
-        if (this.isPlainHumanNarrationSentence(text, role) && this.isWeakOnlyAiDetection(normalizedReasons)) {
-            return { flagged: false, score: 0, reasons: [] };
-        }
-
-        return {
-            flagged: score >= 2,
-            score,
-            reasons: normalizedReasons
-        };
-    }
-
-    countAiKeywordHits(text, keywords = []) {
-        const normalized = String(text || "");
-        const hits = new Set();
-        (keywords || []).forEach((word) => {
-            if (word && normalized.includes(word)) {
-                hits.add(word);
-            }
-        });
-        return hits.size;
-    }
-
-    getAiStructuralPatterns() {
-        return [
-            {
-                label: "微表情模板",
-                score: 2,
-                pattern: /(嘴角|唇角|眼神|目光|瞳孔|喉结|指节|骨节|下颌|眉梢|神情)[^。！？\n]{0,12}(微微|轻轻|缓缓|淡淡|一抹|勾起|上扬|闪过|流露|复杂|深邃|锐利|意味不明|泛白|发白)/
-            },
-            {
-                label: "空泛比喻",
-                score: 1,
-                pattern: /(像|仿佛|如同)[^。！？\n]{0,18}(一般|一样|似的|般)/
-            },
-            {
-                label: "摆拍比喻",
-                score: 2,
-                pattern: /(姿势|动作)[^。！？\n]{0,8}(极其|格外|十分|异常|过分)?[^。！？\n]{0,8}(随意|漫不经心|轻飘飘)[^。！？\n]{0,18}(像是|像)[^。！？\n]{0,24}(驱赶|拍苍蝇|赶蚊子|拂开|挥开)/
-            },
-            {
-                label: "凝固停顿模板",
-                score: 2,
-                pattern: /(空气|时间|四周|全场)[^。！？\n]{0,12}(凝固|停住|停滞|静止|死寂|安静)/
-            },
-            {
-                label: "围观停顿模板",
-                score: 2,
-                pattern: /((台下|场下|人群|众人|周围|围观的人|围观者|旁边的人)[^。！？\n]{0,12}(安静下来|静下来|停了动作|停下动作|都停了动作|齐齐停住|全停了下来|都停下了手里的动作))|(连[^。！？\n]{0,12}的人都停了动作)/
-            },
-            {
-                label: "抽象情绪模板",
-                score: 1,
-                pattern: /(心头一|心下一|不由得|无法用言语形容|说不清|某个地方|意味不明|不容置疑|异常清晰|显得格外)/
-            },
-            {
-                label: "假细节模板",
-                score: 2,
-                pattern: /(指尖|指腹|喉结|呼吸|眸光|目光|太阳穴|后槽牙|肩线|脊背|手背|眼尾)[^。！？\n]{0,10}(微蜷|滚动|微滞|微闪|轻跳|绷紧|发紧|紧绷|一跳)/
-            },
-            {
-                label: "用力痕迹模板",
-                score: 2,
-                pattern: /((手上|手里|掌心)[^。！？\n]{0,6}(用了死力气|使了死劲|下了狠劲)[^。！？\n]{0,18}(指甲|指节|骨节|牙关|后槽牙|手背)?)|((指甲|指节|骨节|牙关|后槽牙|手背)[^。！？\n]{0,12}(掐进|陷进|嵌进|泛白|发白|绷紧|暴起|咬紧|发酸)[^。！？\n]{0,10}(肉里|掌心|皮肉)?)/
-            },
-            {
-                label: "呼吸起伏模板",
-                score: 2,
-                pattern: /((胸口|胸膛|胸脯)[^。！？\n]{0,8}(剧烈|明显|轻轻|微微)?[^。！？\n]{0,6}(起伏|上下起伏))|((衣襟|衣料|衣服|褂子|蓝布褂子|身上那件[^。！？\n]{0,12})[^。！？\n]{0,10}(随着呼吸|随呼吸)[^。！？\n]{0,6}(起伏|上下起伏))/
-            },
-            {
-                label: "局部抠抓模板",
-                score: 2,
-                pattern: /((手指|指尖|手)[^。！？\n]{0,8}(用力|死死|狠狠)?[^。！？\n]{0,8}(抠住|扣住|攥住|抓住|捏住)[^。！？\n]{0,12}(纸张边缘|纸页边缘|边缘|衣角|袖口|桌角|门框|杯沿))/
-            },
-            {
-                label: "硬压强度词",
-                score: 1,
-                pattern: /(死死|狠狠|剧烈|用力|拼命|死命)[^。！？\n]{0,8}(抓着|抓住|攥着|攥住|按着|按住|盯着|瞪着|咬着|咬住|抠住|扣住|拽着|扯着|起伏|喘息|呼吸)/
-            },
-            {
-                label: "冷淡摆拍模板",
-                score: 2,
-                pattern: /((连)?眼皮都没抬|眼皮都没掀(?:一下)?|看都没看|头也不抬|连头都没抬|连眼都没抬|连个眼神都没给|连余光都没分过去|连眼风都没扫过去)/
-            },
-            {
-                label: "情绪标签堆叠",
-                score: 1,
-                pattern: /(冷静|克制|复杂|危险|深邃|锐利|压迫感|意味不明|不容置疑|沉稳|阴冷|森然)[^。！？\n]{0,6}(冷静|克制|复杂|危险|深邃|锐利|压迫感|意味不明|不容置疑|沉稳|阴冷|森然)/
-            },
-            {
-                label: "万能气息句",
-                score: 1,
-                pattern: /(带着|透着|散发着)[^。！？\n]{0,12}(气息|意味|冷意|危险|压迫感|锋芒|情绪)/
-            },
-            {
-                label: "过度文学化",
-                score: 2,
-                pattern: /(命运的齿轮|无形的(?:压迫|巨手)|空气里[^。！？\n]{0,12}(压迫|冷意|危险)|夜色[^。！？\n]{0,12}(吞没|漫过)|沉默[^。！？\n]{0,12}(漫开|席卷)|压迫感[^。！？\n]{0,12}(铺开|漫开)|平整如镜|月光下[^。！？\n]{0,12}反射出[^。！？\n]{0,6}(寒光|冷光))/
-            },
-            {
-                label: "空动作总结",
-                score: 2,
-                pattern: /(动作|姿势)[^。！？\n]{0,8}(漫不经心|随意|轻飘飘|慵懒)[^。！？\n]{0,8}(到了极点|到了极致|得很|至极)/
-            },
-            {
-                label: "镜头切换腔",
-                score: 1,
-                pattern: /(这一刻|下一刻|与此同时|只见|顿时|旋即|顷刻间)/
-            },
-            {
-                label: "空泛转折",
-                score: 1,
-                pattern: /不是[^。！？\n]{0,20}而是[^。！？\n]{0,20}/
-            }
-        ];
-    }
-
-    getAiWeakModifierWords() {
-        return [
-            "微微", "缓缓", "轻轻", "淡淡", "静静", "死死", "直直", "冷冷",
-            "慢慢", "悄悄", "无声", "不由得", "仿佛", "似乎"
-        ];
-    }
-
-    getAiAbstractWords() {
-        return [
-            "复杂", "深邃", "锐利", "意味不明", "不容置疑", "异常清晰",
-            "某种", "某个地方", "无法形容", "说不清", "压迫感", "气息"
-        ];
-    }
-
-    getAiEmotionLabelWords() {
-        return [
-            "冷静", "克制", "复杂", "危险", "深邃", "锐利",
-            "压迫感", "意味不明", "不容置疑", "沉稳", "阴冷", "森然"
-        ];
-    }
-
-    getHumanStyleReferenceGuide() {
-        return [
-            "1. 真人网文常用‘主语+动作+结果’来推进，不会每句都先铺气氛再总结情绪。",
-            "2. 对话冲突主要靠说了什么、怎么回、谁占上风，不要乱补‘全场一静’‘众人都惊了’。",
-            "3. 战斗句优先写看得见的动作：挥、挡、退、扑、刺、砸、拉、站、看，不要写成大段玄乎感觉。",
-            "4. 允许句子普通，甚至有一点直白重复。人写文会反复用‘看、走、说、笑、皱眉、点头’，不要为了避重就换成雕花句。",
-            "5. 有信息的设定交代不要乱删。像等级、资源、规则、身份、利害判断，只要说得清楚，就属于真人常见写法。",
-            "6. 情绪最好落在反应上：脸色变了、停了一下、没接话、往后退、直接骂回去，而不是‘压迫感、危险、深邃、宠溺满溢’。",
-            "7. 真人文允许少量感叹、短句、反问，但不要连着堆成朗诵腔。",
-            "8. 改写后的句子要像作者顺手写出来的，不要像精修文案。",
-            "9. 写紧张、发狠、压迫时，优先写动作结果和场上变化。少写胸口起伏、衣料随呼吸起伏、手指抠边、死死抓着这类模板。"
-        ].join("\n");
-    }
-
-    getAiOpeningTemplate(text) {
-        const match = String(text || "").trim().match(/^(这一刻|下一刻|与此同时|只见|顿时|旋即|顷刻间|一时间|此刻|那一刻)/);
-        return match ? match[1] : "";
-    }
-
-    isWeakOnlyAiDetection(reasons = []) {
-        const list = Array.isArray(reasons) ? reasons.filter(Boolean) : [];
-        if (!list.length) {
-            return false;
-        }
-        const strongPattern = /(微表情模板|假细节模板|用力痕迹模板|呼吸起伏模板|局部抠抓模板|硬压强度词|冷淡摆拍模板|过度文学化|摆拍比喻|空动作总结|凝固停顿模板|围观停顿模板|情绪标签堆叠|标准冲突推进|重复渲染|段内重复解释)/;
-        return !list.some((item) => strongPattern.test(String(item || "")));
-    }
-
-    isPlainHumanNarrationSentence(sentence, role = "") {
-        const text = String(sentence || "").trim();
-        if (!text) {
-            return false;
-        }
-        const sentenceRole = role || this.classifyAiSentenceRole(text);
-        if (sentenceRole === "dialogue" || sentenceRole === "atmosphere" || sentenceRole === "summary") {
-            return false;
-        }
-        if (/(空气|时间|四周|全场|命运的齿轮|压迫感|无形的(?:压迫|巨手)|深邃|危险|意味不明|不容置疑)/.test(text)) {
-            return false;
-        }
-        const actionVerbPattern = /(走|跑|推|拉|抬|拿|伸手|抬眼|转身|站起|坐下|后退|上前|点头|摇头|笑了笑|盯着|看向|握住|松开|抿了抿|皱了皱眉|冲|扑|刺|砸|挥|落下|掀开|按住|拽|扶|躲|退开|抬手|抬脚|开门|关门|回头|停下)/;
-        const concreteNounPattern = /(手|脚|门|桌|椅|刀|剑|鞭|杯|茶|血|山|石|地|台|门口|院子|床|窗|信|纸|衣袖|袖子|腰|肩|脸|眉|眼)/;
-        if (actionVerbPattern.test(text)) {
-            return true;
-        }
-        return text.length <= 28 && concreteNounPattern.test(text) && !/(像|仿佛|如同)/.test(text);
-    }
-
-    classifyAiSentenceRole(sentence) {
-        const text = String(sentence || "").trim();
-        if (!text) {
-            return "empty";
-        }
-        if (/[“”「」『』]/.test(text)) {
-            return "dialogue";
-        }
-        if (/^(这|那|此|她知道|他知道|她明白|他明白|她很清楚|他很清楚|她意识到|他意识到|这意味着|这说明|显然|无疑|可见)/.test(text)
-            || /(说明|意味着|代表着|足以证明|显得格外)/.test(text)) {
-            return "summary";
-        }
-        if (/(空气|时间|四周|全场|夜色|风里|沉默|寂静|压迫感|气息|氛围)/.test(text)
-            && !/(走|跑|推|拉|抬|拿|说|问|答|笑|哭|转身|站|坐|看|伸手)/.test(text)) {
-            return "atmosphere";
-        }
-        if (/(走|跑|推|拉|抬|拿|伸手|抬眼|转身|站起|坐下|后退|上前|点头|摇头|笑了笑|看向|盯着)/.test(text)) {
-            return "action";
-        }
-        return "narration";
-    }
-
-    isAiSummaryOrAtmosphereSentence(sentence) {
-        const role = this.classifyAiSentenceRole(sentence);
-        return role === "summary" || role === "atmosphere";
-    }
-
-    isAiRedundantFollowup(sentence, previousSentence, config = {}) {
-        const currentText = String(sentence || "").trim();
-        const previousText = String(previousSentence || "").trim();
-        if (!currentText || !previousText) {
-            return false;
-        }
-
-        const currentRole = this.classifyAiSentenceRole(currentText);
-        const previousRole = this.classifyAiSentenceRole(previousText);
-        const abstractHits = this.countAiKeywordHits(currentText, config.abstractWords || []);
-        const emotionHits = this.countAiKeywordHits(currentText, config.emotionLabelWords || []);
-        const explanationLead = /^(这|那|此|她知道|他知道|她明白|他明白|她很清楚|他很清楚|她意识到|他意识到|这意味着|这说明|显然|无疑|可见|一时间|此刻)/;
-        const atmosphereWords = /(空气|时间|四周|全场|沉默|寂静|压迫|气息|氛围|夜色)/;
-
-        if ((currentRole === "summary" || currentRole === "atmosphere")
-            && (previousRole === "dialogue" || previousRole === "action")) {
-            return explanationLead.test(currentText) || abstractHits >= 1 || emotionHits >= 2;
-        }
-
-        if (currentRole === "atmosphere" && previousRole === "atmosphere") {
-            return atmosphereWords.test(currentText) && atmosphereWords.test(previousText);
-        }
-
-        return false;
-    }
-
-    getAiConflictProgressionTag(sentence) {
-        const text = String(sentence || "").trim();
-        if (!text) {
-            return "";
-        }
-        if (/(全场|空气|四周|气氛|死寂|寂静|沉默|安静|凝固|落针可闻|鸦雀无声)/.test(text)) {
-            return "atmosphere";
-        }
-        if (/((台下|场下|人群|众人|周围|围观的人|围观者|旁边的人)[^。！？\n]{0,12}(安静下来|静下来|停了动作|停下动作|都停了动作|齐齐停住|全停了下来))|(连[^。！？\n]{0,12}的人都停了动作)/.test(text)) {
-            return "crowd";
-        }
-        if (/(众人|所有人|人群|周围|在场|台下|旁人|围观|邻居|弟子|内门弟子)[^。！？\n]{0,16}(震惊|愣住|怔住|倒吸一口凉气|瞪大了眼|哗然|惊呼|面面相觑|瞪出眼眶|吓傻)/.test(text)) {
-            return "crowd";
-        }
-        if (/((冷静|平静|淡淡|不紧不慢|波澜不惊|慢条斯理|轻飘飘)[^。！？\n]{0,12}(开口|说道|说|问|答|挥|挥手|挥了挥|抬手))|((开口|说道|说|问|答|挥|挥手|挥了挥|抬手)[^。！？\n]{0,12}(冷静|平静|淡淡|不紧不慢|波澜不惊|慢条斯理|轻飘飘))|(^云清鸢没理他们[。！？]?$)/.test(text)) {
-            return "composure";
-        }
-        if (/(恼羞成怒|气急败坏|尖声|怒道|咬牙|脸色一变|脸色发白|脸色铁青|失声|怒极反笑|两腿发软|牙关打颤|膝盖一软|瘫坐|哭腔|抖得像|吓傻了|往后缩)/.test(text)) {
-            return "collapse";
-        }
-        if (/((旁人|周围|人群|邻居|有人|众人|台下|苏小瓜)[^。！？\n]{0,18}(议论|窃窃私语|低声议论|七嘴八舌|炸开了锅|指指点点|嘟囔|喃喃))|(((嘴里|低声|忍不住|不停地)[^。！？\n]{0,8}(嘟囔|喃喃)))/.test(text)) {
-            return "bystander";
-        }
-        return "";
-    }
-
-    detectAiConflictProgressionSequence(segments = []) {
-        const flagged = new Map();
-        if (!Array.isArray(segments) || segments.length < 4) {
-            return flagged;
-        }
-
-        const windowSize = 64;
-        for (let start = 0; start < segments.length; start += 1) {
-            const entries = [];
-            for (let index = start; index < Math.min(segments.length, start + windowSize); index += 1) {
-                const tag = this.getAiConflictProgressionTag(segments[index]);
-                if (tag) {
-                    entries.push({ index, tag });
-                }
-            }
-            if (entries.length < 4) {
-                continue;
-            }
-            const uniqueTags = new Set(entries.map((item) => item.tag));
-            const hasAudience = uniqueTags.has("crowd") || uniqueTags.has("bystander");
-            if (uniqueTags.has("atmosphere") && uniqueTags.has("composure") && uniqueTags.has("collapse") && hasAudience) {
-                entries.forEach(({ index, tag }) => {
-                    if (tag === "atmosphere" || tag === "crowd" || tag === "bystander") {
-                        flagged.set(index, "标准冲突推进");
-                    }
-                });
-            }
-        }
-
-        return flagged;
     }
 
     async requestJSONArray(systemPrompt, userPrompt, options) {
@@ -2009,8 +1295,8 @@
         }
         if (!Array.isArray(parsed)) {
             const rawPreview = String(raw || "").replace(/\s+/g, " ").slice(0, 300);
-            Utils.log(`JSON 鏁扮粍瑙ｆ瀽澶辫触锛屽師濮嬭繑鍥炵墖娈碉細${rawPreview || "绌哄搷搴?}`, "error");
-            throw new Error("AI 杩斿洖鍐呭鏃犳硶瑙ｆ瀽涓?JSON 鏁扮粍锛岃閲嶈瘯涓€娆°€?);
+            Utils.log(`JSON 数组解析失败，原始返回片段：${rawPreview || "空响应"}`, "error");
+            throw new Error("AI 返回内容无法解析为 JSON 数组，请重试一次。");
         }
         return parsed;
     }
@@ -2022,15 +1308,15 @@
         }
 
         const repairSystemPrompt = [
-            "浣犳槸涓€涓?JSON 淇鍣ㄣ€?,
-            "浣犵殑鍞竴浠诲姟鏄妸鐢ㄦ埛缁欎綘鐨勫唴瀹规暣鐞嗘垚鍚堟硶鐨?JSON 鏁扮粍銆?,
-            "涓嶈琛ュ墽鎯咃紝涓嶈鏀瑰瓧娈靛惈涔夛紝涓嶈瑙ｉ噴锛屼笉瑕佸姞 markdown 浠ｇ爜鍧椼€?,
-            "濡傛灉鍘熸枃閲屾湁澶氫綑璇存槑銆佸墠瑷€銆佸悗璁帮紝鍙繚鐣?JSON 鏁扮粍鏈綋銆?,
-            "濡傛灉鏈夊熬閫楀彿銆佷腑鏂囧紩鍙枫€佸寘瑁规枃瀛楋紝璇蜂慨姝ｆ垚鏍囧噯 JSON銆?
+            "你是一个 JSON 修复器。",
+            "你的唯一任务是把用户给你的内容整理成合法的 JSON 数组。",
+            "不要补剧情，不要改字段含义，不要解释，不要加 markdown 代码块。",
+            "如果原文里有多余说明、前言、后记，只保留 JSON 数组本体。",
+            "如果有尾逗号、中文引号、包裹文字，请修正成标准 JSON。"
         ].join("\n");
 
         const repairUserPrompt = [
-            "璇锋妸涓嬮潰鍐呭淇鎴愬悎娉曠殑 JSON 鏁扮粍锛屽彧杈撳嚭鏁扮粍鏈綋锛?,
+            "请把下面内容修复成合法的 JSON 数组，只输出数组本体：",
             raw
         ].join("\n\n");
 
@@ -2046,7 +1332,7 @@
         const blocks = [];
         const globalSetting = project.global_setting_note || "";
         if (globalSetting) {
-            blocks.push(`銆愬叏灞€璁惧畾鎻愰啋銆慭n${globalSetting}`);
+            blocks.push(`【全局设定提醒】\n${globalSetting}`);
         }
 
         [
@@ -2069,7 +1355,7 @@
         ].filter(Boolean).forEach((block) => blocks.push(block));
 
         if (volumeNumber) {
-            blocks.push(`銆愬嵎杈圭晫瑙勫垯銆戝綋鍓嶅彧鍏佽澶勭悊绗?${volumeNumber} 鍗疯寖鍥村唴鐨勫墽鎯咃紝涓嶈鎻愬墠閫忔敮鍚庣画鍗风殑閲嶈浜嬩欢銆俙);
+            blocks.push(`【卷边界规则】当前只允许处理第 ${volumeNumber} 卷范围内的剧情，不要提前透支后续卷的重要事件。`);
         }
 
         return blocks.join("\n\n");
@@ -2077,54 +1363,54 @@
 
     getAiHighFrequencyWords() {
         return [
-            "鍢磋鍕捐捣涓€鎶瑰姬搴?, "鍢磋鍕捐捣涓€鎶?, "鍢磋寰井涓婃壃", "鍕捐捣涓€鎶?, "鍕捐捣涓€涓?,
-            "寰笉鍙療鍦?, "寰笉鍙療", "寰笉鍙煡鍦?, "寰笉鍙煡",
-            "鐪间腑闂繃涓€涓濈簿鍏?, "鐪间腑闂繃涓€涓濇儕璁?, "鐪间腑闂繃涓€涓?, "鐪间腑闂潃澶嶆潅鐨勫厜鑺?,
-            "鐪间腑娴侀湶鍑哄悕涓?, "绗戞剰鏈揪鐪煎簳", "鐪肩娣遍們", "鐪肩閿愬埄", "鐪肩鍧氬畾", "鐪肩鐑垏",
-            "鐬冲瓟鍓х儓鏀剁缉", "鐬冲瓟鏀剁缉", "鐬冲瓟鐚涘湴涓€缂?,
-            "娣遍們鐨勭湼瀛?, "娣瘨鐨勭湼瀛?, "閿愬埄鐨勭溂鐫?,
-            "鑴镐笂娴幇鍑轰竴鎶?, "鑴镐笂鍫嗘弧浜嗙瑧", "鑴镐笂甯︾潃绗戞剰",
-            "杞粨鍒嗘槑鐨勪笅棰?, "淇暱鐨勬墜鎸?, "楠ㄨ妭鍒嗘槑鐨勬墜", "鎸囪妭娉涚櫧",
-            "寰井鎸戠湁", "鐩厜閲屾涓嶉伄鎺?,
-            "鍠夌粨婊氬姩", "鍠夌粨涓婁笅婊氬姩", "鍠夌粨",
-            "鑸斾簡鑸斿槾鍞?, "鑸斾簡鑸斿共瑁傜殑鍢村攪", "鑸斾簡鑸斿攪", "鎶夸簡鎶垮攪",
-            "鍍忎竴璁伴噸閿?, "鍍忎竴鐩嗗啺姘?, "鍍忎竴鎶婄簿鍑嗙殑鍒诲垁", "鍍忓崈骞村瘨鍐?,
-            "鍍忎竴鏍规粴鐑殑閽㈤拡", "鍍忔番浜嗘瘨鐨勫寱棣?, "鍍忎釜鐮村竷濞冨▋鑸鎶介",
-            "鍍忓湪鐪嬩竴涓凡缁忔閫忕殑浜?, "鍗存瘮瑗夸集鍒╀簹鐨勫瘨椋庤繕瑕佸啺鍐?,
-            "鍢村反寮犲緱鑳藉涓嬩竴涓浮铔?, "鐩存帴鍒哄叆蹇冭剰", "閲嶉噸鐮稿湪蹇冨ご",
-            "鏃堕棿浠夸經琚寜涓嬩簡鏆傚仠", "绌烘皵鍑濇粸濡傞搧", "璁╃┖姘旂殑娓╁害閮戒笅闄嶄簡鍑犲害",
-            "蹇冮噷鏌愪釜鍦版柟杞緱涓€濉岀硦娑?, "娴戣韩涓婁笅閮芥暎鍙戠潃涓€鑲?,
-            "鐮撮绠辫埇鐨勮嵎鑽峰０", "鍖栦綔榻戠矇", "绋冲纾愮煶",
-            "甯︾潃涓嶅缃枒鐨?, "鍔涢亾澶у緱鎯婁汉",
-            "姝讳竴鑸殑瀵傞潤", "鍏ㄥ満姝诲瘋", "姝诲瘋", "钀介拡鍙椈", "楦﹂泙鏃犲０",
-            "蹇冧腑涓€鍑?, "蹇冧腑涓€鍔?, "蹇冧笅浜嗙劧", "蹇冮噷闅愰殣鏈変簡鐚滄祴",
-            "鍥涜偄鐧鹃", "褰婚鐨勫啺瀵?, "涓嶆槗瀵熻",
-            "澹伴煶涓嶅ぇ", "澹伴煶涓嶉珮", "澹伴煶骞崇洿", "骞抽潤鏃犳尝", "澹伴煶鍚笉鍑烘儏缁?,
-            "澹伴煶鍧氬畾", "鍐板喎鐨勫０闊?,
-            "鏄惧緱鏈変簺鍏村", "鏄惧緱寮傚父娓呮櫚", "鏃犳硶鐢ㄨ█璇舰瀹?,
-            "姝绘鍦?, "缂撶紦鍦拌", "绮惧噯鍦?, "骞抽潤鍦?, "婵€鍔ㄥ湴", "娣℃贰鍦板簲浜嗕竴鍙?,
-            "娣簡", "娣潃", "娣瘨", "娑熸吉", "娣遍們", "閿愬埄",
-            "鍑濅綇浜?, "鍑濆浐浜?, "鍑濇粸浜?, "鍑濆浐",
-            "姣棤寰佸厗", "鎴涚劧鑰屾", "璇濋攱涓€杞?,
-            "鍙栬€屼唬涔?, "鍙栬€屼唬涔嬬殑鏄?, "涓嶅缃枒",
-            "娉㈡稕姹规秾", "琛屼簯娴佹按", "涓嶅彲浼伴噺",
-            "涓嶅崙涓嶄孩", "杩戜箮鍋忔墽",
-            "浠ヤ竴绉?, "杩欎笉鏄?..鑰屾槸", "鐩厜鎵繃", "娣卞惛涓€鍙ｆ皵",
-            "浠栫殑鍢磋寰井涓婃壃", "浠栫殑琛ㄦ儏鍙樻殫"
+            "嘴角勾起一抹弧度", "嘴角勾起一抹", "嘴角微微上扬", "勾起一抹", "勾起一丝",
+            "微不可察地", "微不可察", "微不可查地", "微不可查",
+            "眼中闪过一丝精光", "眼中闪过一丝惊讶", "眼中闪过一丝", "眼中闪着复杂的光芒",
+            "眼中流露出名为", "笑意未达眼底", "眼神深邃", "眼神锐利", "眼神坚定", "眼神热切",
+            "瞳孔剧烈收缩", "瞳孔收缩", "瞳孔猛地一缩",
+            "深邃的眸子", "淬毒的眸子", "锐利的眼睛",
+            "脸上浮现出一抹", "脸上堆满了笑", "脸上带着笑意",
+            "轮廓分明的下颌", "修长的手指", "骨节分明的手", "指节泛白",
+            "微微挑眉", "目光里毫不遮掩",
+            "喉结滚动", "喉结上下滚动", "喉结",
+            "舔了舔嘴唇", "舔了舔干裂的嘴唇", "舔了舔唇", "抿了抿唇",
+            "像一记重锤", "像一盆冰水", "像一把精准的刻刀", "像千年寒冰",
+            "像一根滚烫的钢针", "像淬了毒的匕首", "像个破布娃娃般被抽飞",
+            "像在看一个已经死透的人", "却比西伯利亚的寒风还要冰冷",
+            "嘴巴张得能塞下一个鸡蛋", "直接刺入心脏", "重重砸在心头",
+            "时间仿佛被按下了暂停", "空气凝滞如铁", "让空气的温度都下降了几度",
+            "心里某个地方软得一塌糊涂", "浑身上下都散发着一股",
+            "破风箱般的荷荷声", "化作齑粉", "稳如磐石",
+            "带着不容置疑的", "力道大得惊人",
+            "死一般的寂静", "全场死寂", "死寂", "落针可闻", "鸦雀无声",
+            "心中一凛", "心中一动", "心下了然", "心里隐隐有了猜测",
+            "四肢百骸", "彻骨的冰寒", "不易察觉",
+            "声音不大", "声音不高", "声音平直", "平静无波", "声音听不出情绪",
+            "声音坚定", "冰冷的声音",
+            "显得有些兴奋", "显得异常清晰", "无法用言语形容",
+            "死死地", "缓缓地说", "精准地", "平静地", "激动地", "淡淡地应了一句",
+            "淬了", "淬着", "淬毒", "涟漪", "深邃", "锐利",
+            "凝住了", "凝固了", "凝滞了", "凝固",
+            "毫无征兆", "戛然而止", "话锋一转",
+            "取而代之", "取而代之的是", "不容置疑",
+            "波涛汹涌", "行云流水", "不可估量",
+            "不卑不亢", "近乎偏执",
+            "以一种", "这不是...而是", "目光扫过", "深吸一口气",
+            "他的嘴角微微上扬", "他的表情变暗"
         ].sort((a, b) => b.length - a.length);
     }
 
     getAiSuspiciousPatterns() {
         return [
-            "鍢磋[^銆傦紒锛焅\n]{0,12}?(鍕緗涓婃壃|寰笉鍙瘄寰井|闇插嚭|鍕捐捣|寮?",
-            "鐪间腑[^銆傦紒锛焅\n]{0,12}?(闂繃|闂潃|娴侀湶|鏈変竴涓潀涓€涓?",
-            "鍠夌粨[^銆傦紒锛焅\n]{0,8}?(鍔▅婊殀鍑竱涓€鍔?",
-            "(鎸?鍏宠妭|鑺?|鎵嬫寚)[^銆傦紒锛焅\n]{0,8}?(娉涚櫧|棰鍙戠櫧)",
-            "鑸斾簡?鑸?鍢村攪",
-            "(姝诲瘋|鍏ㄥ満姝诲瘋|钀介拡鍙椈|楦﹂泙鏃犲０|姝讳竴鑸殑瀵傞潤)",
-            "(缂撶紦鍦皘寰笉鍙療|寰笉鍙煡|涓嶆槗瀵熻)[^銆傦紒锛焅\n]{0,8}",
-            "(鐪肩|鐩厜)[^銆傦紒锛焅\n]{0,12}?(娣遍們|閿愬埄|鐑垏|澶嶆潅)",
-            "(鏃堕棿浠夸經琚寜涓嬩簡鏆傚仠|绌烘皵鍑濇粸|浠夸經琚寜涓嬩簡鏆傚仠)"
+            "嘴角[^。！？\\n]{0,12}?(勾|上扬|微不可|微微|露出|勾起|弯)",
+            "眼中[^。！？\\n]{0,12}?(闪过|闪着|流露|有一丝|一丝)",
+            "喉结[^。！？\\n]{0,8}?(动|滚|凸|一动)",
+            "(指(关节|节)|手指)[^。！？\\n]{0,8}?(泛白|颤|发白)",
+            "舔了?舔?嘴唇",
+            "(死寂|全场死寂|落针可闻|鸦雀无声|死一般的寂静)",
+            "(缓缓地|微不可察|微不可查|不易察觉)[^。！？\\n]{0,8}",
+            "(眼神|目光)[^。！？\\n]{0,12}?(深邃|锐利|热切|复杂)",
+            "(时间仿佛被按下了暂停|空气凝滞|仿佛被按下了暂停)"
         ];
     }
 
@@ -2134,15 +1420,15 @@
             return projectList;
         }
         return [
-            "浠栫瑧浜?,
-            "濂圭瑧浜?,
-            "浠栫湅鐫€绐楀",
-            "濂圭湅鐫€绐楀",
-            "鐪嬬潃杩滄柟",
-            "鐪嬬潃瀵规柟",
-            "娌夐粯浜嗕竴浼?,
-            "娌′汉璇磋瘽",
-            "灞嬮噷寰堝畨闈?
+            "他笑了",
+            "她笑了",
+            "他看着窗外",
+            "她看着窗外",
+            "看着远方",
+            "看着对方",
+            "沉默了一会",
+            "没人说话",
+            "屋里很安静"
         ];
     }
 
@@ -2152,15 +1438,15 @@
             return projectList;
         }
         return [
-            "鎸囪妭娉涚櫧",
-            "鍠夌粨婊氬姩",
-            "鑸斾簡鑸斿槾鍞?,
-            "鍏ㄥ満姝诲瘋",
-            "绌烘皵鍑濇粸",
-            "鏃堕棿浠夸經琚寜涓嬩簡鏆傚仠",
-            "鍍忎竴璁伴噸閿?,
-            "鐪间腑闂繃涓€涓?,
-            "鍢磋鍕捐捣涓€鎶瑰姬搴?
+            "指节泛白",
+            "喉结滚动",
+            "舔了舔嘴唇",
+            "全场死寂",
+            "空气凝滞",
+            "时间仿佛被按下了暂停",
+            "像一记重锤",
+            "眼中闪过一丝",
+            "嘴角勾起一抹弧度"
         ];
     }
 
@@ -2168,68 +1454,31 @@
         const projectList = project?.prompt_state?.ai_filter_whitelist;
         return Array.isArray(projectList) && projectList.length
             ? projectList
-            : ["浠栫瑧浜?, "濂圭瑧浜?, "鐪嬬潃绐楀", "鐪嬬潃杩滄柟"];
+            : ["他笑了", "她笑了", "看着窗外", "看着远方"];
     }
 
     getAiBlacklist(project) {
         const projectList = project?.prompt_state?.ai_filter_blacklist;
         return Array.isArray(projectList) && projectList.length
             ? projectList
-            : ["鎸囧叧鑺傛硾鐧?, "鍠夌粨婊氬姩", "鑸斾簡鑸斿槾鍞?, "鍏ㄥ満姝诲瘋"];
+            : ["指关节泛白", "喉结滚动", "舔了舔嘴唇", "全场死寂"];
     }
 
     splitSentencesForAiFilter(text) {
-        const input = String(text || "").replace(/\r\n/g, "\n").replace(/\r/g, "\n");
-        if (!input) {
-            return [""];
-        }
-
-        const segments = [];
-        let buffer = "";
-        for (let index = 0; index < input.length; index += 1) {
-            const char = input[index];
-            if (char === "\n") {
-                if (buffer) {
-                    segments.push(buffer);
-                    buffer = "";
-                }
-                segments.push("\n");
-                continue;
-            }
-
-            buffer += char;
-            if (/[。！？!?…]/.test(char)) {
-                while (index + 1 < input.length && /[”’"'」』）》】]/.test(input[index + 1])) {
-                    index += 1;
-                    buffer += input[index];
-                }
-                segments.push(buffer);
-                buffer = "";
-            }
-        }
-
-        if (buffer) {
-            segments.push(buffer);
-        }
-        return segments.length ? segments : [input];
+        const matches = String(text || "").match(/[^。！？\n]+[。！？]?|\n/g);
+        return matches && matches.length ? matches : [String(text || "")];
     }
 
     preserveSentenceEnding(original, rewritten) {
-        const originalText = String(original || "");
         const trimmed = String(rewritten || "").trim();
         if (!trimmed) {
             return original;
         }
-
-        const leading = originalText.match(/^[\t \u3000]*/)?.[0] || "";
-        const trailing = originalText.match(/[\t \u3000]*$/)?.[0] || "";
-        const originalTrimmed = originalText.trim();
-        const match = originalTrimmed.match(/[。！？!?…][”’"'」』）》】]?$/);
-        let output = trimmed;
-        if (match && !/[。！？!?…][”’"'」』）》】]?$/.test(output)) {
-            output = `${output}${match[0]}`;
+        const match = String(original || "").match(/[。！？…]$/);
+        if (match && !/[。！？…]$/.test(trimmed)) {
+            return `${trimmed}${match[0]}`;
         }
-        return `${leading}${output}${trailing}`;
+        return trimmed;
     }
 
     buildHiddenSecretGuard(project, chapterNumber) {
@@ -2243,10 +1492,10 @@
 
         const found = [];
         const patterns = [
-            /鎻湶鍦ㄧ\s*(\d+)\s*绔?g,
-            /鐩村埌绗琝s*(\d+)\s*绔犳墠(?:鎻湶|鐭ラ亾|鍙戠幇)/g,
-            /鍦ㄧ\s*(\d+)\s*绔犳彮鏅?g,
-            /闅愯棌.*?绗琝s*(\d+)\s*绔?g
+            /揭露在第\s*(\d+)\s*章/g,
+            /直到第\s*(\d+)\s*章才(?:揭露|知道|发现)/g,
+            /在第\s*(\d+)\s*章揭晓/g,
+            /隐藏.*?第\s*(\d+)\s*章/g
         ];
 
         patterns.forEach((pattern) => {
@@ -2255,25 +1504,25 @@
             }
         });
 
-        const sensitiveWords = ["鎬€瀛?, "韬笘", "鐪熷疄韬唤", "鍙岄噸韬唤", "绉樺瘑", "闅愯棌"].filter((word) => text.includes(word));
+        const sensitiveWords = ["怀孕", "身世", "真实身份", "双重身份", "秘密", "隐藏"].filter((word) => text.includes(word));
         if (!found.length && !sensitiveWords.length) {
             return "";
         }
 
         const earliestReveal = found.length ? Math.min(...found) : null;
         const lines = [
-            "銆愬墽閫忎笌绉樺瘑淇濇姢銆?,
-            "涓ョ鍦ㄦ湭鏄庣‘鍏佽鐨勭珷鑺傛彁鍓嶆彮闇查噸澶х瀵嗐€佺湡瀹炶韩浠姐€佽韩涓栥€佹€€瀛曠瓑淇℃伅銆?
+            "【剧透与秘密保护】",
+            "严禁在未明确允许的章节提前揭露重大秘密、真实身份、身世、怀孕等信息。"
         ];
 
         if (earliestReveal) {
-            lines.push(`妫€娴嬪埌鏈€鏃╂彮闇茶妭鐐瑰彲鑳藉湪绗?${earliestReveal} 绔犮€俙);
+            lines.push(`检测到最早揭露节点可能在第 ${earliestReveal} 章。`);
             if (chapterNumber && chapterNumber < earliestReveal) {
-                lines.push(`褰撳墠鏄 ${chapterNumber} 绔狅紝鍦ㄦ彮闇茶妭鐐瑰墠鍙兘淇濇寔妯＄硦鏆楃ず锛岀姝㈢‘璁ゆ€ф彮绀恒€俙);
+                lines.push(`当前是第 ${chapterNumber} 章，在揭露节点前只能保持模糊暗示，禁止确认性揭示。`);
             }
         }
         if (sensitiveWords.length) {
-            lines.push(`鏁忔劅璁惧畾鍏抽敭璇嶏細${sensitiveWords.join("銆?)}`);
+            lines.push(`敏感设定关键词：${sensitiveWords.join("、")}`);
         }
 
         return lines.join("\n");
@@ -2282,15 +1531,15 @@
     buildStoryStateGuard(project) {
         const storyState = project.outline?.story_state || project.story_state || {};
         const lines = [];
-        if (storyState.current_location) lines.push(`褰撳墠鍦扮偣锛?{storyState.current_location}`);
-        if (storyState.timeline) lines.push(`褰撳墠鏃堕棿绾匡細${Utils.summarizeText(storyState.timeline, 120)}`);
-        if (storyState.important_items) lines.push(`閲嶈鐗╁搧锛?{Utils.summarizeText(storyState.important_items, 120)}`);
-        if (storyState.pending_plots) lines.push(`寰呮帹杩涗簨椤癸細${Utils.summarizeText(storyState.pending_plots, 140)}`);
+        if (storyState.current_location) lines.push(`当前地点：${storyState.current_location}`);
+        if (storyState.timeline) lines.push(`当前时间线：${Utils.summarizeText(storyState.timeline, 120)}`);
+        if (storyState.important_items) lines.push(`重要物品：${Utils.summarizeText(storyState.important_items, 120)}`);
+        if (storyState.pending_plots) lines.push(`待推进事项：${Utils.summarizeText(storyState.pending_plots, 140)}`);
         const names = Object.keys(storyState.characters || {}).slice(0, 8);
         if (names.length) {
-            lines.push(`瑙掕壊鐘舵€侊細${names.map((name) => `${name}(${Utils.summarizeText(JSON.stringify(storyState.characters[name]), 32)})`).join("銆?)}`);
+            lines.push(`角色状态：${names.map((name) => `${name}(${Utils.summarizeText(JSON.stringify(storyState.characters[name]), 32)})`).join("、")}`);
         }
-        return lines.length ? `銆愬綋鍓嶆晠浜嬬姸鎬侊紙蹇呴』寤剁画锛夈€慭n${lines.join("\n")}` : "";
+        return lines.length ? `【当前故事状态（必须延续）】\n${lines.join("\n")}` : "";
     }
 
     getOrderedChapterRecords(project) {
@@ -2300,7 +1549,7 @@
                 all.push({
                     volumeIndex,
                     volumeNumber: volumeIndex + 1,
-                    volumeTitle: volume.title || `绗?{volumeIndex + 1}鍗穈,
+                    volumeTitle: volume.title || `第${volumeIndex + 1}卷`,
                     volumeId: volume.id || volume.uuid || "",
                     chapterId: chapter.id || chapter.uuid || "",
                     uuid: chapter.uuid || chapter.id || "",
@@ -2378,7 +1627,7 @@
 
         const tailText = paragraphs.slice(-3).join(" ");
         const sentences = tailText
-            .split(/(?<=[銆傦紒锛??鈥)/)
+            .split(/(?<=[。！？!?…])/)
             .map((item) => item.trim())
             .filter((item) => item.length >= 8);
         const lastSentence = sentences[sentences.length - 1] || paragraphs[paragraphs.length - 1] || "";
@@ -2390,13 +1639,13 @@
             return "";
         }
         const parts = [
-            setup.state_setup ? `鐘舵€侊細${setup.state_setup}` : "",
-            setup.atmosphere_setup ? `姘涘洿锛?{setup.atmosphere_setup}` : "",
-            setup.suspense_hook ? `鎮康锛?{setup.suspense_hook}` : "",
-            setup.clue_hint ? `绾跨储锛?{setup.clue_hint}` : "",
-            setup.countdown ? `鍊掕鏃讹細${setup.countdown}` : ""
+            setup.state_setup ? `状态：${setup.state_setup}` : "",
+            setup.atmosphere_setup ? `氛围：${setup.atmosphere_setup}` : "",
+            setup.suspense_hook ? `悬念：${setup.suspense_hook}` : "",
+            setup.clue_hint ? `线索：${setup.clue_hint}` : "",
+            setup.countdown ? `倒计时：${setup.countdown}` : ""
         ].filter(Boolean);
-        return parts.join("锛?);
+        return parts.join("；");
     }
 
     getSnapshotByChapter(project, chapterNumber) {
@@ -2424,23 +1673,23 @@
         const tailAction = this.extractLastMeaningfulSentence(previousChapter.content || "", 100);
         const hook = this.describeNextChapterSetup(previousChapter.nextChapterSetup || previousChapter.next_chapter_setup || {});
         const unresolved = snapshot.pending_plots || previousChapter.nextChapterSetup?.state_setup || "";
-        const scene = snapshot.current_location || snapshot["浣嶇疆"] || "";
-        const timeline = snapshot.timeline || snapshot["鏃堕棿"] || "";
+        const scene = snapshot.current_location || snapshot["位置"] || "";
+        const timeline = snapshot.timeline || snapshot["时间"] || "";
 
         return [
-            "銆愬紑绡囨帴鍔涙銆?,
-            `鎵挎帴鏉ユ簮锛氱${previousChapter.number}绔犮€?{previousChapter.title || "鏈懡鍚嶇珷鑺?}銆媊,
-            "杩欓噷鍙彁渚涚粨鏋溿€佺幇鍦哄拰鏈畬浜嬮」锛屼笉鎻愪緵鍙杩板師鍙ワ紱鏈珷寮€澶村繀椤荤户缁線鍓嶅啓銆?,
-            previousCore ? `- 涓婄珷宸插畬鎴愮粨鏋滐細${Utils.summarizeText(previousCore, 110)}` : "",
-            scene ? `- 褰撳墠鐜板満鍦扮偣锛?{Utils.summarizeText(scene, 40)}` : "",
-            timeline ? `- 褰撳墠鐜板満鏃堕棿锛?{Utils.summarizeText(timeline, 40)}` : "",
-            tailAction ? `- 涓婄珷鏈€鍚庡姩浣?鐢婚潰锛?{tailAction}` : "",
-            unresolved ? `- 褰撳墠浠嶆湭澶勭悊锛?{Utils.summarizeText(unresolved, 90)}` : "",
-            hook ? `- 鏈珷蹇呴』绔嬪埢鎺ヤ綇锛?{Utils.summarizeText(hook, 110)}` : "",
-            "纭鍒欙細",
-            "1. 绗竴娈电洿鎺ヨ繘鍏ョ幇鍦哄姩浣溿€佸鐧芥垨鍗虫椂鍙嶅簲锛屼笉瑕佸厛鍐欏墠鎯呭洖椤俱€?,
-            "2. 涓嶈鎶婁笂涓€绔犲凡瀹屾垚缁撴灉鍐嶅啓鎴愯皟鏌ャ€佽В閲娿€佹帹鐞嗘垨澶ф澶嶇洏銆?,
-            "3. 濡傛灉闇€瑕佽繃妗ワ紝鍙兘鐢ㄥ緢鐭殑鍔ㄤ綔杩囨浮锛屼笉鑳芥暣娈靛杩颁笂涓€绔犮€?
+            "【开篇接力棒】",
+            `承接来源：第${previousChapter.number}章《${previousChapter.title || "未命名章节"}》`,
+            "这里只提供结果、现场和未完事项，不提供可复述原句；本章开头必须继续往前写。",
+            previousCore ? `- 上章已完成结果：${Utils.summarizeText(previousCore, 110)}` : "",
+            scene ? `- 当前现场地点：${Utils.summarizeText(scene, 40)}` : "",
+            timeline ? `- 当前现场时间：${Utils.summarizeText(timeline, 40)}` : "",
+            tailAction ? `- 上章最后动作/画面：${tailAction}` : "",
+            unresolved ? `- 当前仍未处理：${Utils.summarizeText(unresolved, 90)}` : "",
+            hook ? `- 本章必须立刻接住：${Utils.summarizeText(hook, 110)}` : "",
+            "硬规则：",
+            "1. 第一段直接进入现场动作、对白或即时反应，不要先写前情回顾。",
+            "2. 不要把上一章已完成结果再写成调查、解释、推理或大段复盘。",
+            "3. 如果需要过桥，只能用很短的动作过渡，不能整段复述上一章。"
         ].filter(Boolean).join("\n");
     }
 
@@ -2460,22 +1709,22 @@
         const endingFocus = this.extractLastMeaningfulSentence(previousChapter.content || "", 100);
 
         const lines = [
-            "銆愬紑澶撮槻閲嶅纭害鏉熴€?,
-            "1. 鏈珷鍓?娈靛繀椤荤洿鎺ユ壙鎺ヤ笂涓€绔犳渶鍚庝竴涓姩浣溿€佹儏缁垨鐘舵€佸彉鍖栵紝涓嶈閲嶆柊閾轰竴閬嶄笂涓€绔犲凡缁忓畬鎴愮殑涓讳簨浠躲€?,
-            "2. 濡傛灉蹇呴』鍥為【涓婁竴绔狅紝鏈€澶氬彧鍏佽 1-2 鍙ワ紝鑰屼笖鍙兘浣滀负鎵挎帴锛岀粷涓嶈兘鎶婁笂绔犳牳蹇冨彂鐜伴噸璁叉垚澶ф鍓嶆儏銆?,
-            "3. 涓婁竴绔犲凡缁忓彂鐢熷苟纭杩囩殑鏍稿績淇℃伅锛屼笉鑳藉湪鏈珷寮€澶撮噸鏂版帹鐞嗐€侀噸鏂拌В閲娿€侀噸鏂伴摵闄堛€?
+            "【开头防重复硬约束】",
+            "1. 本章前3段必须直接承接上一章最后一个动作、情绪或状态变化，不要重新铺一遍上一章已经完成的主事件。",
+            "2. 如果必须回顾上一章，最多只允许 1-2 句，而且只能作为承接，绝不能把上章核心发现重讲成大段前情。",
+            "3. 上一章已经发生并确认过的核心信息，不能在本章开头重新推理、重新解释、重新铺陈。"
         ];
 
         if (previousCore) {
-            lines.push(`涓婁竴绔犲凡瀹屾垚鏍稿績浜嬩欢锛?{Utils.summarizeText(previousCore, 130)}`);
+            lines.push(`上一章已完成核心事件：${Utils.summarizeText(previousCore, 130)}`);
         }
         if (previousHook) {
-            lines.push(`涓婁竴绔犵暀缁欐湰绔犵殑鎵挎帴閽╁瓙锛?{Utils.summarizeText(previousHook, 120)}`);
+            lines.push(`上一章留给本章的承接钩子：${Utils.summarizeText(previousHook, 120)}`);
         }
         if (endingFocus) {
-            lines.push(`涓婁竴绔犵粨灏惧姩浣滈敋鐐癸細${endingFocus}`);
+            lines.push(`上一章结尾动作锚点：${endingFocus}`);
         }
-        lines.push("鏈珷寮€澶磋浠庤繖浜涘凡鐭ョ粨鏋滅户缁線鍓嶅啓锛岃€屼笉鏄啀璁蹭竴閬嶅畠浠槸鎬庝箞鍙戠敓鐨勩€?);
+        lines.push("本章开头要从这些已知结果继续往前写，而不是再讲一遍它们是怎么发生的。");
 
         return lines.join("\n");
     }
@@ -2487,50 +1736,50 @@
             const previousBrief = previousChapter.keyEvent
                 || Utils.summarizeText(previousChapter.summary, 120)
                 || previousChapter.title;
-            lines.push(`涓婁竴绔犺繘搴︼細绗?{previousChapter.number}绔犮€?{previousChapter.title || "鏈懡鍚?}銆?-> ${previousBrief}`);
+            lines.push(`上一章进度：第${previousChapter.number}章《${previousChapter.title || "未命名"}》 -> ${previousBrief}`);
             if (previousChapter.emotionCurve) {
-                lines.push(`涓婁竴绔犳儏缁熬璋冿細${Utils.summarizeText(previousChapter.emotionCurve, 60)}`);
+                lines.push(`上一章情绪尾调：${Utils.summarizeText(previousChapter.emotionCurve, 60)}`);
             }
             const previousSetup = this.describeNextChapterSetup(previousChapter.nextChapterSetup);
             if (previousSetup) {
-                lines.push(`涓婁竴绔犵暀涓嬬殑涓嬬珷閾哄灚锛?{Utils.summarizeText(previousSetup, 120)}`);
+                lines.push(`上一章留下的下章铺垫：${Utils.summarizeText(previousSetup, 120)}`);
             }
         }
 
         const { snapshot } = this.getSnapshotBeforeChapter(project, chapterNumber);
         if (snapshot) {
-            if (snapshot.current_location || snapshot["浣嶇疆"]) {
-                lines.push(`鎵挎帴鍦扮偣锛?{snapshot.current_location || snapshot["浣嶇疆"]}`);
+            if (snapshot.current_location || snapshot["位置"]) {
+                lines.push(`承接地点：${snapshot.current_location || snapshot["位置"]}`);
             }
-            if (snapshot.timeline || snapshot["鏃堕棿"]) {
-                lines.push(`鎵挎帴鏃堕棿锛?{Utils.summarizeText(snapshot.timeline || snapshot["鏃堕棿"], 80)}`);
+            if (snapshot.timeline || snapshot["时间"]) {
+                lines.push(`承接时间：${Utils.summarizeText(snapshot.timeline || snapshot["时间"], 80)}`);
             }
             if (snapshot.pending_plots) {
-                lines.push(`鏈畬浜嬮」锛?{Utils.summarizeText(snapshot.pending_plots, 90)}`);
+                lines.push(`未完事项：${Utils.summarizeText(snapshot.pending_plots, 90)}`);
             }
             if (snapshot.important_items) {
-                lines.push(`閲嶈鐗╁搧鐘舵€侊細${Utils.summarizeText(snapshot.important_items, 90)}`);
+                lines.push(`重要物品状态：${Utils.summarizeText(snapshot.important_items, 90)}`);
             }
         }
 
         const storyState = project?.outline?.story_state || project?.story_state || {};
-        if (storyState.current_location && !lines.some((line) => line.startsWith("鎵挎帴鍦扮偣锛?))) {
-            lines.push(`褰撳墠鍦扮偣锛?{storyState.current_location}`);
+        if (storyState.current_location && !lines.some((line) => line.startsWith("承接地点："))) {
+            lines.push(`当前地点：${storyState.current_location}`);
         }
-        if (storyState.timeline && !lines.some((line) => line.startsWith("鎵挎帴鏃堕棿锛?))) {
-            lines.push(`褰撳墠鏃堕棿绾匡細${Utils.summarizeText(storyState.timeline, 80)}`);
+        if (storyState.timeline && !lines.some((line) => line.startsWith("承接时间："))) {
+            lines.push(`当前时间线：${Utils.summarizeText(storyState.timeline, 80)}`);
         }
-        if (storyState.pending_plots && !lines.some((line) => line.startsWith("鏈畬浜嬮」锛?))) {
-            lines.push(`寰呮帹杩涗簨椤癸細${Utils.summarizeText(storyState.pending_plots, 100)}`);
+        if (storyState.pending_plots && !lines.some((line) => line.startsWith("未完事项："))) {
+            lines.push(`待推进事项：${Utils.summarizeText(storyState.pending_plots, 100)}`);
         }
 
         const unresolvedForeshadows = Object.values(project?.foreshadow_tracker?.foreshadows || {})
-            .filter((item) => item && item["鐘舵€?] !== "宸插洖鏀?)
+            .filter((item) => item && item["状态"] !== "已回收")
             .slice(0, 4)
-            .map((item) => item["浼忕瑪鍐呭"] || item.content || "")
+            .map((item) => item["伏笔内容"] || item.content || "")
             .filter(Boolean);
         if (unresolvedForeshadows.length) {
-            lines.push(`鏈洖鏀朵紡绗旓細${unresolvedForeshadows.map((item) => Utils.summarizeText(item, 22)).join("銆?)}`);
+            lines.push(`未回收伏笔：${unresolvedForeshadows.map((item) => Utils.summarizeText(item, 22)).join("、")}`);
         }
 
         const relevantCharacterStates = this.buildRelevantCharacterStateDigest(project, contextText, chapterNumber);
@@ -2584,8 +1833,8 @@
             .find(Boolean) || "";
 
         const lines = [
-            "銆愮浉鍏宠鑹插嵆鏃剁姸鎬侊紙涓嶈涓插彴锛夈€?,
-            "浠ヤ笅瑙掕壊鐨勪綅缃€佷激鍔裤€佸叧绯诲拰鐭ユ儏鑼冨洿褰兼鐙珛锛屼笉鑳芥妸涓€涓汉鐨勭姸鎬佸啓鍒板彟涓€涓汉韬笂銆?
+            "【相关角色即时状态（不要串台）】",
+            "以下角色的位置、伤势、关系和知情范围彼此独立，不能把一个人的状态写到另一个人身上。"
         ];
 
         names.forEach((name) => {
@@ -2596,93 +1845,93 @@
             const appearanceState = appearanceStates[name] || {};
             const declarationItems = Array.isArray(dialogueDeclarations[name]) ? dialogueDeclarations[name] : [];
             const recentDeclaration = declarationItems
-                .filter((item) => !chapterNumber || Number(item.chapter_num || item.chapter || item["绔犺妭"] || 0) < chapterNumber)
+                .filter((item) => !chapterNumber || Number(item.chapter_num || item.chapter || item["章节"] || 0) < chapterNumber)
                 .slice(-1)
-                .map((item) => item.content || item["鍐呭"] || "")
+                .map((item) => item.content || item["内容"] || "")
                 .find(Boolean) || "";
 
             const parts = [];
             const identity = firstText(
                 outlineCharacter.identity,
-                outlineCharacter["韬唤"],
+                outlineCharacter["身份"],
                 appearanceState.identity,
-                appearanceState["韬唤"]
+                appearanceState["身份"]
             );
             const location = firstText(
                 storyState.location,
                 storyState.current_location,
-                storyState["褰撳墠浣嶇疆"],
+                storyState["当前位置"],
                 checkerState.location,
                 checkerState.current_location,
-                checkerState["褰撳墠浣嶇疆"],
+                checkerState["当前位置"],
                 dynamicState.location,
                 dynamicState.current_location,
-                dynamicState["褰撳墠浣嶇疆"]
+                dynamicState["当前位置"]
             );
             const status = firstText(
                 storyState.status,
                 storyState.current_status,
-                storyState["鐘舵€?],
+                storyState["状态"],
                 checkerState.status,
                 checkerState.current_status,
-                checkerState["褰撳墠鐘舵€?],
+                checkerState["当前状态"],
                 dynamicState.status,
                 dynamicState.current_status,
-                dynamicState["褰撳墠鐘舵€?]
+                dynamicState["当前状态"]
             );
             const cultivation = firstText(
                 storyState.cultivation,
-                storyState["淇负"],
+                storyState["修为"],
                 checkerState.cultivation,
-                checkerState["淇负"],
+                checkerState["修为"],
                 dynamicState.cultivation,
-                dynamicState["淇负"]
+                dynamicState["修为"]
             );
             const goal = firstText(
                 storyState.goals,
                 storyState.goal,
-                storyState["鐩爣"],
+                storyState["目标"],
                 dynamicState.goals,
                 dynamicState.goal,
                 outlineCharacter.goals,
-                outlineCharacter["鐩爣鍔ㄦ満"]
+                outlineCharacter["目标动机"]
             );
             const relationships = firstText(
                 storyState.relationships,
-                storyState["鍏崇郴鍙樺寲"],
+                storyState["关系变化"],
                 dynamicState.relationships,
-                dynamicState["鍏崇郴鍙樺寲"],
+                dynamicState["关系变化"],
                 outlineCharacter.relationships,
-                outlineCharacter["浜虹墿鍏崇郴"]
+                outlineCharacter["人物关系"]
             );
             const secrets = firstText(
                 storyState.secrets,
-                storyState["鐭ユ檽鐨勭瀵?],
+                storyState["知晓的秘密"],
                 dynamicState.secrets,
-                dynamicState["鐭ユ檽鐨勭瀵?]
+                dynamicState["知晓的秘密"]
             );
             const appearance = firstText(
                 appearanceState.current_appearance,
-                appearanceState["褰撳墠褰㈣薄"],
-                appearanceState["澶栬矊褰㈣薄/浼褰撳墠鐘舵€?],
+                appearanceState["当前形象"],
+                appearanceState["外貌形象/伪装当前状态"],
                 storyState.appearance_changes,
-                storyState["澶栬矊褰㈣薄/浼褰撳墠鐘舵€?],
+                storyState["外貌形象/伪装当前状态"],
                 dynamicState.appearance,
-                dynamicState["褰撳墠褰㈣薄"]
+                dynamicState["当前形象"]
             );
 
-            if (identity) parts.push(`韬唤=${Utils.summarizeText(identity, 18)}`);
-            if (location) parts.push(`浣嶇疆=${Utils.summarizeText(location, 24)}`);
-            if (status) parts.push(`鐘舵€?${Utils.summarizeText(status, 24)}`);
-            if (cultivation) parts.push(`瀹炲姏=${Utils.summarizeText(cultivation, 18)}`);
-            if (goal) parts.push(`鐩爣=${Utils.summarizeText(goal, 24)}`);
-            if (relationships) parts.push(`鍏崇郴=${Utils.summarizeText(relationships, 22)}`);
-            if (secrets) parts.push(`鐭ユ儏=${Utils.summarizeText(secrets, 20)}`);
-            if (appearance) parts.push(`褰㈣薄=${Utils.summarizeText(appearance, 18)}`);
-            if (recentDeclaration) parts.push(`杩戞湡琛ㄦ€?${Utils.summarizeText(recentDeclaration, 18)}`);
+            if (identity) parts.push(`身份=${Utils.summarizeText(identity, 18)}`);
+            if (location) parts.push(`位置=${Utils.summarizeText(location, 24)}`);
+            if (status) parts.push(`状态=${Utils.summarizeText(status, 24)}`);
+            if (cultivation) parts.push(`实力=${Utils.summarizeText(cultivation, 18)}`);
+            if (goal) parts.push(`目标=${Utils.summarizeText(goal, 24)}`);
+            if (relationships) parts.push(`关系=${Utils.summarizeText(relationships, 22)}`);
+            if (secrets) parts.push(`知情=${Utils.summarizeText(secrets, 20)}`);
+            if (appearance) parts.push(`形象=${Utils.summarizeText(appearance, 18)}`);
+            if (recentDeclaration) parts.push(`近期表态=${Utils.summarizeText(recentDeclaration, 18)}`);
 
             if (parts.length) {
-                lines.push(`- ${name}锛?{parts.join("锛?)}`);
+                lines.push(`- ${name}：${parts.join("；")}`);
             }
         });
 
@@ -2696,24 +1945,24 @@
         }
 
         const setupText = this.describeNextChapterSetup(previousChapter.nextChapterSetup);
-        const lines = ["銆愪笅绔犻摵鍨壙鎺ヨ鍒欍€?];
+        const lines = ["【下章铺垫承接规则】"];
         if (setupText) {
-            lines.push(`涓婁竴绔犳槑纭暀涓嬬殑閾哄灚锛?{Utils.summarizeText(setupText, 160)}`);
+            lines.push(`上一章明确留下的铺垫：${Utils.summarizeText(setupText, 160)}`);
         } else {
             const previousBrief = previousChapter.keyEvent
                 || Utils.summarizeText(previousChapter.summary, 100)
                 || previousChapter.title;
-            lines.push(`涓婁竴绔犵粨灏鹃噸鐐癸細${Utils.summarizeText(previousBrief, 100)}`);
+            lines.push(`上一章结尾重点：${Utils.summarizeText(previousBrief, 100)}`);
         }
         if (previousChapter.emotionCurve) {
-            lines.push(`涓婁竴绔犳儏缁熬璋冿細${Utils.summarizeText(previousChapter.emotionCurve, 70)}`);
+            lines.push(`上一章情绪尾调：${Utils.summarizeText(previousChapter.emotionCurve, 70)}`);
         }
         if (currentText) {
-            lines.push(`褰撳墠寰呭啓鍐呭锛?{Utils.summarizeText(currentText, 150)}`);
+            lines.push(`当前待写内容：${Utils.summarizeText(currentText, 150)}`);
         }
-        lines.push("鏈鍐呭寮€澶村繀椤诲厛鎺ヤ綇涓婁竴绔犵粨灏剧暀涓嬬殑鐘舵€併€佹皼鍥淬€佹偓蹇垫垨鏈畬浜嬮」锛屽啀灞曞紑鏂扮殑鎺ㄨ繘銆?);
-        lines.push("涓婁竴绔犲凡缁忓彂鐢熺殑浜嬩欢锛屼笉瑕佸啀鍐欐垚鈥滃嵆灏嗗彂鐢熲€濃€滄瑕佸彂鐢熲€濇垨閲嶅鍙戠敓銆?);
-        lines.push("濡傛灉涓婄珷鍒版湰绔犱箣闂撮渶瑕佽繃妗ュ姩浣滐紝璇疯嚜鐒惰ˉ涓婏紝涓嶈鐢熺‖璺冲垏銆?);
+        lines.push("本次内容开头必须先接住上一章结尾留下的状态、氛围、悬念或未完事项，再展开新的推进。");
+        lines.push("上一章已经发生的事件，不要再写成“即将发生”“正要发生”或重复发生。");
+        lines.push("如果上章到本章之间需要过桥动作，请自然补上，不要生硬跳切。");
         return lines.join("\n");
     }
 
@@ -2723,20 +1972,20 @@
             return false;
         }
         const patterns = [
-            /涓嬬珷/,
-            /涓嬩竴绔?,
-            /灏嗕細/,
-            /鍗冲皢/,
-            /椹笂(?:灏??浼?,
-            /闅忓悗(?:灏??浼?,
-            /韬唤(?:鍗冲皢|灏嗚|灏辫)?鏇濆厜/,
-            /鐪熺浉(?:鍗冲皢|灏嗚|灏辫)?澶х櫧/,
-            /鏁屼汉(?:鍗冲皢|灏嗚|灏辫)?鏉ヨ/,
-            /灏嗚幏寰?,
-            /灏嗘鍘?,
-            /灏嗙獊鐮?,
-            /灏嗘彮闇?,
-            /灏嗘彮鏅?
+            /下章/,
+            /下一章/,
+            /将会/,
+            /即将/,
+            /马上(?:就)?会/,
+            /随后(?:就)?会/,
+            /身份(?:即将|将要|就要)?曝光/,
+            /真相(?:即将|将要|就要)?大白/,
+            /敌人(?:即将|将要|就要)?来袭/,
+            /将获得/,
+            /将死去/,
+            /将突破/,
+            /将揭露/,
+            /将揭晓/
         ];
         return patterns.some((pattern) => pattern.test(value));
     }
@@ -2748,25 +1997,25 @@
         }
 
         let output = source
-            .replace(/涓嬩竴绔燵^銆傦紒锛焅n]*[銆傦紒锛焆?/g, "")
-            .replace(/涓嬬珷[^銆傦紒锛焅n]*[銆傦紒锛焆?/g, "")
-            .replace(/灏嗕細|鍗冲皢|椹笂(?:灏??浼殀闅忓悗(?:灏??浼殀灏辫/g, "")
-            .replace(/韬唤鏇濆厜/g, "韬唤鐤戜簯娴姩")
-            .replace(/鐪熺浉澶х櫧/g, "鐪熺浉鐨勮缂濋湶浜嗗嚭鏉?)
-            .replace(/鏁屼汉鏉ヨ/g, "杩滃寮傚姩閫艰繎")
-            .replace(/灏嗚幏寰梉^锛屻€傦紒锛焅n]*/g, "闅愮害鎰熷埌鏌愮鏈虹紭姝ｅ湪閫艰繎")
-            .replace(/灏嗙獊鐮碵^锛屻€傦紒锛焅n]*/g, "浣撳唴鐨勫彉鍖栧凡缁忓帇涓嶄綇")
-            .replace(/灏嗘彮闇瞇^锛屻€傦紒锛焅n]*/g, "寮傛牱鐨勭嚎绱㈡鍦ㄩ€艰繎鏍稿績")
-            .replace(/灏嗘彮鏅揫^锛屻€傦紒锛焅n]*/g, "绛旀浠夸經鍙樊鏈€鍚庝竴灞?)
+            .replace(/下一章[^。！？\n]*[。！？]?/g, "")
+            .replace(/下章[^。！？\n]*[。！？]?/g, "")
+            .replace(/将会|即将|马上(?:就)?会|随后(?:就)?会|就要/g, "")
+            .replace(/身份曝光/g, "身份疑云浮动")
+            .replace(/真相大白/g, "真相的裂缝露了出来")
+            .replace(/敌人来袭/g, "远处异动逼近")
+            .replace(/将获得[^，。！？\n]*/g, "隐约感到某种机缘正在逼近")
+            .replace(/将突破[^，。！？\n]*/g, "体内的变化已经压不住")
+            .replace(/将揭露[^，。！？\n]*/g, "异样的线索正在逼近核心")
+            .replace(/将揭晓[^，。！？\n]*/g, "答案仿佛只差最后一层")
             .replace(/\s+/g, " ")
             .trim();
 
-        output = output.replace(/^[锛屻€傦紱锛氥€乗s]+|[锛岋紱锛氥€乗s]+$/g, "").trim();
+        output = output.replace(/^[，。；：、\s]+|[，；：、\s]+$/g, "").trim();
         if (!output) {
-            output = "寮傛牱宸茬粡閫艰繎锛屽嵈杩樻病浜虹湅娓呯湡姝ｄ細鍙戠敓浠€涔堛€?;
+            output = "异样已经逼近，却还没人看清真正会发生什么。";
         }
-        if (!/[銆傦紒锛焆$/.test(output)) {
-            output += "銆?;
+        if (!/[。！？]$/.test(output)) {
+            output += "。";
         }
         return output;
     }
@@ -2776,7 +2025,7 @@
         if (!text.trim()) {
             return text;
         }
-        const pattern = new RegExp(`(銆?{sectionTitle}銆?([\\s\\S]*?)(?=\\n銆恷$)`);
+        const pattern = new RegExp(`(【${sectionTitle}】)([\\s\\S]*?)(?=\\n【|$)`);
         return text.replace(pattern, (match, header, body) => {
             const nextBody = transformer(String(body || "").trim());
             return `${header}\n${nextBody}`;
@@ -2788,18 +2037,18 @@
         if (!text.trim()) {
             return "";
         }
-        const match = text.match(new RegExp(`銆?{sectionTitle}銆?[\\s\\S]*?)(?=\\n銆恷$)`));
+        const match = text.match(new RegExp(`【${sectionTitle}】([\\s\\S]*?)(?=\\n【|$)`));
         return match?.[1] ? String(match[1]).trim() : "";
     }
 
     buildFallbackProgressLines(item = {}, coreEvent = "") {
-        const base = String(coreEvent || item.key_event || "").trim() || `鍥寸粫銆?{item.title || "褰撳墠绔犺妭"}銆嬫帹杩涗富绾夸簨浠禶;
+        const base = String(coreEvent || item.key_event || "").trim() || `围绕《${item.title || "当前章节"}》推进主线事件`;
         const progress = [
-            `1.銆愭壙鎺ャ€戝厛鎵挎帴涓婁竴绔犵暀涓嬬殑鐘舵€併€佷汉鐗╂儏缁笌鏈畬浜嬮」锛屾妸鏈珷鐭涚浘鑷劧鎺ヨ捣鏉ワ紝骞惰涓昏鏄庣‘鏈珷瑕佸鐞嗙殑鏍稿績闂銆俙,
-            `2.銆愭帹杩涖€戝洿缁曗€?{Utils.summarizeText(base, 36)}鈥濆睍寮€琛屽姩锛岃浜虹墿閫氳繃瀵硅瘽銆佸崥寮堛€佽瀵熸垨琛屽姩鎶婂眬鍔垮線鍓嶆帹涓€姝ャ€俙,
-            `3.銆愬彈闃汇€戝湪鎺ㄨ繘杩囩▼涓姞鍏ユ柊鐨勯樆鍔涖€佽鍒ゃ€佷唬浠锋垨灞€鍔垮彉鍖栵紝閬垮厤涓€鏉＄嚎骞虫帹鍒板簳锛岃鏈珷涓鐪熸褰㈡垚娉㈡姌銆俙,
-            `4.銆愬彉鍖栥€戣浜虹墿鍏崇郴銆佷俊鎭鐭ャ€佽祫婧愮姸鎬佹垨鍦轰笂灞€鍔垮彂鐢熷疄璐ㄥ彉鍖栵紝浣挎湰绔犺瀹屽悗鑳界湅鍑轰富绾跨‘瀹炲墠杩涗簡銆俙,
-            `5.銆愭敹鏉熴€戝湪鏈珷缁撳熬鏀朵綇鏈珷闃舵缁撴灉锛屽悓鏃剁暀涓嬭兘琚笅涓€绔犵洿鎺ユ帴浣忕殑鐘舵€佸彉鍖栥€佹偓蹇垫垨浣欐尝銆俙
+            `1.【承接】先承接上一章留下的状态、人物情绪与未完事项，把本章矛盾自然接起来，并让主角明确本章要处理的核心问题。`,
+            `2.【推进】围绕“${Utils.summarizeText(base, 36)}”展开行动，让人物通过对话、博弈、观察或行动把局势往前推一步。`,
+            `3.【受阻】在推进过程中加入新的阻力、误判、代价或局势变化，避免一条线平推到底，让本章中段真正形成波折。`,
+            `4.【变化】让人物关系、信息认知、资源状态或场上局势发生实质变化，使本章读完后能看出主线确实前进了。`,
+            `5.【收束】在本章结尾收住本章阶段结果，同时留下能被下一章直接接住的状态变化、悬念或余波。`
         ];
         return progress.join("\n");
     }
@@ -2811,16 +2060,16 @@
                 .split(/\r?\n/)
                 .map((line) => line.trim())
                 .filter(Boolean)
-                .map((line) => line.startsWith("- ") ? line : `- ${line.replace(/^[鈥-]\s*/, "")}`);
+                .map((line) => line.startsWith("- ") ? line : `- ${line.replace(/^[•\-]\s*/, "")}`);
             return lines.join("\n");
         }
 
         const characters = Utils.ensureArrayFromText(item.characters);
         if (characters.length) {
-            return characters.slice(0, 8).map((name) => `- ${name}锛堟湰绔犵浉鍏充汉鐗╋級`).join("\n");
+            return characters.slice(0, 8).map((name) => `- ${name}（本章相关人物）`).join("\n");
         }
 
-        return "- 涓昏锛堟壙鎺ュ綋鍓嶄富绾匡級";
+        return "- 主角（承接当前主线）";
     }
 
     normalizeForeshadowSection(item = {}, existingSection = "") {
@@ -2831,11 +2080,11 @@
         const foreshadows = Utils.ensureArrayFromText(item.foreshadows);
         if (foreshadows.length) {
             return [
-                `- 鏂板煁锛?{foreshadows.slice(0, 2).join("锛?)}`,
-                "- 鍥炴敹锛氬鏃犳槑纭洖鏀剁偣锛屽彲鍦ㄦ鏂囦腑閫氳繃缁嗚妭鍛煎簲鍓嶆枃浼忕瑪"
+                `- 新埋：${foreshadows.slice(0, 2).join("；")}`,
+                "- 回收：如无明确回收点，可在正文中通过细节呼应前文伏笔"
             ].join("\n");
         }
-        return "- 鏂板煁锛氱粨鍚堝綋鍓嶅啿绐佸煁涓嬭交搴︽偓蹇垫垨淇℃伅宸甛n- 鍥炴敹锛氬鏈夊墠鏂囦紡绗旓紝鍙湪鏈珷鍋氳交搴﹀懠搴?;
+        return "- 新埋：结合当前冲突埋下轻度悬念或信息差\n- 回收：如有前文伏笔，可在本章做轻度呼应";
     }
 
     normalizeProgressSection(item = {}, existingSection = "", coreEvent = "") {
@@ -2849,16 +2098,16 @@
             .map((line) => line.trim())
             .filter(Boolean);
         const normalized = lines.map((line, index) => {
-            if (/^\d+\.\s*銆?+?銆?.test(line)) {
+            if (/^\d+\.\s*【.+?】/.test(line)) {
                 return line;
             }
-            const cleaned = line.replace(/^[鈥-]\s*/, "");
-            return `${index + 1}.銆愭帹杩涖€?{cleaned}`;
+            const cleaned = line.replace(/^[•\-]\s*/, "");
+            return `${index + 1}.【推进】${cleaned}`;
         });
 
         while (normalized.length < 5) {
             const fallbackLines = this.buildFallbackProgressLines(item, coreEvent).split("\n");
-            normalized.push(fallbackLines[normalized.length] || `${normalized.length + 1}.銆愭帹杩涖€戝洿缁曞綋鍓嶄富绾跨户缁帹杩涳紝骞惰ˉ瓒冲繀瑕佺殑杩囩▼缁嗚妭銆俙);
+            normalized.push(fallbackLines[normalized.length] || `${normalized.length + 1}.【推进】围绕当前主线继续推进，并补足必要的过程细节。`);
         }
 
         return normalized.slice(0, 5).join("\n");
@@ -2866,24 +2115,24 @@
 
     normalizeSystem9Summary(item = {}) {
         const source = String(item.summary || "").trim();
-        const chapterTitle = String(item.title || `绗?{item.chapter_number || item.number || "?"}绔燻).trim();
-        const rawGoal = this.extractSummarySection(source, "绔犺妭鐩爣");
-        const rawCharacters = this.extractSummarySection(source, "鍑哄満浜虹墿");
-        const rawScene = this.extractSummarySection(source, "鍦烘櫙");
-        const rawCoreEvent = this.extractSummarySection(source, "鏍稿績浜嬩欢");
-        const rawEmotion = this.extractSummarySection(source, "鎯呯华鏇茬嚎");
-        const rawProgress = this.extractSummarySection(source, "鎯呰妭鎺ㄨ繘");
-        const rawForeshadow = this.extractSummarySection(source, "浼忕瑪澶勭悊");
-        const rawHook = this.extractSummarySection(source, "涓嬬珷閾哄灚");
+        const chapterTitle = String(item.title || `第${item.chapter_number || item.number || "?"}章`).trim();
+        const rawGoal = this.extractSummarySection(source, "章节目标");
+        const rawCharacters = this.extractSummarySection(source, "出场人物");
+        const rawScene = this.extractSummarySection(source, "场景");
+        const rawCoreEvent = this.extractSummarySection(source, "核心事件");
+        const rawEmotion = this.extractSummarySection(source, "情绪曲线");
+        const rawProgress = this.extractSummarySection(source, "情节推进");
+        const rawForeshadow = this.extractSummarySection(source, "伏笔处理");
+        const rawHook = this.extractSummarySection(source, "下章铺垫");
 
         const coreEvent = String(rawCoreEvent || item.key_event || "").trim()
-            || `${chapterTitle}鍥寸粫褰撳墠鍗蜂富绾垮睍寮€鏂扮殑鍏抽敭鎺ㄨ繘锛屽苟鎺ㄥ姩浜虹墿鍏崇郴鎴栧眬鍔垮彂鐢熸槑纭彉鍖栥€俙;
+            || `${chapterTitle}围绕当前卷主线展开新的关键推进，并推动人物关系或局势发生明确变化。`;
         const goal = String(rawGoal || "").trim()
-            || `鍥寸粫鈥?{Utils.summarizeText(coreEvent, 30)}鈥濇帹杩涙湰绔犱富鐩爣锛屽苟璁╁綋鍓嶇煕鐩惧彇寰楅樁娈垫€х粨鏋溿€俙;
+            || `围绕“${Utils.summarizeText(coreEvent, 30)}”推进本章主目标，并让当前矛盾取得阶段性结果。`;
         const scene = String(rawScene || "").trim()
-            || "褰撳墠鍗蜂富鍦烘櫙涓笌鏈珷鍐茬獊鐩存帴鐩稿叧鐨勫湴鐐癸紝姘旀皼闇€瑕佹湇鍔℃湰绔犱富瑕佺煕鐩俱€?;
+            || "当前卷主场景中与本章冲突直接相关的地点，气氛需要服务本章主要矛盾。";
         const emotion = String(rawEmotion || item.emotion_curve || "").trim()
-            || "鎵垮帇鈫掑鎶椻啋浣欐尝";
+            || "承压→对抗→余波";
         const characters = this.normalizeCharacterSection(item, rawCharacters);
         const progress = this.normalizeProgressSection(item, rawProgress, coreEvent);
         const foreshadow = this.normalizeForeshadowSection(item, rawForeshadow);
@@ -2892,19 +2141,19 @@
                 item.next_chapter_setup?.suspense_hook
                 || item.next_chapter_setup?.state_setup
                 || item.next_chapter_setup?.atmosphere_setup
-                || "鏈珷鏀跺熬鍚庯紝寮傛牱宸茬粡閫艰繎锛屼絾鐪熸鐨勫彉鍖栬繕娌℃湁瀹屽叏鎻紑銆?
+                || "本章收尾后，异样已经逼近，但真正的变化还没有完全揭开。"
             );
         const hook = this.containsSpoilerStyleHook(hookRaw) ? this.toHookStyleText(hookRaw) : hookRaw;
 
         return [
-            `銆愮珷鑺傜洰鏍囥€慭n${goal}`,
-            `銆愬嚭鍦轰汉鐗┿€慭n${characters}`,
-            `銆愬満鏅€慭n${scene}`,
-            `銆愭牳蹇冧簨浠躲€慭n${coreEvent}`,
-            `銆愭儏缁洸绾裤€慭n${emotion}`,
-            `銆愭儏鑺傛帹杩涖€慭n${progress}`,
-            `銆愪紡绗斿鐞嗐€慭n${foreshadow}`,
-            `銆愪笅绔犻摵鍨€慭n${hook}`
+            `【章节目标】\n${goal}`,
+            `【出场人物】\n${characters}`,
+            `【场景】\n${scene}`,
+            `【核心事件】\n${coreEvent}`,
+            `【情绪曲线】\n${emotion}`,
+            `【情节推进】\n${progress}`,
+            `【伏笔处理】\n${foreshadow}`,
+            `【下章铺垫】\n${hook}`
         ].join("\n\n");
     }
 
@@ -2919,7 +2168,7 @@
             }
         });
 
-        let summary = this.replaceSummarySection(item.summary || "", "涓嬬珷閾哄灚", (body) => {
+        let summary = this.replaceSummarySection(item.summary || "", "下章铺垫", (body) => {
             if (!body) {
                 return body;
             }
@@ -2968,8 +2217,8 @@
 
         let body = source.slice(0, splitIndex).trimEnd();
         const tail = source.slice(splitIndex);
-        body = body.replace(/\n?(?:榫欏瑙掕壊[:锛歖[\s\S]*?)(?:<<<END_EXTRA>>>|\s*$)/u, "").trimEnd();
-        body = body.replace(/\n?(?:涓存椂鏀嚎[:锛歖[\s\S]*?)(?:<<<END_EXTRA>>>|\s*$)/u, "").trimEnd();
+        body = body.replace(/\n?(?:龙套角色[:：][\s\S]*?)(?:<<<END_EXTRA>>>|\s*$)/u, "").trimEnd();
+        body = body.replace(/\n?(?:临时支线[:：][\s\S]*?)(?:<<<END_EXTRA>>>|\s*$)/u, "").trimEnd();
         const paragraphs = body.split(/\r?\n{2,}/);
         if (!paragraphs.length) {
             return source;
@@ -3003,23 +2252,23 @@
         Object.entries(project.name_locker?.locked_names || {}).forEach(([category, names]) => {
             const entries = Object.keys(names || {}).slice(0, 12);
             if (entries.length) {
-                lines.push(`${category}锛?{entries.join("銆?)}`);
+                lines.push(`${category}：${entries.join("、")}`);
             }
         });
 
         const synopsisData = project.synopsisData || project.synopsis_data || {};
         Object.entries(synopsisData.locked_character_names || {}).slice(0, 12).forEach(([name, info]) => {
             const identity = info?.identity || info?.type || "";
-            lines.push(`閿佸畾瑙掕壊锛?{name}${identity ? `锛?{identity}锛塦 : ""}`);
+            lines.push(`锁定角色：${name}${identity ? `（${identity}）` : ""}`);
         });
 
         Object.entries(synopsisData.main_characters || {}).slice(0, 8).forEach(([role, name]) => {
             if (name) {
-                lines.push(`涓昏鏄犲皠锛?{role} = ${name}`);
+                lines.push(`主角映射：${role} = ${name}`);
             }
         });
 
-        return lines.length ? `銆愬悕绉伴攣瀹氾紙绂佹婕傜Щ锛夈€慭n${lines.join("\n")}` : "";
+        return lines.length ? `【名称锁定（禁止漂移）】\n${lines.join("\n")}` : "";
     }
 
     buildTimelineGuard(project, chapterNumber) {
@@ -3027,25 +2276,25 @@
         const lines = [];
 
         (tracker.timeline_events || []).slice(-6).forEach((item) => {
-            lines.push(`绗?{item.chapter || item["绔犺妭"] || "?"}绔狅細${item.time_point || item["鏃堕棿鐐?] || item.event || item["浜嬩欢"] || ""}`);
+            lines.push(`第${item.chapter || item["章节"] || "?"}章：${item.time_point || item["时间点"] || item.event || item["事件"] || ""}`);
         });
 
         const active = (tracker.time_constraints || [])
-            .filter((item) => !chapterNumber || !item["棰勮瀹屾垚绔犺妭"] || Number(item["棰勮瀹屾垚绔犺妭"]) >= chapterNumber)
+            .filter((item) => !chapterNumber || !item["预计完成章节"] || Number(item["预计完成章节"]) >= chapterNumber)
             .slice(0, 5)
-            .map((item) => `${item["璁惧畾"] || item.constraint_desc || ""}锛堟寔缁細${item["鎸佺画鏃堕棿"] || item.duration_desc || ""}锛塦);
+            .map((item) => `${item["设定"] || item.constraint_desc || ""}（持续：${item["持续时间"] || item.duration_desc || ""}）`);
         if (active.length) {
-            lines.push(`鏃堕棿绾︽潫锛?{active.join("銆?)}`);
+            lines.push(`时间约束：${active.join("、")}`);
         }
 
-        return lines.length ? `銆愭椂闂寸嚎绾︽潫銆慭n${lines.join("\n")}` : "";
+        return lines.length ? `【时间线约束】\n${lines.join("\n")}` : "";
     }
 
     buildForeshadowGuard(project, chapterNumber) {
         const tracker = project.foreshadow_tracker?.foreshadows || {};
         const unresolved = Object.values(tracker)
-            .filter((item) => item && item["鐘舵€?] !== "宸插洖鏀?)
-            .sort((a, b) => Number(a["鍩嬭绔犺妭"] || 0) - Number(b["鍩嬭绔犺妭"] || 0))
+            .filter((item) => item && item["状态"] !== "已回收")
+            .sort((a, b) => Number(a["埋设章节"] || 0) - Number(b["埋设章节"] || 0))
             .slice(0, 8);
 
         if (!unresolved.length) {
@@ -3053,13 +2302,13 @@
         }
 
         const lines = unresolved.map((item) => {
-            const planned = item["璁″垝鍥炴敹"] ? `锛岃鍒掑洖鏀讹細${item["璁″垝鍥炴敹"]}` : "";
-            return `- 绗?{item["鍩嬭绔犺妭"] || "?"}绔犲煁璁俱€?{item["浼忕瑪绫诲瀷"] || "浼忕瑪"}銆戯細${item["浼忕瑪鍐呭"] || ""}${planned}`;
+            const planned = item["计划回收"] ? `，计划回收：${item["计划回收"]}` : "";
+            return `- 第${item["埋设章节"] || "?"}章埋设【${item["伏笔类型"] || "伏笔"}】：${item["伏笔内容"] || ""}${planned}`;
         });
         if (chapterNumber) {
-            lines.push(`褰撳墠绗?${chapterNumber} 绔狅紝鍙€傚害鍛煎簲鎺ヨ繎鑺傜偣鐨勪紡绗旓紝浣嗕笉瑕佷竴娆℃€ф竻绌恒€俙);
+            lines.push(`当前第 ${chapterNumber} 章，可适度呼应接近节点的伏笔，但不要一次性清空。`);
         }
-        return `銆愪紡绗旇拷韪€慭n${lines.join("\n")}`;
+        return `【伏笔追踪】\n${lines.join("\n")}`;
     }
 
     buildPersonalityGuard(project, contextText = "", chapterNumber = 0) {
@@ -3077,18 +2326,18 @@
         }
 
         const lines = [
-            "銆愪汉鐗╂€ф牸涓€鑷存€х害鏉燂紙鑷姩鐢熸垚锛夈€?,
-            "1. 瀵硅瘽蹇呴』绗﹀悎浜虹墿鏃㈡湁鎬ф牸锛屼笉瑕佺獊鐒跺彉鍙ｉ銆?,
-            "2. 楂樺喎瑙掕壊涓嶈绐佺劧鍙樿瘽鐥紝鍙ょ伒绮炬€鑹蹭笉瑕佺獊鐒剁垎绮楀彛銆?,
-            "3. 姣忎釜瑙掕壊閮借淇濈暀鑷繁鐨勮璇濈壒鐐瑰拰鎯呯华涔犳儻銆?
+            "【人物性格一致性约束（自动生成）】",
+            "1. 对话必须符合人物既有性格，不要突然变口风。",
+            "2. 高冷角色不要突然变话痨，古灵精怪角色不要突然爆粗口。",
+            "3. 每个角色都要保留自己的说话特点和情绪习惯。"
         ];
 
         entries.forEach(([name, data]) => {
-            const base = data?.褰撳墠鎬ф牸 || data?.鍘熷璁惧畾 || data?.personality || "";
+            const base = data?.当前性格 || data?.原始设定 || data?.personality || "";
             const change = chapterNumber && data?.personality_changes?.[chapterNumber]
-                ? `锛涙湰绔犲墠宸叉紨鍙樹负锛?{data.personality_changes[chapterNumber]}`
+                ? `；本章前已演变为：${data.personality_changes[chapterNumber]}`
                 : "";
-            lines.push(`- ${name}锛?{Utils.summarizeText(base, 80)}${change}`);
+            lines.push(`- ${name}：${Utils.summarizeText(base, 80)}${change}`);
         });
 
         return lines.join("\n");
@@ -3107,30 +2356,30 @@
             .filter(([name]) => !relevantNames.size || relevantNames.has(name))
             .slice(0, 10)
             .forEach(([name, data]) => {
-                const firstAppearance = data["棣栨鍑哄満"] || data["鍑哄満绔犺妭"] || data.chapter || "?";
-                const identity = data["韬唤"] || data.identity || "鏈煡";
-                const currentAppearance = data["褰撳墠褰㈣薄"] || data.current_appearance || "";
-                const realAppearance = data["鐪熷疄褰㈣薄"] || data.real_appearance || "";
-                const recentChange = Array.isArray(data["鍙樺寲鍘嗗彶"]) && data["鍙樺寲鍘嗗彶"].length
-                    ? data["鍙樺寲鍘嗗彶"][data["鍙樺寲鍘嗗彶"].length - 1]
+                const firstAppearance = data["首次出场"] || data["出场章节"] || data.chapter || "?";
+                const identity = data["身份"] || data.identity || "未知";
+                const currentAppearance = data["当前形象"] || data.current_appearance || "";
+                const realAppearance = data["真实形象"] || data.real_appearance || "";
+                const recentChange = Array.isArray(data["变化历史"]) && data["变化历史"].length
+                    ? data["变化历史"][data["变化历史"].length - 1]
                     : null;
-                const changeText = recentChange?.["绫诲瀷"] || recentChange?.change_type
-                    ? `锛屾渶杩戝彉鍖?${recentChange["绫诲瀷"] || recentChange.change_type}`
+                const changeText = recentChange?.["类型"] || recentChange?.change_type
+                    ? `，最近变化=${recentChange["类型"] || recentChange.change_type}`
                     : "";
                 const appearanceText = currentAppearance
-                    ? `锛屽綋鍓嶅舰璞?${Utils.summarizeText(currentAppearance, 50)}`
+                    ? `，当前形象=${Utils.summarizeText(currentAppearance, 50)}`
                     : "";
                 const truthText = realAppearance && realAppearance !== currentAppearance
-                    ? `锛岀湡瀹炲舰璞?${Utils.summarizeText(realAppearance, 40)}`
+                    ? `，真实形象=${Utils.summarizeText(realAppearance, 40)}`
                     : "";
-                lines.push(`- ${name}锛氶娆″嚭鍦虹${firstAppearance}绔狅紝韬唤=${identity}${appearanceText}${truthText}${changeText}`);
+                lines.push(`- ${name}：首次出场第${firstAppearance}章，身份=${identity}${appearanceText}${truthText}${changeText}`);
             });
 
         Object.entries(relationships)
             .slice(0, 8)
             .forEach(([key, rel]) => {
-                const firstMeeting = rel["棣栨瑙侀潰"] || rel.first_meeting || "?";
-                const relation = rel["鍏崇郴"] || rel.relationship || "鐩歌瘑";
+                const firstMeeting = rel["首次见面"] || rel.first_meeting || "?";
+                const relation = rel["关系"] || rel.relationship || "相识";
                 const [left, right] = String(key).split("|");
                 if (!left || !right) {
                     return;
@@ -3139,11 +2388,11 @@
                     return;
                 }
                 if (!chapterNumber || Number(firstMeeting) < chapterNumber) {
-                    lines.push(`- ${left} 涓?${right} 浜庣${firstMeeting}绔犲凡瑙侀潰锛屽叧绯伙細${relation}銆備笉鍙啀鍐欐垚鍒濊銆俙);
+                    lines.push(`- ${left} 与 ${right} 于第${firstMeeting}章已见面，关系：${relation}。不可再写成初见。`);
                 }
             });
 
-        return lines.length ? `銆愪汉鐗╁嚭鍦轰笌鍏崇郴杩借釜銆慭n${lines.join("\n")}` : "";
+        return lines.length ? `【人物出场与关系追踪】\n${lines.join("\n")}` : "";
     }
 
     buildDialogueGuard(project, chapterNumber) {
@@ -3154,15 +2403,15 @@
                 return;
             }
             const filtered = items
-                .filter((item) => !chapterNumber || Number(item.chapter_num || item["绔犺妭"] || 0) < chapterNumber)
+                .filter((item) => !chapterNumber || Number(item.chapter_num || item["章节"] || 0) < chapterNumber)
                 .slice(-2)
-                .map((item) => item.content || item["鍐呭"] || "")
+                .map((item) => item.content || item["内容"] || "")
                 .filter(Boolean);
             if (filtered.length) {
-                lines.push(`- ${name}锛氭鍓嶆槑纭〃鎬?澹版槑 -> ${filtered.join("锛?)}`);
+                lines.push(`- ${name}：此前明确表态/声明 -> ${filtered.join("；")}`);
             }
         });
-        return lines.length ? `銆愯鑹茶█琛屼竴鑷存€с€慭n${lines.join("\n")}` : "";
+        return lines.length ? `【角色言行一致性】\n${lines.join("\n")}` : "";
     }
 
     buildDynamicStateGuard(project) {
@@ -3170,34 +2419,34 @@
         const lines = [];
 
         const items = Object.values(tracker.items || {}).slice(0, 6).map((item) =>
-            `${item["鍚嶇О"] || "鐗╁搧"}(${item["鎸佹湁鑰?] || "鏈煡鎸佹湁鑰?}锛岀姸鎬?${item["褰撳墠鐘舵€?] || "鏈煡"}${item["绫诲瀷"] ? `锛岀被鍨?${item["绫诲瀷"]}` : ""}${item["鎻忚堪"] ? `锛岃鏄?${Utils.summarizeText(item["鎻忚堪"], 24)}` : ""})`
+            `${item["名称"] || "物品"}(${item["持有者"] || "未知持有者"}，状态=${item["当前状态"] || "未知"}${item["类型"] ? `，类型=${item["类型"]}` : ""}${item["描述"] ? `，说明=${Utils.summarizeText(item["描述"], 24)}` : ""})`
         );
         if (items.length) {
-            lines.push(`鐗╁搧鐘舵€侊細${items.join("銆?)}`);
+            lines.push(`物品状态：${items.join("、")}`);
         }
 
         const skills = Object.values(tracker.skills || {}).slice(0, 6).map((skill) =>
-            `${skill["鍚嶇О"] || "鎶€鑳?}(${skill["浣跨敤鑰?] || "鏈煡"}锛岀啛缁冨害=${skill["鐔熺粌搴?] || "鏈煡"})`
+            `${skill["名称"] || "技能"}(${skill["使用者"] || "未知"}，熟练度=${skill["熟练度"] || "未知"})`
         );
         if (skills.length) {
-            lines.push(`鎶€鑳界姸鎬侊細${skills.join("銆?)}`);
+            lines.push(`技能状态：${skills.join("、")}`);
         }
 
         const appearances = Object.entries(tracker.appearances || {}).slice(0, 6).map(([name, data]) =>
-            `${name}(褰撳墠褰㈣薄=${data["褰撳墠褰㈣薄"] || data["鍒濆褰㈣薄"] || "鏈煡"})`
+            `${name}(当前形象=${data["当前形象"] || data["初始形象"] || "未知"})`
         );
         if (appearances.length) {
-            lines.push(`澶栬矊鐘舵€侊細${appearances.join("銆?)}`);
+            lines.push(`外貌状态：${appearances.join("、")}`);
         }
 
         const charStates = Object.entries(tracker.character_states || {}).slice(0, 6).map(([name, data]) =>
             `${name}=${Utils.summarizeText(JSON.stringify(data), 80)}`
         );
         if (charStates.length) {
-            lines.push(`浜虹墿鍔ㄦ€侊細${charStates.join("銆?)}`);
+            lines.push(`人物动态：${charStates.join("、")}`);
         }
 
-        return lines.length ? `銆愬姩鎬佺姸鎬佽拷韪€慭n${lines.join("\n")}` : "";
+        return lines.length ? `【动态状态追踪】\n${lines.join("\n")}` : "";
     }
 
     buildWorldTrackerGuard(project) {
@@ -3208,27 +2457,27 @@
             `${name}(${Utils.summarizeText(JSON.stringify(data), 60)})`
         );
         if (locations.length) {
-            lines.push(`鍦扮偣鐘舵€侊細${locations.join("銆?)}`);
+            lines.push(`地点状态：${locations.join("、")}`);
         }
 
         const organizations = Object.entries(tracker.organizations || {}).slice(0, 6).map(([name, data]) =>
             `${name}(${Utils.summarizeText(JSON.stringify(data), 60)})`
         );
         if (organizations.length) {
-            lines.push(`鍔垮姏鐘舵€侊細${organizations.join("銆?)}`);
+            lines.push(`势力状态：${organizations.join("、")}`);
         }
 
         const movements = (tracker.character_positions || tracker.character_movements || []);
         if (Array.isArray(movements) && movements.length) {
-            lines.push(`浜虹墿浣嶇疆/绉诲姩锛?{movements.slice(-6).map((item) => Utils.summarizeText(JSON.stringify(item), 40)).join("銆?)}`);
+            lines.push(`人物位置/移动：${movements.slice(-6).map((item) => Utils.summarizeText(JSON.stringify(item), 40)).join("、")}`);
         }
 
         const worldEvents = (tracker.world_events || tracker.major_events || []);
         if (Array.isArray(worldEvents) && worldEvents.length) {
-            lines.push(`涓栫晫浜嬩欢锛?{worldEvents.slice(-5).map((item) => Utils.summarizeText(JSON.stringify(item), 50)).join("銆?)}`);
+            lines.push(`世界事件：${worldEvents.slice(-5).map((item) => Utils.summarizeText(JSON.stringify(item), 50)).join("、")}`);
         }
 
-        return lines.length ? `銆愪笘鐣岃杩借釜绾︽潫銆慭n${lines.join("\n")}` : "";
+        return lines.length ? `【世界观追踪约束】\n${lines.join("\n")}` : "";
     }
 
     buildGenreProgressGuard(project) {
@@ -3237,34 +2486,34 @@
 
         const rankProgress = Object.entries(tracker.rank_progress || {})
             .slice(-5)
-            .map(([name, data]) => `${name}=${data.rank || data.detail || "鏆傛棤"}`);
+            .map(([name, data]) => `${name}=${data.rank || data.detail || "暂无"}`);
         if (rankProgress.length) {
-            lines.push(`棰樻潗杩涘害-浣嶉樁/淇负锛?{rankProgress.join("銆?)}`);
+            lines.push(`题材进度-位阶/修为：${rankProgress.join("、")}`);
         }
 
         const pregnancyProgress = Object.entries(tracker.pregnancy_progress || {})
             .slice(-4)
-            .map(([name, data]) => `${name}=${data.months ? `${data.months}涓湀` : ""}${data.status ? `(${data.status})` : ""}${data.detail ? ` ${data.detail}` : ""}`.trim());
+            .map(([name, data]) => `${name}=${data.months ? `${data.months}个月` : ""}${data.status ? `(${data.status})` : ""}${data.detail ? ` ${data.detail}` : ""}`.trim());
         if (pregnancyProgress.length) {
-            lines.push(`棰樻潗杩涘害-鎬€瀛?闃舵鐘舵€侊細${pregnancyProgress.join("銆?)}`);
+            lines.push(`题材进度-怀孕/阶段状态：${pregnancyProgress.join("、")}`);
         }
 
         const statusProgress = Object.entries(tracker.status_progress || {})
             .slice(-5)
-            .map(([name, data]) => `${name}=${data.detail || "鏆傛棤"}`);
+            .map(([name, data]) => `${name}=${data.detail || "暂无"}`);
         if (statusProgress.length) {
-            lines.push(`棰樻潗杩涘害-鍏朵粬鐘舵€侊細${statusProgress.join("銆?)}`);
+            lines.push(`题材进度-其他状态：${statusProgress.join("、")}`);
         }
 
         const progressEvents = (tracker.progress_events || [])
             .slice(-6)
-            .map((item) => `${item.role || "瑙掕壊"}锛?{item.detail || ""}`)
+            .map((item) => `${item.role || "角色"}：${item.detail || ""}`)
             .filter(Boolean);
         if (progressEvents.length) {
-            lines.push(`鏈€杩戦鏉愯繘搴﹀彉鍖栵細${progressEvents.join("銆?)}`);
+            lines.push(`最近题材进度变化：${progressEvents.join("、")}`);
         }
 
-        return lines.length ? `銆愰鏉愯繘搴﹁拷韪€慭n${lines.join("\n")}` : "";
+        return lines.length ? `【题材进度追踪】\n${lines.join("\n")}` : "";
     }
 
     normalizeWorldStateList(value) {
@@ -3277,7 +2526,7 @@
                 .filter(Boolean);
         }
         return String(value)
-            .split(/[\n,锛屻€侊紱;]/)
+            .split(/[\n,，、；;]/)
             .map((item) => item.trim())
             .filter(Boolean);
     }
@@ -3312,17 +2561,17 @@
                         return null;
                     }
                     if (typeof item === "object") {
-                        const name = item.reward || item.name || item.item || item.title || item["鍚嶇О"] || "";
+                        const name = item.reward || item.name || item.item || item.title || item["名称"] || "";
                         if (!String(name || "").trim()) {
                             return null;
                         }
                         return {
                             reward: String(name || "").trim(),
                             name: String(name || "").trim(),
-                            owner: String(item.owner || item.holder || item["鎸佹湁鑰?] || item["褰掑睘"] || "").trim(),
-                            status: String(item.status || item["褰撳墠鐘舵€?] || item["鐘舵€?] || "").trim(),
-                            source: String(item.source || item["鏉ユ簮"] || "").trim(),
-                            detail: String(item.detail || item.description || item["鎻忚堪"] || name || "").trim(),
+                            owner: String(item.owner || item.holder || item["持有者"] || item["归属"] || "").trim(),
+                            status: String(item.status || item["当前状态"] || item["状态"] || "").trim(),
+                            source: String(item.source || item["来源"] || "").trim(),
+                            detail: String(item.detail || item.description || item["描述"] || name || "").trim(),
                             chapter: Number(item.chapter || item.last_updated_chapter || 0)
                         };
                     }
@@ -3351,15 +2600,15 @@
         const normalizeSystemPanel = (value = {}) => {
             const panel = value && typeof value === "object" ? value : {};
             return {
-                system_name: String(panel.system_name || panel.name || panel["绯荤粺鍚?] || "").trim(),
-                owner: String(panel.owner || panel.host || panel.user || panel["瀹夸富"] || "").trim(),
-                messages: this.normalizeWorldStateList(panel.messages || panel.logs || panel.broadcasts || panel["绯荤粺鎾姤"]),
+                system_name: String(panel.system_name || panel.name || panel["系统名"] || "").trim(),
+                owner: String(panel.owner || panel.host || panel.user || panel["宿主"] || "").trim(),
+                messages: this.normalizeWorldStateList(panel.messages || panel.logs || panel.broadcasts || panel["系统播报"]),
                 rewards: normalizeRewardList(panel.rewards),
-                benefits: this.normalizeWorldStateList(panel.benefits || panel.privileges || panel.perks || panel["鐗规潈"]),
-                rules: this.normalizeWorldStateList(panel.rules || panel["瑙勫垯"] || panel["鏍稿績瑙勫垯"]),
-                functions: this.normalizeWorldStateList(panel.functions || panel.features || panel["鍔熻兘"]),
-                statuses: this.normalizeWorldStateList(panel.statuses || panel["鐘舵€?] || panel["绯荤粺鐘舵€?]),
-                pending_unlocks: this.normalizeWorldStateList(panel.pending_unlocks || panel.pending || panel["寰呰В閿?] || panel["鏈В閿?]),
+                benefits: this.normalizeWorldStateList(panel.benefits || panel.privileges || panel.perks || panel["特权"]),
+                rules: this.normalizeWorldStateList(panel.rules || panel["规则"] || panel["核心规则"]),
+                functions: this.normalizeWorldStateList(panel.functions || panel.features || panel["功能"]),
+                statuses: this.normalizeWorldStateList(panel.statuses || panel["状态"] || panel["系统状态"]),
+                pending_unlocks: this.normalizeWorldStateList(panel.pending_unlocks || panel.pending || panel["待解锁"] || panel["未解锁"]),
                 last_seen_chapter: Number(panel.last_seen_chapter || panel.chapter || 0)
             };
         };
@@ -3442,14 +2691,14 @@
                     return "";
                 }
                 const parts = [];
-                if (data.identity) parts.push(`韬唤=${Utils.summarizeText(data.identity, 18)}`);
-                if (data.location) parts.push(`浣嶇疆=${Utils.summarizeText(data.location, 22)}`);
-                if (data.status) parts.push(`鐘舵€?${Utils.summarizeText(data.status, 22)}`);
-                if (data.cultivation) parts.push(`浣嶉樁=${Utils.summarizeText(data.cultivation, 18)}`);
-                if (data.organization) parts.push(`褰掑睘=${Utils.summarizeText(data.organization, 18)}`);
-                if (data.relationships) parts.push(`鍏崇郴=${Utils.summarizeText(data.relationships, 22)}`);
-                if (data.note) parts.push(`琛ュ厖=${Utils.summarizeText(data.note, 20)}`);
-                return parts.length ? `- ${name}锛?{parts.join("锛?)}` : "";
+                if (data.identity) parts.push(`身份=${Utils.summarizeText(data.identity, 18)}`);
+                if (data.location) parts.push(`位置=${Utils.summarizeText(data.location, 22)}`);
+                if (data.status) parts.push(`状态=${Utils.summarizeText(data.status, 22)}`);
+                if (data.cultivation) parts.push(`位阶=${Utils.summarizeText(data.cultivation, 18)}`);
+                if (data.organization) parts.push(`归属=${Utils.summarizeText(data.organization, 18)}`);
+                if (data.relationships) parts.push(`关系=${Utils.summarizeText(data.relationships, 22)}`);
+                if (data.note) parts.push(`补充=${Utils.summarizeText(data.note, 20)}`);
+                return parts.length ? `- ${name}：${parts.join("；")}` : "";
             })
             .filter(Boolean)
             .slice(0, 6);
@@ -3457,7 +2706,7 @@
         const focusOrganizations = new Set(
             focusNames.flatMap((name) => {
                 const text = String(characters[name]?.organization || "").trim();
-                return text ? text.split(/[锛屻€?\/]/).map((item) => item.trim()).filter(Boolean) : [];
+                return text ? text.split(/[，、,\/]/).map((item) => item.trim()).filter(Boolean) : [];
             })
         );
         const factionLines = Object.entries(factions)
@@ -3469,12 +2718,12 @@
             .slice(0, 5)
             .map(([name, data]) => {
                 const parts = [];
-                if (data.type) parts.push(`绫诲瀷=${data.type}`);
-                if (data.leader) parts.push(`鏍稿績=${data.leader}`);
-                if (Array.isArray(data.members) && data.members.length) parts.push(`鎴愬憳=${data.members.slice(0, 5).join("銆?)}`);
-                if (data.latest_change) parts.push(`鍙樺寲=${Utils.summarizeText(data.latest_change, 28)}`);
-                if (data.note) parts.push(`琛ュ厖=${Utils.summarizeText(data.note, 20)}`);
-                return parts.length ? `- ${name}锛?{parts.join("锛?)}` : "";
+                if (data.type) parts.push(`类型=${data.type}`);
+                if (data.leader) parts.push(`核心=${data.leader}`);
+                if (Array.isArray(data.members) && data.members.length) parts.push(`成员=${data.members.slice(0, 5).join("、")}`);
+                if (data.latest_change) parts.push(`变化=${Utils.summarizeText(data.latest_change, 28)}`);
+                if (data.note) parts.push(`补充=${Utils.summarizeText(data.note, 20)}`);
+                return parts.length ? `- ${name}：${parts.join("；")}` : "";
             })
             .filter(Boolean);
 
@@ -3482,21 +2731,21 @@
             .sort((left, right) => Number(right[1]?.last_updated_chapter || 0) - Number(left[1]?.last_updated_chapter || 0))
             .slice(0, 4)
             .map(([name, data]) => {
-                const holder = data.鎸佹湁鑰?|| data.holder || data.owner || "";
-                const status = data.褰撳墠鐘舵€?|| data.status || "";
-                const type = data.绫诲瀷 || data.type || "";
-                const parts = [holder ? `褰掑睘=${holder}` : "", status ? `鐘舵€?${status}` : "", type ? `绫诲瀷=${type}` : "", data.note ? `琛ュ厖=${Utils.summarizeText(data.note, 20)}` : ""]
+                const holder = data.持有者 || data.holder || data.owner || "";
+                const status = data.当前状态 || data.status || "";
+                const type = data.类型 || data.type || "";
+                const parts = [holder ? `归属=${holder}` : "", status ? `状态=${status}` : "", type ? `类型=${type}` : "", data.note ? `补充=${Utils.summarizeText(data.note, 20)}` : ""]
                     .filter(Boolean);
-                return parts.length ? `- ${name}锛?{parts.join("锛?)}` : "";
+                return parts.length ? `- ${name}：${parts.join("；")}` : "";
             })
             .filter(Boolean);
         const abilityLines = Object.entries(abilities)
             .sort((left, right) => Number(right[1]?.last_chapter || 0) - Number(left[1]?.last_chapter || 0))
             .slice(0, 3)
             .map(([name, data]) => {
-                const parts = [data.owner ? `褰掑睘=${data.owner}` : "", data.level ? `浣嶉樁=${data.level}` : "", data.type ? `绫诲瀷=${data.type}` : "", data.note ? `琛ュ厖=${Utils.summarizeText(data.note, 20)}` : ""]
+                const parts = [data.owner ? `归属=${data.owner}` : "", data.level ? `位阶=${data.level}` : "", data.type ? `类型=${data.type}` : "", data.note ? `补充=${Utils.summarizeText(data.note, 20)}` : ""]
                     .filter(Boolean);
-                return parts.length ? `- ${name}锛?{parts.join("锛?)}` : "";
+                return parts.length ? `- ${name}：${parts.join("；")}` : "";
             })
             .filter(Boolean);
         const rewardLines = rewards
@@ -3507,9 +2756,9 @@
                 if (!name) {
                     return "";
                 }
-                const parts = [rewardItem.owner ? `褰掑睘=${rewardItem.owner}` : "", rewardItem.status ? `鐘舵€?${rewardItem.status}` : "", rewardItem.source ? `鏉ユ簮=${rewardItem.source}` : ""]
+                const parts = [rewardItem.owner ? `归属=${rewardItem.owner}` : "", rewardItem.status ? `状态=${rewardItem.status}` : "", rewardItem.source ? `来源=${rewardItem.source}` : ""]
                     .filter(Boolean);
-                return parts.length ? `- ${name}锛?{parts.join("锛?)}` : "";
+                return parts.length ? `- ${name}：${parts.join("；")}` : "";
             })
             .filter(Boolean);
         const recentSystemMessages = systemPanel.messages.slice(-3).reverse();
@@ -3519,80 +2768,80 @@
             .slice(0, 4);
         const systemPanelLines = [];
         if (systemPanel.system_name || systemPanel.owner) {
-            systemPanelLines.push(`- 闈㈡澘=${[systemPanel.system_name || "绯荤粺闈㈡澘", systemPanel.owner ? `瀹夸富=${systemPanel.owner}` : ""].filter(Boolean).join("锛?)}`);
+            systemPanelLines.push(`- 面板=${[systemPanel.system_name || "系统面板", systemPanel.owner ? `宿主=${systemPanel.owner}` : ""].filter(Boolean).join("；")}`);
         }
         if (recentSystemMessages.length) {
-            systemPanelLines.push(`- 鏈€杩戞挱鎶?${recentSystemMessages.map((item) => Utils.summarizeText(item, 40)).join("锝?)}`);
+            systemPanelLines.push(`- 最近播报=${recentSystemMessages.map((item) => Utils.summarizeText(item, 40)).join("｜")}`);
         }
         if (systemPanel.statuses.length) {
-            systemPanelLines.push(`- 褰撳墠鐘舵€?${systemPanel.statuses.slice(-2).reverse().map((item) => Utils.summarizeText(item, 36)).join("锝?)}`);
+            systemPanelLines.push(`- 当前状态=${systemPanel.statuses.slice(-2).reverse().map((item) => Utils.summarizeText(item, 36)).join("｜")}`);
         }
         if (systemPanel.benefits.length) {
-            systemPanelLines.push(`- 绯荤粺鐗规潈=${systemPanel.benefits.slice(0, 6).join("銆?)}`);
+            systemPanelLines.push(`- 系统特权=${systemPanel.benefits.slice(0, 6).join("、")}`);
         }
         if (systemRewardLines.length) {
-            systemPanelLines.push(`- 绯荤粺濂栧姳=${systemRewardLines.map((item) => Utils.summarizeText(item.reward || item.name || "", 18)).filter(Boolean).join("銆?)}`);
+            systemPanelLines.push(`- 系统奖励=${systemRewardLines.map((item) => Utils.summarizeText(item.reward || item.name || "", 18)).filter(Boolean).join("、")}`);
         }
         if (systemPanel.rules.length) {
-            systemPanelLines.push(`- 鏍稿績瑙勫垯=${systemPanel.rules.slice(0, 2).map((item) => Utils.summarizeText(item, 40)).join("锝?)}`);
+            systemPanelLines.push(`- 核心规则=${systemPanel.rules.slice(0, 2).map((item) => Utils.summarizeText(item, 40)).join("｜")}`);
         }
         if (systemPanel.functions.length) {
-            systemPanelLines.push(`- 绯荤粺鍔熻兘=${systemPanel.functions.slice(0, 3).join("銆?)}`);
+            systemPanelLines.push(`- 系统功能=${systemPanel.functions.slice(0, 3).join("、")}`);
         }
         if (systemPanel.pending_unlocks.length) {
-            systemPanelLines.push(`- 寰呰В閿?${systemPanel.pending_unlocks.slice(0, 3).join("銆?)}`);
+            systemPanelLines.push(`- 待解锁=${systemPanel.pending_unlocks.slice(0, 3).join("、")}`);
         }
 
         const plotLines = [
-            ...(Array.isArray(plotThreads.active) ? plotThreads.active.slice(0, 4).map((item) => `涓荤嚎=${Utils.summarizeText(item, 34)}`) : []),
-            ...(Array.isArray(plotThreads.temporary) ? plotThreads.temporary.slice(0, 3).map((item) => `鏀嚎=${Utils.summarizeText(item, 34)}`) : []),
-            ...(Array.isArray(plotThreads.unresolved_foreshadows) ? plotThreads.unresolved_foreshadows.slice(0, 3).map((item) => `浼忕瑪=${Utils.summarizeText(item, 36)}`) : [])
+            ...(Array.isArray(plotThreads.active) ? plotThreads.active.slice(0, 4).map((item) => `主线=${Utils.summarizeText(item, 34)}`) : []),
+            ...(Array.isArray(plotThreads.temporary) ? plotThreads.temporary.slice(0, 3).map((item) => `支线=${Utils.summarizeText(item, 34)}`) : []),
+            ...(Array.isArray(plotThreads.unresolved_foreshadows) ? plotThreads.unresolved_foreshadows.slice(0, 3).map((item) => `伏笔=${Utils.summarizeText(item, 36)}`) : [])
         ].slice(0, 8);
 
         const lines = [];
         if (meta.genre_profile || genreModules.length) {
-            lines.push(`棰樻潗妗ｆ锛?{meta.genre_profile || "閫氱敤闀跨瘒杩炶浇"}${genreModules.length ? `锛涢噸鐐?${genreModules.join("銆?)}` : ""}`);
+            lines.push(`题材档案：${meta.genre_profile || "通用长篇连载"}${genreModules.length ? `；重点=${genreModules.join("、")}` : ""}`);
         }
 
         const timeAnchor = overview.current_time || "";
         const locationAnchor = overview.current_location || "";
         const chapterAnchor = Number(overview.latest_chapter || chapterNumber || 0);
         if (timeAnchor || locationAnchor || chapterAnchor) {
-            lines.push(`褰撳墠鏃剁┖閿氱偣锛?{chapterAnchor ? `绗?{chapterAnchor}绔犲悗` : "褰撳墠"}${timeAnchor ? `锛涙椂闂?${Utils.summarizeText(timeAnchor, 40)}` : ""}${locationAnchor ? `锛涘湴鐐?${Utils.summarizeText(locationAnchor, 30)}` : ""}`);
+            lines.push(`当前时空锚点：${chapterAnchor ? `第${chapterAnchor}章后` : "当前"}${timeAnchor ? `；时间=${Utils.summarizeText(timeAnchor, 40)}` : ""}${locationAnchor ? `；地点=${Utils.summarizeText(locationAnchor, 30)}` : ""}`);
         }
         if (systemPanelLines.length) {
-            lines.push(`绯荤粺闈㈡澘锛歕n${systemPanelLines.join("\n")}`);
+            lines.push(`系统面板：\n${systemPanelLines.join("\n")}`);
         }
         if (characterLines.length) {
-            lines.push(`閲嶇偣浜虹墿锛歕n${characterLines.join("\n")}`);
+            lines.push(`重点人物：\n${characterLines.join("\n")}`);
         }
         if (factionLines.length) {
-            lines.push(`鍔垮姏/閮ㄩ棬锛歕n${factionLines.join("\n")}`);
+            lines.push(`势力/部门：\n${factionLines.join("\n")}`);
         }
         if (itemLines.length || abilityLines.length || rewardLines.length) {
-            lines.push(`鍏抽敭鐗╁搧/鑳藉姏/濂栧姳锛歕n${[...itemLines, ...abilityLines, ...rewardLines].join("\n")}`);
+            lines.push(`关键物品/能力/奖励：\n${[...itemLines, ...abilityLines, ...rewardLines].join("\n")}`);
         }
         if (plotLines.length) {
-            lines.push(`涓荤嚎銆佹敮绾夸笌浼忕瑪锛?{plotLines.join("锛?)}`);
+            lines.push(`主线、支线与伏笔：${plotLines.join("；")}`);
         }
         if (overviewNotes.length) {
-            lines.push(`鎵嬪姩鎬诲娉細${overviewNotes.join("锛?)}`);
+            lines.push(`手动总备注：${overviewNotes.join("；")}`);
         }
         if (hardRules.length) {
-            lines.push(`纭€х孩绾匡細${hardRules.join("锛?)}`);
+            lines.push(`硬性红线：${hardRules.join("；")}`);
         }
         if (customModules.length) {
-            lines.push(`鎵嬪姩琛ュ厖妯″潡锛?{customModules.join("锛?)}`);
+            lines.push(`手动补充模块：${customModules.join("；")}`);
         }
         if (riskList.length) {
-            lines.push(`杩炵画鎬ч闄╋細${riskList.join("锛?)}`);
+            lines.push(`连续性风险：${riskList.join("；")}`);
         }
         if (!lines.length) {
             return "";
         }
 
-        lines.push("瑕佹眰锛氭湰绔犲姩绗斿墠鍏堟牳瀵逛互涓婃€昏〃锛屽啀鍐冲畾浜虹墿绔欎綅銆佺О鍛煎叧绯汇€佺墿鍝佸綊灞炪€佹椂闂存帹杩涘拰缁撳熬閾哄灚銆?);
-        return `銆愪笘鐣岀姸鎬佹€绘帶銆慭n${lines.join("\n")}`;
+        lines.push("要求：本章动笔前先核对以上总表，再决定人物站位、称呼关系、物品归属、时间推进和结尾铺垫。");
+        return `【世界状态总控】\n${lines.join("\n")}`;
     }
 
     buildSubplotGuard(project) {
@@ -3602,10 +2851,10 @@
         }
 
         return [
-            "銆愭敮绾垮墽鎯呯鐞嗐€?,
-            `褰撳墠娲昏穬鏀嚎锛?{subplots.join("銆?)}`,
-            "瑕佹眰锛氭湰绔犲娑夊強鏀嚎锛屽繀椤诲拰涓荤嚎琛屽姩鎴栦汉鐗╁叧绯绘帹杩涗骇鐢熻仈绯汇€?,
-            "瑕佹眰锛氫笉瑕佹妸鍚屼竴鏉℃敮绾块噸澶嶅紑涓€閬嶏紝涔熶笉瑕佺獊鐒舵棤鍥犳敹鏉熷叏閮ㄦ敮绾裤€?
+            "【支线剧情管理】",
+            `当前活跃支线：${subplots.join("、")}`,
+            "要求：本章如涉及支线，必须和主线行动或人物关系推进产生联系。",
+            "要求：不要把同一条支线重复开一遍，也不要突然无因收束全部支线。"
         ].join("\n");
     }
 
@@ -3615,19 +2864,19 @@
         const lines = [];
 
         Object.entries(states).slice(0, 8).forEach(([name, data]) => {
-            const location = data.current_location || data.location || data["褰撳墠浣嶇疆"] || "";
-            const status = data.current_status || data.status || data["褰撳墠鐘舵€?] || "";
-            const emotion = data.current_emotion || data.emotion || data["褰撳墠鎯呯华"] || "";
-            const summary = [location ? `浣嶇疆=${location}` : "", status ? `鐘舵€?${status}` : "", emotion ? `鎯呯华=${emotion}` : ""]
+            const location = data.current_location || data.location || data["当前位置"] || "";
+            const status = data.current_status || data.status || data["当前状态"] || "";
+            const emotion = data.current_emotion || data.emotion || data["当前情绪"] || "";
+            const summary = [location ? `位置=${location}` : "", status ? `状态=${status}` : "", emotion ? `情绪=${emotion}` : ""]
                 .filter(Boolean)
-                .join("锛?);
+                .join("，");
             if (summary) {
-                lines.push(`- ${name}锛?{summary}`);
+                lines.push(`- ${name}：${summary}`);
             }
         });
 
         return lines.length
-            ? `銆愪汉鐗╀竴鑷存€ф鏌ャ€慭n浠ヤ笅瑙掕壊褰撳墠鐘舵€佸繀椤诲欢缁紝涓嶅彲鐬Щ銆佸け蹇嗐€佹棤鏁呮敼鍙ｉ锛歕n${lines.join("\n")}`
+            ? `【人物一致性检查】\n以下角色当前状态必须延续，不可瞬移、失忆、无故改口风：\n${lines.join("\n")}`
             : "";
     }
 
@@ -3652,26 +2901,26 @@
 
         const latest = snapshots[targetKey] || {};
         const parts = [];
-        if (latest.current_location || latest["浣嶇疆"]) parts.push(`鍦扮偣锛?{latest.current_location || latest["浣嶇疆"]}`);
-        if (latest.timeline || latest["鏃堕棿"]) parts.push(`鏃堕棿锛?{Utils.summarizeText(latest.timeline || latest["鏃堕棿"], 80)}`);
-        if (latest.pending_plots) parts.push(`寰呯画鐭涚浘锛?{Utils.summarizeText(latest.pending_plots, 90)}`);
-        if (latest.important_items) parts.push(`閲嶈鐗╁搧锛?{Utils.summarizeText(latest.important_items, 80)}`);
-        if (Array.isArray(latest["鍏抽敭淇℃伅"]) && latest["鍏抽敭淇℃伅"].length) parts.push(`鍏抽敭淇℃伅锛?{latest["鍏抽敭淇℃伅"].slice(0, 4).join("銆?)}`);
-        if (latest["涓嬩竴绔犻鏈?]) parts.push(`涓婄珷棰勬湡鏈珷锛?{latest["涓嬩竴绔犻鏈?]}`);
-        if (latest.transition_focus) parts.push(`琛旀帴閲嶇偣锛?{Utils.summarizeText(latest.transition_focus, 80)}`);
+        if (latest.current_location || latest["位置"]) parts.push(`地点：${latest.current_location || latest["位置"]}`);
+        if (latest.timeline || latest["时间"]) parts.push(`时间：${Utils.summarizeText(latest.timeline || latest["时间"], 80)}`);
+        if (latest.pending_plots) parts.push(`待续矛盾：${Utils.summarizeText(latest.pending_plots, 90)}`);
+        if (latest.important_items) parts.push(`重要物品：${Utils.summarizeText(latest.important_items, 80)}`);
+        if (Array.isArray(latest["关键信息"]) && latest["关键信息"].length) parts.push(`关键信息：${latest["关键信息"].slice(0, 4).join("、")}`);
+        if (latest["下一章预期"]) parts.push(`上章预期本章：${latest["下一章预期"]}`);
+        if (latest.transition_focus) parts.push(`衔接重点：${Utils.summarizeText(latest.transition_focus, 80)}`);
         if (latest.next_chapter_setup && typeof latest.next_chapter_setup === "object") {
             const nextSetupParts = [
-                latest.next_chapter_setup.state_setup ? `鐘舵€侀摵鍨?${latest.next_chapter_setup.state_setup}` : "",
-                latest.next_chapter_setup.atmosphere_setup ? `姘涘洿閾哄灚=${latest.next_chapter_setup.atmosphere_setup}` : "",
-                latest.next_chapter_setup.suspense_hook ? `鎮康閽╁瓙=${latest.next_chapter_setup.suspense_hook}` : ""
+                latest.next_chapter_setup.state_setup ? `状态铺垫=${latest.next_chapter_setup.state_setup}` : "",
+                latest.next_chapter_setup.atmosphere_setup ? `氛围铺垫=${latest.next_chapter_setup.atmosphere_setup}` : "",
+                latest.next_chapter_setup.suspense_hook ? `悬念钩子=${latest.next_chapter_setup.suspense_hook}` : ""
             ].filter(Boolean);
             if (nextSetupParts.length) {
-                parts.push(`蹇収鍐呯疆涓嬬珷浠诲姟锛?{nextSetupParts.join("锛?)}`);
+                parts.push(`快照内置下章任务：${nextSetupParts.join("；")}`);
             }
         }
 
         return parts.length
-            ? `銆愮珷鏈揩鐓ц鎺ャ€慭n鏈€杩戝揩鐓э細${targetKey}\n${parts.join("\n")}\n鏂扮珷鑺傝鎵挎帴杩欎簺鐘舵€侊紝涓嶈鏃犳晠璺冲彉銆俙
+            ? `【章末快照衔接】\n最近快照：${targetKey}\n${parts.join("\n")}\n新章节要承接这些状态，不要无故跳变。`
             : "";
     }
 
@@ -3679,47 +2928,47 @@
         const chapterNumber = Number(currentChapter?.number || currentChapter?.chapter_number || 0);
         const { key: targetKey, snapshot: latest } = this.getSnapshotBeforeChapter(project, chapterNumber);
         if (!latest) {
-            return prevContent ? "銆愬紑绔犺鎺ユ寚瀵笺€慭n鏈珷寮€澶磋绱ф帴鍓嶆枃鏈€鍚庝竴涓湁鏁堝満鏅紝涓嶈骞冲湴璺冲満銆? : "";
+            return prevContent ? "【开章衔接指导】\n本章开头要紧接前文最后一个有效场景，不要平地跳场。" : "";
         }
 
-        const lines = ["銆愬紑绔犺鎺ユ寚瀵笺€?, `璇峰厛鎵挎帴涓婁竴绔犲揩鐓?${targetKey}锛屽啀灞曞紑鏈珷鍓ф儏銆俙];
+        const lines = ["【开章衔接指导】", `请先承接上一章快照 ${targetKey}，再展开本章剧情。`];
 
-        if (latest.current_location || latest["浣嶇疆"]) {
-            lines.push(`1. 寮€鍦哄湴鐐逛紭鍏堟壙鎺ワ細${latest.current_location || latest["浣嶇疆"]}`);
+        if (latest.current_location || latest["位置"]) {
+            lines.push(`1. 开场地点优先承接：${latest.current_location || latest["位置"]}`);
         }
-        if (latest.timeline || latest["鏃堕棿"]) {
-            lines.push(`2. 鏃堕棿绾跨户缁部鐢細${Utils.summarizeText(latest.timeline || latest["鏃堕棿"], 70)}`);
+        if (latest.timeline || latest["时间"]) {
+            lines.push(`2. 时间线继续沿用：${Utils.summarizeText(latest.timeline || latest["时间"], 70)}`);
         }
         if (latest.pending_plots) {
-            lines.push(`3. 涓婄珷鏈畬浜嬮」锛?{Utils.summarizeText(latest.pending_plots, 90)}`);
+            lines.push(`3. 上章未完事项：${Utils.summarizeText(latest.pending_plots, 90)}`);
         }
         if (latest.important_items) {
-            lines.push(`4. 閲嶈鐗╁搧鐘舵€佸埆涓細${Utils.summarizeText(latest.important_items, 90)}`);
+            lines.push(`4. 重要物品状态别丢：${Utils.summarizeText(latest.important_items, 90)}`);
         }
-        if (latest["涓嬩竴绔犻鏈?]) {
-            lines.push(`5. 涓婄珷瀵规湰绔犵殑棰勬湡锛?{Utils.summarizeText(latest["涓嬩竴绔犻鏈?], 120)}`);
+        if (latest["下一章预期"]) {
+            lines.push(`5. 上章对本章的预期：${Utils.summarizeText(latest["下一章预期"], 120)}`);
         }
         const previousChapter = this.getLatestChapterBefore(project, this.getVolumeNumber(project, currentVolume), chapterNumber);
         if (previousChapter?.emotionCurve) {
-            lines.push(`6. 寤剁画涓婁竴绔犳儏缁熬璋冿細${Utils.summarizeText(previousChapter.emotionCurve, 60)}`);
+            lines.push(`6. 延续上一章情绪尾调：${Utils.summarizeText(previousChapter.emotionCurve, 60)}`);
         }
         const previousSetup = this.describeNextChapterSetup(previousChapter?.nextChapterSetup);
         if (previousSetup) {
-            lines.push(`7. 鍏堟帴浣忎笂涓€绔犻摵鍨細${Utils.summarizeText(previousSetup, 120)}`);
+            lines.push(`7. 先接住上一章铺垫：${Utils.summarizeText(previousSetup, 120)}`);
         }
 
         const setup = currentChapter?.next_chapter_setup || {};
         const setupHints = [
-            setup.state_setup ? `鐘舵€佽捣鐐癸細${setup.state_setup}` : "",
-            setup.atmosphere_setup ? `姘涘洿璧风偣锛?{setup.atmosphere_setup}` : "",
-            setup.suspense_hook ? `鎮康璧风偣锛?{setup.suspense_hook}` : ""
+            setup.state_setup ? `状态起点：${setup.state_setup}` : "",
+            setup.atmosphere_setup ? `氛围起点：${setup.atmosphere_setup}` : "",
+            setup.suspense_hook ? `悬念起点：${setup.suspense_hook}` : ""
         ].filter(Boolean);
         if (setupHints.length) {
-            lines.push(`鏈珷绔犵翰鑷甫琛旀帴浠诲姟锛?{setupHints.join("锛?)}`);
+            lines.push(`本章章纲自带衔接任务：${setupHints.join("；")}`);
         }
 
         if (prevContent) {
-            lines.push("寮€澶村墠鍑犳蹇呴』绱ф帴鍓嶆枃缁撳熬鐨勫姩浣溿€佹儏缁垨瀵硅瘽锛屼笉瑕佹棤鏁呰烦澶┿€佽烦鍦扮偣銆佽烦鍏崇郴鐘舵€併€?);
+            lines.push("开头前几段必须紧接前文结尾的动作、情绪或对话，不要无故跳天、跳地点、跳关系状态。");
         }
 
         return lines.join("\n");
@@ -3733,19 +2982,19 @@
         const { phase, position } = this.getPlotUnitPhase(chapterNumber);
         const { unitNumber, unit } = this.getPlotUnitForChapter(project, volumeNumber, chapterNumber);
         const lines = [
-            "銆愬墽鎯呭崟鍏冮樁娈电害鏉熴€?,
-            `褰撳墠绔犺妭浣嶄簬绗?${unitNumber} 涓墽鎯呭崟鍏冪殑${phase}闃舵锛堝崟鍏冨唴绗?${position} 绔狅級銆俙
+            "【剧情单元阶段约束】",
+            `当前章节位于第 ${unitNumber} 个剧情单元的${phase}阶段（单元内第 ${position} 章）。`
         ];
 
         const chapterPlotUnit = chapter?.plot_unit && typeof chapter.plot_unit === "object" ? chapter.plot_unit : {};
         if (unit?.core_conflict) {
-            lines.push(`鏈崟鍏冩牳蹇冨啿绐侊細${Utils.summarizeText(unit.core_conflict, 100)}`);
+            lines.push(`本单元核心冲突：${Utils.summarizeText(unit.core_conflict, 100)}`);
         }
         if (chapterPlotUnit.connects_to_previous) {
-            lines.push(`鏈珷鎵挎帴閲嶇偣锛?{Utils.summarizeText(chapterPlotUnit.connects_to_previous, 90)}`);
+            lines.push(`本章承接重点：${Utils.summarizeText(chapterPlotUnit.connects_to_previous, 90)}`);
         }
         if (chapterPlotUnit.sets_up_next) {
-            lines.push(`鏈珷閾哄灚閲嶇偣锛?{Utils.summarizeText(chapterPlotUnit.sets_up_next, 90)}`);
+            lines.push(`本章铺垫重点：${Utils.summarizeText(chapterPlotUnit.sets_up_next, 90)}`);
         }
 
         const suggestionText = this.buildPlotUnitSuggestionText(project, volumeNumber, chapterNumber);
@@ -3765,18 +3014,18 @@
         const previousChapter = this.getLatestChapterBefore(project, volumeNumber, chapterNumber);
         const previousSnapshot = this.getSnapshotBeforeChapter(project, chapterNumber).snapshot || {};
         const { phase, position } = this.getPlotUnitPhase(chapterNumber);
-        const goal = this.extractSummarySection(chapter?.summary || "", "绔犺妭鐩爣")
+        const goal = this.extractSummarySection(chapter?.summary || "", "章节目标")
             || chapter?.key_event
             || chapter?.keyEvent
             || chapter?.title
             || "";
-        const coreEvent = this.extractSummarySection(chapter?.summary || "", "鏍稿績浜嬩欢")
+        const coreEvent = this.extractSummarySection(chapter?.summary || "", "核心事件")
             || chapter?.key_event
             || chapter?.keyEvent
             || chapter?.title
             || "";
-        const scene = this.extractSummarySection(chapter?.summary || "", "鍦烘櫙");
-        const emotion = this.extractSummarySection(chapter?.summary || "", "鎯呯华鏇茬嚎")
+        const scene = this.extractSummarySection(chapter?.summary || "", "场景");
+        const emotion = this.extractSummarySection(chapter?.summary || "", "情绪曲线")
             || chapter?.emotion_curve
             || chapter?.emotionCurve
             || "";
@@ -3784,28 +3033,28 @@
         const currentSetup = this.describeNextChapterSetup(chapter?.next_chapter_setup || {});
         const openingAnchor = previousSetup
             || previousSnapshot.transition_focus
-            || previousSnapshot["涓嬩竴绔犻鏈?]
+            || previousSnapshot["下一章预期"]
             || previousSnapshot.pending_plots
             || previousChapter?.keyEvent
             || previousChapter?.title
             || "";
 
         const lines = [
-            "銆愭湰绔犺妭濂忔墽琛岄鏋躲€?,
-            `褰撳墠浣嶄簬绗?${Math.floor((chapterNumber - 1) / 8) + 1} 鍗曞厓鐨?{phase}闃舵锛堢 ${position} 绔狅級锛屼笉瑕佸啓鎴愭暎鐐规嫾璐淬€俙,
-            `1. 寮€鍦烘壙鎺ワ細鍏堟帴浣?{Utils.summarizeText(openingAnchor || "涓婁竴绔犵暀涓嬬殑鍔ㄤ綔銆佺姸鎬佹垨鎯呯华灏鹃煶", 90)}锛岀敤鍔ㄤ綔鎴栧鐧芥妸璇昏€呭甫鍥炵幇鍦恒€俙,
-            `2. 鏈珷鐩爣锛?{Utils.summarizeText(goal || "鍥寸粫褰撳墠绔犵翰涓荤嚎缁х画鎺ㄨ繘", 100)}銆俙,
-            `3. 涓绘帹杩涳細鍥寸粫${Utils.summarizeText(coreEvent || "褰撳墠鏍稿績浜嬩欢", 110)}灞曞紑锛屼腑娈靛繀椤诲嚭鐜伴樆鍔涖€佽鍒ゃ€佷唬浠锋垨灞€鍔垮彉鍖栥€俙,
-            "4. 瀹炶川鍙樺寲锛氳嚦灏戣浜虹墿鍏崇郴銆佷俊鎭鐭ャ€佽祫婧愮姸鎬併€佸満涓婂眬鍔夸腑鐨勪竴椤瑰彂鐢熺湅寰楄鐨勫彉鍖栥€?
+            "【本章节奏执行骨架】",
+            `当前位于第 ${Math.floor((chapterNumber - 1) / 8) + 1} 单元的${phase}阶段（第 ${position} 章），不要写成散点拼贴。`,
+            `1. 开场承接：先接住${Utils.summarizeText(openingAnchor || "上一章留下的动作、状态或情绪尾音", 90)}，用动作或对白把读者带回现场。`,
+            `2. 本章目标：${Utils.summarizeText(goal || "围绕当前章纲主线继续推进", 100)}。`,
+            `3. 主推进：围绕${Utils.summarizeText(coreEvent || "当前核心事件", 110)}展开，中段必须出现阻力、误判、代价或局势变化。`,
+            "4. 实质变化：至少让人物关系、信息认知、资源状态、场上局势中的一项发生看得见的变化。"
         ];
 
         if (scene) {
-            lines.push(`鍦烘櫙鎶撴墜锛氫紭鍏堜粠銆?{Utils.summarizeText(scene, 40)}銆嶆垨涓庡畠鐩存帴鐩歌繛鐨勫満鏅捣绗旓紝杞満蹇呴』鍐欐竻杩囨ˉ鍔ㄤ綔銆俙);
+            lines.push(`场景抓手：优先从「${Utils.summarizeText(scene, 40)}」或与它直接相连的场景起笔，转场必须写清过桥动作。`);
         }
         if (emotion) {
-            lines.push(`鎯呯华鑺傚锛?{Utils.summarizeText(emotion, 40)}锛屼笉瑕佹暣绔犱竴涓儏缁钩鎺ㄥ埌搴曘€俙);
+            lines.push(`情绪节奏：${Utils.summarizeText(emotion, 40)}，不要整章一个情绪平推到底。`);
         }
-        lines.push(`5. 缁撳熬鏀舵潫锛氬仠鍦?{Utils.summarizeText(currentSetup || "涓嬩竴姝ュ帇鍔涖€佷綑娉㈡垨鏈В鎮康", 90)}瀵瑰簲鐨勫紶鍔涚偣涓婏紝鍙煁鍥狅紝涓嶅啓鏋溿€俙);
+        lines.push(`5. 结尾收束：停在${Utils.summarizeText(currentSetup || "下一步压力、余波或未解悬念", 90)}对应的张力点上，只埋因，不写果。`);
 
         return lines.join("\n");
     }
@@ -3813,11 +3062,11 @@
     buildWorldAndPlanContext(project) {
         const sections = [];
         if (project.outline?.worldbuilding) {
-            sections.push(`銆愪笘鐣岃鏍稿績璁惧畾銆慭n${this.limitContext(project.outline.worldbuilding, 1200)}`);
+            sections.push(`【世界观核心设定】\n${this.limitContext(project.outline.worldbuilding, 1200)}`);
         }
         const detailed = project.outline?.detailed_outline || "";
         if (detailed) {
-            sections.push(`銆愯缁嗗ぇ绾插弬鑰冦€慭n${this.limitContext(detailed, 1800)}`);
+            sections.push(`【详细大纲参考】\n${this.limitContext(detailed, 1800)}`);
         }
         return sections.join("\n\n");
     }
@@ -3860,18 +3109,18 @@
         });
 
         Object.entries(synopsisData.locked_character_names || {}).slice(0, 12).forEach(([name, info]) => {
-            const identity = info?.identity || info?.type || "宸查攣瀹?;
-            lockedNameLines.push(`${name}锛?{identity}锛塦);
+            const identity = info?.identity || info?.type || "已锁定";
+            lockedNameLines.push(`${name}（${identity}）`);
         });
 
         return lockedRoleLines.length || lines.length || lockedNameLines.length
             ? [
-                "銆愭ā绯婄О鍛艰浆瀹炲悕瑙勫垯銆?,
-                lockedRoleLines.length ? `宸查攣瀹氫富瑙掞細\n${lockedRoleLines.join("\n")}` : "",
-                lines.length ? `浠ヤ笅浠ｇО蹇呴』鏇挎崲鎴愮湡瀹炲鍚嶏細\n${lines.join("\n")}` : "",
-                lockedNameLines.length ? `浠ヤ笅鍚嶅瓧宸查攣瀹氾紝鍚庣画鍗峰繀椤绘部鐢紝涓嶅緱鏀瑰悕鎴栭敊缁戯細\n${lockedNameLines.join("銆?)}` : "",
-                "绂佹闀挎湡浣跨敤鈥滅敺涓?濂充富/涓昏/甯堝皧/鍙嶆淳鈥濅唬鏇跨湡瀹炲鍚嶃€?,
-                "濡傛灉鐢ㄦ埛杈撳叆閲屽嚭鐜版ā绯婄О鍛硷紝涔熻浼樺厛鎸夊凡閿佸畾鏄犲皠鏇挎崲銆?
+                "【模糊称呼转实名规则】",
+                lockedRoleLines.length ? `已锁定主角：\n${lockedRoleLines.join("\n")}` : "",
+                lines.length ? `以下代称必须替换成真实姓名：\n${lines.join("\n")}` : "",
+                lockedNameLines.length ? `以下名字已锁定，后续卷必须沿用，不得改名或错绑：\n${lockedNameLines.join("、")}` : "",
+                "禁止长期使用“男主/女主/主角/师尊/反派”代替真实姓名。",
+                "如果用户输入里出现模糊称呼，也要优先按已锁定映射替换。"
             ].filter(Boolean).join("\n")
             : "";
     }
@@ -3890,13 +3139,13 @@
 
     getSynopsisRoleAliases() {
         return {
-            鐢蜂富: ["鐢蜂富", "鐢蜂富瑙?, "鐢蜂富浜哄叕", "鐢蜂竴", "鐢蜂竴鍙?, "鐢疯"],
-            濂充富: ["濂充富", "濂充富瑙?, "濂充富浜哄叕", "濂充竴", "濂充竴鍙?, "濂宠"],
-            涓昏: ["涓昏", "涓讳汉鍏?],
-            甯堝皧: ["甯堝皧"],
-            鍙嶆淳: ["鍙嶆淳", "澶у弽娲?, "鍙嶆淳boss"],
-            鐢蜂簩: ["鐢蜂簩", "鐢蜂簩鍙?],
-            濂充簩: ["濂充簩", "濂充簩鍙?]
+            男主: ["男主", "男主角", "男主人公", "男一", "男一号", "男角"],
+            女主: ["女主", "女主角", "女主人公", "女一", "女一号", "女角"],
+            主角: ["主角", "主人公"],
+            师尊: ["师尊"],
+            反派: ["反派", "大反派", "反派boss"],
+            男二: ["男二", "男二号"],
+            女二: ["女二", "女二号"]
         };
     }
 
@@ -3932,16 +3181,15 @@
         const knownConcreteNames = new Set(
             [
                 ...Object.values(this.getSynopsisData(project)?.main_characters || {}),
-                ...Object.keys(this.getSynopsisData(project)?.locked_character_names || {}),
                 ...(project?.outline?.characters || []).flatMap((character) => [
                     character?.name || "",
-                    ...Utils.ensureArrayFromText(character?.aliases || character?.["鍒悕"] || "")
+                    ...Utils.ensureArrayFromText(character?.aliases || character?.["别名"] || "")
                 ])
             ]
                 .map((item) => String(item || "").trim())
                 .filter(Boolean)
         );
-        if (knownConcreteNames.has(cleanName) && (this.isLikelySynopsisPersonName(cleanName) || this.isSynopsisLooseConcreteNameCandidate(cleanName))) {
+        if (knownConcreteNames.has(cleanName)) {
             return true;
         }
         if (this.containsObfuscatedText(cleanName)) {
@@ -3958,28 +3206,25 @@
         )) {
             return false;
         }
-        if (/(鍥藉笀|璐ㄥ瓙|澶尰|灏氫功|渚嶉儙|棣栭|鎬荤|瀹コ|鍒哄|鍏氱窘|绯荤粺|鐨囧瓩|鐢峰疂|濂冲疂|澶コ|鐜嬬埛|瀹椾护|鎺岄棬|甯堝皧|闀胯€?/.test(cleanName)) {
+        if (/(国师|质子|太医|尚书|侍郎|首领|总管|宫女|刺客|党羽|系统|皇孙|男宝|女宝|太女|王爷|宗令|掌门|师尊|长老)/.test(cleanName)) {
             return false;
         }
-        if (cleanName.length >= 3 && /[澶氬彧瀵熼兘宸潵绋虫鐖瑰嵄鐭ュ湴浠€呭悗鍓嶅唴澶栦笂涓嬫椂]/.test(cleanName.slice(-1))) {
+        if (cleanName.length >= 3 && /[多只察都差来稳武爹危知地们者后前内外上下时]/.test(cleanName.slice(-1))) {
             return false;
         }
         const compoundSurnames = [
-            "娆ч槼", "涓婂畼", "鍙搁┈", "鎱曞", "璇歌憶", "鍗楀", "澶忎警", "浠ょ嫄", "鐨囩敨", "杞╄緯",
-            "瀹囨枃", "闀垮瓩", "鍙稿緬", "鍙哥┖", "瑗块棬", "涓滄柟", "鐙", "鍖楀啣", "鍏瓩", "灏夎繜",
-            "婢瑰彴", "鎷撹穻", "鐧鹃噷", "閽熺", "涓滈儹", "闂讳汉"
+            "欧阳", "上官", "司马", "慕容", "诸葛", "南宫", "夏侯", "令狐", "皇甫", "轩辕",
+            "宇文", "长孙", "司徒", "司空", "西门", "东方", "独孤", "北冥", "公孙", "尉迟",
+            "澹台", "拓跋", "百里", "钟离", "东郭", "闻人"
         ];
         const hasCompoundSurname = compoundSurnames.some((surname) => cleanName.startsWith(surname));
-        if (cleanName.length === 4 && !hasCompoundSurname && !/^[闃垮皬鑰乚[\u4e00-\u9fa5]{3}$/.test(cleanName)) {
+        if (cleanName.length === 4 && !hasCompoundSurname && !/^[阿小老][\u4e00-\u9fa5]{3}$/.test(cleanName)) {
             return false;
         }
         if (this.isLikelyChinesePersonName(cleanName)) {
             return true;
         }
-        if (knownConcreteNames.has(cleanName) && this.isSynopsisLooseConcreteNameCandidate(cleanName)) {
-            return true;
-        }
-        if (/^[闃垮皬鑰乚[\u4e00-\u9fa5]{1,2}$/.test(cleanName)) {
+        if (/^[阿小老][\u4e00-\u9fa5]{1,2}$/.test(cleanName)) {
             return true;
         }
         return false;
@@ -4005,24 +3250,6 @@
             .sort((left, right) => right.length - left.length);
     }
 
-    sanitizeSynopsisSupportingAliases(project, aliases = []) {
-        const seen = new Set();
-        return Utils.ensureArrayFromText(aliases)
-            .map((alias) => this.normalizeOutlineCharacterLabel(alias))
-            .filter(Boolean)
-            .filter((alias) => alias.length >= 2)
-            .filter((alias) => !this.containsObfuscatedText(alias))
-            .filter((alias) => !this.isLikelyActionLikeCharacterCandidate(alias))
-            .filter((alias) => {
-                if (seen.has(alias)) {
-                    return false;
-                }
-                seen.add(alias);
-                return true;
-            })
-            .sort((left, right) => right.length - left.length);
-    }
-
     restoreSynopsisMainCharacters(project) {
         const synopsisData = this.getSynopsisData(project);
         synopsisData.main_characters = synopsisData.main_characters && typeof synopsisData.main_characters === "object"
@@ -4033,12 +3260,6 @@
             : {};
         synopsisData.vague_to_name_mapping = synopsisData.vague_to_name_mapping && typeof synopsisData.vague_to_name_mapping === "object"
             ? synopsisData.vague_to_name_mapping
-            : {};
-        synopsisData.supporting_character_registry = synopsisData.supporting_character_registry && typeof synopsisData.supporting_character_registry === "object"
-            ? synopsisData.supporting_character_registry
-            : {};
-        synopsisData.generated_vague_aliases = synopsisData.generated_vague_aliases && typeof synopsisData.generated_vague_aliases === "object"
-            ? synopsisData.generated_vague_aliases
             : {};
 
         const cleanedLockedNames = {};
@@ -4068,7 +3289,7 @@
             const existing = cleanedLockedNames[cleanName] || {};
             cleanedLockedNames[cleanName] = {
                 ...existing,
-                type: "涓昏",
+                type: "主角",
                 identity: role,
                 locked_volume: existing.locked_volume || 1,
                 aliases: this.sanitizeSynopsisNameAliases(
@@ -4102,40 +3323,8 @@
                 })
         );
 
-        const cleanedSupportingRegistry = {};
-        Object.entries(synopsisData.supporting_character_registry || {}).forEach(([fingerprint, info]) => {
-            const registryInfo = info && typeof info === "object" ? info : {};
-            const name = String(registryInfo.name || "").trim();
-            const roleCore = this.normalizeOutlineCharacterLabel(registryInfo.role_core || registryInfo.roleCore || "");
-            const roleDescriptor = this.normalizeOutlineCharacterLabel(registryInfo.role_descriptor || registryInfo.roleDescriptor || roleCore);
-            const ownerName = this.normalizeOutlineCharacterLabel(registryInfo.owner_name || registryInfo.ownerName || "");
-            if (!fingerprint || !this.isTrustedSynopsisConcreteName(project, name)) {
-                return;
-            }
-            cleanedSupportingRegistry[fingerprint] = {
-                name,
-                role_core: roleCore || roleDescriptor,
-                role_descriptor: roleDescriptor || roleCore,
-                owner_name: ownerName,
-                locked_volume: Number(registryInfo.locked_volume || registryInfo.lockedVolume || 1) || 1,
-                aliases: this.sanitizeSynopsisSupportingAliases(project, registryInfo.aliases || [])
-            };
-        });
-        synopsisData.supporting_character_registry = cleanedSupportingRegistry;
-
-        synopsisData.generated_vague_aliases = Object.fromEntries(
-            Object.entries(synopsisData.generated_vague_aliases || {})
-                .map(([alias, realName]) => [this.normalizeOutlineCharacterLabel(alias), String(realName || "").trim()])
-                .filter(([alias, realName]) => {
-                    if (!alias || !realName || this.containsObfuscatedText(alias)) {
-                        return false;
-                    }
-                    return this.isTrustedSynopsisConcreteName(project, realName) && !this.isLikelyActionLikeCharacterCandidate(alias);
-                })
-        );
-
         Object.entries(synopsisData.locked_character_names).forEach(([name, info]) => {
-            if (info?.type === "涓昏" && info?.identity && !synopsisData.main_characters[info.identity]) {
+            if (info?.type === "主角" && info?.identity && !synopsisData.main_characters[info.identity]) {
                 synopsisData.main_characters[info.identity] = name;
             }
         });
@@ -4155,1202 +3344,10 @@
         return output;
     }
 
-    buildSynopsisKnownConcreteNameSet(project) {
-        const synopsisData = this.restoreSynopsisMainCharacters(project);
-        return new Set(
-            [
-                ...Object.keys(synopsisData.locked_character_names || {}),
-                ...Object.values(synopsisData.main_characters || {}),
-                ...(project?.outline?.characters || []).map((character) => String(character?.name || "").trim())
-            ]
-                .map((name) => String(name || "").trim())
-                .filter((name) => name && !this.isGenericCharacterCandidateName(name))
-        );
-    }
-
-    getSynopsisLooseNameBlockedTerms() {
-        return new Set([
-            "时间", "情绪", "身份", "举动", "时辰", "时候", "心腹", "护卫", "丫鬟", "嬷嬷", "稳婆", "医女",
-            "法师", "药力", "安胎", "补品", "赏赐", "炭火", "馊饭", "院落", "偏院", "书房", "寒冬", "洗三",
-            "光环", "皮囊", "面容", "躯壳", "深情", "宏图", "局势", "内务", "病症", "关怀", "姿态", "优势",
-            "报复", "探望", "看管", "监视", "请脉", "归来", "降生", "生疑", "布局", "计策", "谋划", "大度",
-            "慈悲", "绝望", "挣扎", "风光", "奉承", "残喘", "暗影", "夜半", "寒夜", "难产", "母体", "胎儿",
-            "男婴", "长子", "主母", "赏银", "汤药", "院中", "门外", "心机", "白莲", "棋子", "帝王", "皇权"
-        ]);
-    }
-
-    getSynopsisOddAutoNameSet() {
-        return new Set([
-            "云归", "闻舟", "闻道", "扶光", "忘尘", "归鸿", "照临", "星阑",
-            "玄烬", "绾音", "若蘅", "叙白", "景珩", "怀朔", "玄舟", "承渊"
-        ]);
-    }
-
-    isKnownSynopsisConcreteName(project, name) {
-        const cleanName = this.normalizeOutlineCharacterLabel(name);
-        if (!cleanName) {
-            return false;
-        }
-        const synopsisData = this.getSynopsisData(project) || {};
-        const knownNames = new Set(
-            [
-                ...Object.values(synopsisData.main_characters || {}),
-                ...Object.keys(synopsisData.locked_character_names || {}),
-                ...(project?.outline?.characters || []).flatMap((character) => [
-                    character?.name || "",
-                    ...Utils.ensureArrayFromText(character?.aliases || character?.["别名"] || "")
-                ])
-            ]
-                .map((item) => this.normalizeOutlineCharacterLabel(item))
-                .filter(Boolean)
-        );
-        return knownNames.has(cleanName);
-    }
-
-    hasSynopsisExplicitNameSignal(text = "", name = "") {
-        const cleanName = this.normalizeOutlineCharacterLabel(name);
-        const source = String(text || "");
-        if (!cleanName || !source.trim()) {
-            return false;
-        }
-        const escaped = cleanName.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-        const patterns = [
-            new RegExp(`${escaped}(?=(?:重生|醒来|睁开眼|发现|笑了|暗下决心|暗想|冷笑))`, "u"),
-            new RegExp(`(?:正是|便是|就是|名叫|叫做|唤作)${escaped}(?=[，。；！!？?\\s]|$)`, "u"),
-            new RegExp(`(?:真正的|真)${escaped}(?=[，。；！!？?\\s]|$)`, "u"),
-            new RegExp(`顶着${escaped}[^，。；！？\\n]{0,8}(?:的脸|面容|皮囊|壳子)`, "u"),
-            new RegExp(`对面[^，。；！？\\n]{0,24}正是${escaped}(?=[，。；！!？?\\s]|$)`, "u"),
-            new RegExp(`(?:原主|原身|妹妹|姐姐)[（(](?:真)?${escaped}[)）]`, "u")
-        ];
-        return patterns.some((pattern) => pattern.test(source));
-    }
-
-    isSynopsisLooseConcreteNameCandidate(name) {
-        const cleanName = this.normalizeOutlineCharacterLabel(name);
-        if (!/^[\u4e00-\u9fa5]{2,4}$/u.test(cleanName)) {
-            return false;
-        }
-        if (this.containsObfuscatedText(cleanName)) {
-            return false;
-        }
-        if (this.isGenericCharacterCandidateName(cleanName) || this.isLikelyActionLikeCharacterCandidate(cleanName)) {
-            return false;
-        }
-        if (this.getSynopsisLooseNameBlockedTerms().has(cleanName)) {
-            return false;
-        }
-        if (/(?:嫡福晋|侧福晋|福晋|王妃|王爷|皇后|太后|皇帝|皇上|陛下|太子|世子|贵妃|妃嫔|贵人|答应|常在|公主|郡主|县主|娘娘|宗主|掌门|师尊|师父|师兄|师姐|师弟|师妹|家主|族长|少主|府主|厂长|主任|科长|处长|总工|总工程师|军代表|连长|营长|队长|老板|经理|医生|老师|秘书|嬷嬷|丫鬟|护卫|太医|医女|稳婆|阿哥)$/u.test(cleanName)) {
-            return false;
-        }
-        if (/(?:时间|情绪|身份|举动|时辰|时候|心腹|护卫|丫鬟|嬷嬷|稳婆|医女|法师|药力|安胎|补品|赏赐|炭火|馊饭|院落|偏院|书房|寒冬|洗三|光环|皮囊|面容|躯壳|深情|宏图|局势|内务|病症|关怀|姿态|优势|报复|探望|看管|监视|请脉|归来|降生|生疑|布局|计策|谋划)/u.test(cleanName)) {
-            return false;
-        }
-        if (cleanName.length === 2 && /[时绪份加管监护院房门药汤礼局计策气心火饭炭风势态谋疑赏探视病脉归降]/u.test(cleanName.slice(-1))) {
-            return false;
-        }
-        if (cleanName.length === 3 && /(?:情绪|身份|时间|方情|方身|严加|监视|看管|请脉|药力)/u.test(cleanName)) {
-            return false;
-        }
-        return true;
-    }
-
-    collectSynopsisConcreteNameMentions(text = "") {
-        const content = String(text || "");
-        const counts = new Map();
-        const strongSignalNames = new Set();
-        const addCandidate = (name, weight = 1) => {
-            const cleanName = this.normalizeOutlineCharacterLabel(name);
-            if (!this.isSynopsisLooseConcreteNameCandidate(cleanName)) {
-                return;
-            }
-            counts.set(cleanName, Number(counts.get(cleanName) || 0) + Number(weight || 1));
-        };
-        const addStrongCandidate = (name, weight = 1) => {
-            const cleanName = this.normalizeOutlineCharacterLabel(name);
-            if (!this.isSynopsisLooseConcreteNameCandidate(cleanName)) {
-                return;
-            }
-            strongSignalNames.add(cleanName);
-            addCandidate(cleanName, weight);
-        };
-
-        const strongPatterns = [
-            /([\u4e00-\u9fa5]{2,4})(?=(?:重生|醒来|睁开眼|发现|唤来|归来|入府|入宫|进门|探望|请脉|主持|落泪|冷笑|暗想|暗下决心|安排|吩咐|命人|柔声|轻声|低声|哭诉|看着|看向|望着|盯着|求情|主持|接管|接过|抱走|生下|降生|怀上|怀有))/gu,
-            /(?:正是|便是|就是|名叫|叫做|唤作)([\u4e00-\u9fa5]{2,4})(?=[，。；！!？?\s]|$)/gu,
-            /(?:真正的|真)([\u4e00-\u9fa5]{2,4})(?=[，。；！!？?\s]|$)/gu,
-            /顶着([\u4e00-\u9fa5]{2,4})[^，。；！？\n]{0,6}(?:的脸|面容|皮囊|壳子)/gu,
-            /([\u4e00-\u9fa5]{2,4})(?=(?:面容|皮囊|光环))(?![\u4e00-\u9fa5])/gu,
-            /对面[^，。；！？\n]{0,20}正是([\u4e00-\u9fa5]{2,4})(?=[，。；！!？?\s]|$)/gu
-        ];
-        strongPatterns.forEach((pattern) => {
-            for (const match of content.matchAll(pattern)) {
-                addStrongCandidate(match?.[1] || match?.[0] || "", 3);
-            }
-        });
-
-        const weakPatterns = [
-            /([\u4e00-\u9fa5]{2,4})(?=(?:让|向|对|替|帮|陪|同|与|和|被|将|把))/gu,
-            /(?:与|和|同|对)([\u4e00-\u9fa5]{2,4})(?=[，。；！!？?\s]|$)/gu
-        ];
-        weakPatterns.forEach((pattern) => {
-            for (const match of content.matchAll(pattern)) {
-                addCandidate(match?.[1] || match?.[0] || "", 1);
-            }
-        });
-
-        const looseTokens = content.match(/[\u4e00-\u9fa5]{2,4}/gu) || [];
-        looseTokens.forEach((token) => addCandidate(token, 0.2));
-
-        return Array.from(counts.entries())
-            .map(([name, count]) => ({
-                name,
-                count: Number(count || 0),
-                strong: strongSignalNames.has(name),
-                likelyPerson: this.isLikelyChinesePersonName(name)
-            }))
-            .filter((item) => {
-                if (!item.name) {
-                    return false;
-                }
-                if (item.likelyPerson) {
-                    return item.count >= 1.6;
-                }
-                if (item.strong) {
-                    return item.count >= 2.8;
-                }
-                return item.count >= 3.8;
-            })
-            .sort((left, right) => right.count - left.count || left.name.length - right.name.length || left.name.localeCompare(right.name, "zh-Hans-CN"));
-    }
-
-    collectSynopsisConcreteNameCandidatesFromText(text = "") {
-        return this.collectSynopsisConcreteNameMentions(text).map((item) => item.name);
-    }
-
-    seedSynopsisConcreteNamesFromText(project, text = "", volumeNumber = 1) {
-        if (!project || !String(text || "").trim()) {
-            return [];
-        }
-        const addedNames = [];
-        this.collectSynopsisConcreteNameMentions(text).forEach((mention) => {
-            const name = mention?.name || "";
-            if (!name || this.isGenericCharacterCandidateName(name)) {
-                return;
-            }
-            const knownName = this.isKnownSynopsisConcreteName(project, name);
-            const explicitSignal = this.hasSynopsisExplicitNameSignal(text, name);
-            if (!knownName && !mention?.likelyPerson && !explicitSignal) {
-                return;
-            }
-            if (this.lockSynopsisCharacterName(project, name, "閰嶈", "文本识别", volumeNumber)) {
-                addedNames.push(name);
-            }
-        });
-        return Array.from(new Set(addedNames));
-    }
-
-    detectSynopsisPrimaryConcreteName(text = "", mentions = []) {
-        const source = String(text || "");
-        const prioritizedPatterns = [
-            /([\u4e00-\u9fa5]{2,4})(?=(?:重生|醒来|睁开眼|发现|笑了|暗下决心|暗想|冷笑))/u,
-            /一句话故事钩子[\s\S]{0,80}?([\u4e00-\u9fa5]{2,4})(?=(?:重生|回到|醒来|发现))/u,
-            /浓缩版故事方案[\s\S]{0,120}?([\u4e00-\u9fa5]{2,4})(?=(?:死在|重生|醒来|笑了))/u
-        ];
-        for (const pattern of prioritizedPatterns) {
-            const match = source.match(pattern);
-            const candidate = this.normalizeOutlineCharacterLabel(match?.[1] || "");
-            if (candidate && mentions.some((item) => item.name === candidate)) {
-                return candidate;
-            }
-        }
-        return String(mentions?.[0]?.name || "").trim();
-    }
-
-    inferSynopsisSpecialAliasMappings(project, text = "", volumeNumber = 1) {
-        const source = String(text || "");
-        if (!source.trim()) {
-            return {};
-        }
-
-        this.seedSynopsisConcreteNamesFromText(project, source, volumeNumber);
-        const mentions = this.collectSynopsisConcreteNameMentions(source);
-        const primaryName = this.detectSynopsisPrimaryConcreteName(source, mentions);
-        const aliasMappings = {};
-        const addMapping = (alias, name) => {
-            const cleanAlias = this.normalizeOutlineCharacterLabel(alias);
-            const cleanName = this.normalizeOutlineCharacterLabel(name);
-            if (!cleanAlias || !cleanName || cleanAlias === cleanName) {
-                return;
-            }
-            if (!this.isSafeSynopsisMapping(project, cleanAlias, cleanName)) {
-                return;
-            }
-            aliasMappings[cleanAlias] = cleanName;
-        };
-
-        const explicitAliasPatterns = [
-            { alias: "原主", pattern: /(?:原主|原身)[（(](?:真)?([\u4e00-\u9fa5]{2,4})[)）]/gu },
-            { alias: "原身", pattern: /(?:原主|原身)[（(](?:真)?([\u4e00-\u9fa5]{2,4})[)）]/gu },
-            { alias: "妹妹", pattern: /妹妹[（(](?:真)?([\u4e00-\u9fa5]{2,4})[)）]/gu },
-            { alias: "姐姐", pattern: /姐姐[（(](?:真)?([\u4e00-\u9fa5]{2,4})[)）]/gu }
-        ];
-        explicitAliasPatterns.forEach(({ alias, pattern }) => {
-            for (const match of source.matchAll(pattern)) {
-                const name = this.normalizeOutlineCharacterLabel(match?.[1] || "");
-                if (this.isSynopsisLooseConcreteNameCandidate(name)) {
-                    addMapping(alias, name);
-                }
-            }
-        });
-
-        const swapKeywords = /(互换|交换|灵魂|身体|壳子|皮囊|魂穿|错位)/u.test(source);
-        if (swapKeywords) {
-            let counterpartName = "";
-            const strongCounterpartPatterns = [
-                /对面[^，。；！？\n]{0,24}正是([\u4e00-\u9fa5]{2,4})(?=[，。；！!？?\s]|$)/u,
-                /顶着([\u4e00-\u9fa5]{2,4})[^，。；！？\n]{0,8}(?:的脸|面容|皮囊|壳子)/u,
-                /真正的([\u4e00-\u9fa5]{2,4})(?=[，。；！!？?\s]|$)/u
-            ];
-            for (const pattern of strongCounterpartPatterns) {
-                const match = source.match(pattern);
-                const candidate = this.normalizeOutlineCharacterLabel(match?.[1] || "");
-                if (this.isSynopsisLooseConcreteNameCandidate(candidate)) {
-                    counterpartName = candidate;
-                    break;
-                }
-            }
-            if (!counterpartName) {
-                counterpartName = String(
-                    mentions.find((item) => item.name && item.name !== primaryName)?.name || ""
-                ).trim();
-            }
-            if (counterpartName) {
-                ["原主", "原身", "身体原主", "这具身体的原主", "这具身子的原主", "原本的躯壳", "这具躯壳", "那具躯壳", "对面的躯壳"].forEach((alias) => {
-                    if (source.includes(alias)) {
-                        addMapping(alias, counterpartName);
-                    }
-                });
-            }
-        }
-
-        return aliasMappings;
-    }
-
-    collectSynopsisSpecialAliasTerms(text = "") {
-        const terms = new Set();
-        const source = String(text || "");
-        (source.match(/(?:原主|原身|身体原主|这具身体的原主|这具身子的原主|原本的躯壳|这具躯壳|那具躯壳|对面的躯壳|姐姐|妹妹)/gu) || []).forEach((term) => {
-            const cleanTerm = this.normalizeOutlineCharacterLabel(term);
-            if (cleanTerm) {
-                terms.add(cleanTerm);
-            }
-        });
-        return Array.from(terms);
-    }
-
-    getSynopsisFormalAliasPattern() {
-        return /(?:嫡福晋|侧福晋|福晋|王妃|王爷|亲王|郡王|皇后|太后|皇帝|皇上|陛下|殿下|太子妃|太子|世子妃|世子|贵妃|妃嫔|贵人|答应|常在|公主|郡主|县主|娘娘|圣女|圣子|魔尊|帝君|君上|尊上|宗主|掌门|师尊|师父|师母|师兄|师姐|师弟|师妹|家主|族长|少主|府主|厂长|主任|科长|处长|总工|总工程师|军代表|连长|营长|队长|老板|经理|医生|老师|秘书)$/u;
-    }
-
-    getSynopsisFormalAliasFragmentPattern() {
-        return /[\u4e00-\u9fa5]{0,6}(?:嫡福晋|侧福晋|福晋|王妃|王爷|亲王|郡王|皇后|太后|皇帝|皇上|陛下|殿下|太子妃|太子|世子妃|世子|贵妃|妃嫔|贵人|答应|常在|公主|郡主|县主|娘娘|圣女|圣子|魔尊|帝君|君上|尊上|宗主|掌门|师尊|师父|师母|师兄|师姐|师弟|师妹|家主|族长|少主|府主|厂长|主任|科长|处长|总工|总工程师|军代表|连长|营长|队长|老板|经理|医生|老师|秘书)/gu;
-    }
-
-    getSynopsisBlockedAliasTerms() {
-        return new Set([
-            "角色", "人物", "主角", "配角", "龙套", "路人", "众人", "某人", "那人", "这人", "那位", "这位",
-            "男人", "女人", "少年", "少女", "姐姐", "妹妹", "哥哥", "弟弟", "母亲", "父亲", "娘", "爹",
-            "娘亲", "爹爹", "夫人", "老爷", "小姐", "少爷", "夫君", "相公", "娘子", "嫂子", "舅妈", "舅舅",
-            "婶子", "伯母", "伯父", "姑妈", "姑父", "姨妈", "姨父", "师门", "同门", "对手", "敌人"
-        ]);
-    }
-
-    isUsableSynopsisStrictAlias(project, alias, realName, { requireFormal = false } = {}) {
-        const cleanAlias = this.normalizeOutlineCharacterLabel(alias);
-        const cleanName = String(realName || "").trim();
-        if (!cleanAlias || !cleanName || cleanAlias === cleanName) {
-            return false;
-        }
-        if (!/^[\u4e00-\u9fa5]{2,12}$/u.test(cleanAlias)) {
-            return false;
-        }
-        if (this.containsObfuscatedText(cleanAlias) || this.isLikelyActionLikeCharacterCandidate(cleanAlias)) {
-            return false;
-        }
-        if (this.getSynopsisBlockedAliasTerms().has(cleanAlias)) {
-            return false;
-        }
-        if (this.buildSynopsisAliasToRoleMap()[cleanAlias]) {
-            return false;
-        }
-        if (this.buildSynopsisKnownConcreteNameSet(project).has(cleanAlias) && cleanAlias !== cleanName) {
-            return false;
-        }
-        if (requireFormal) {
-            return this.matchesGenericRolePattern(cleanAlias)
-                || this.isPseudoConcreteCharacterAlias(cleanAlias)
-                || this.getSynopsisFormalAliasPattern().test(cleanAlias);
-        }
-        return true;
-    }
-
-    extractSynopsisFormalAliases(project, realName, text = "") {
-        const content = String(text || "").trim();
-        if (!content) {
-            return [];
-        }
-
-        const aliases = new Set();
-        const addAlias = (alias) => {
-            const cleanAlias = this.normalizeOutlineCharacterLabel(alias);
-            if (this.isUsableSynopsisStrictAlias(project, cleanAlias, realName, { requireFormal: true })) {
-                aliases.add(cleanAlias);
-            }
-        };
-
-        Utils.ensureArrayFromText(content).forEach(addAlias);
-        (content.match(/[\u4e00-\u9fa5]{2,12}/gu) || []).forEach(addAlias);
-        (content.match(this.getSynopsisFormalAliasFragmentPattern()) || []).forEach(addAlias);
-        (content.match(/(?:嫡福晋|侧福晋|福晋|王妃|王爷|亲王|郡王|皇后|太后|皇帝|皇上|陛下|殿下|太子妃|太子|世子妃|世子|贵妃|妃嫔|贵人|答应|常在|公主|郡主|县主|娘娘|圣女|圣子|魔尊|帝君|君上|尊上|宗主|掌门|师尊|师父|师母|师兄|师姐|师弟|师妹|家主|族长|少主|府主|厂长|主任|科长|处长|总工|总工程师|军代表|连长|营长|队长|老板|经理|医生|老师|秘书)/gu) || []).forEach(addAlias);
-
-        return Array.from(aliases).sort((left, right) => right.length - left.length);
-    }
-
-    buildSynopsisStrictRealNameMapping(project) {
-        const synopsisData = this.restoreSynopsisMainCharacters(project);
-        const aliasOwners = new Map();
-        const conflictAliases = new Set();
-        const characters = new Map();
-        const ensureCharacter = (name) => {
-            const cleanName = String(name || "").trim();
-            if (!this.isTrustedSynopsisConcreteName(project, cleanName)) {
-                return null;
-            }
-            if (!characters.has(cleanName)) {
-                characters.set(cleanName, {
-                    name: cleanName,
-                    explicitAliases: new Set(),
-                    formalSources: new Set()
-                });
-            }
-            return characters.get(cleanName);
-        };
-        const registerAliasOwner = (alias, realName) => {
-            const cleanAlias = this.normalizeOutlineCharacterLabel(alias);
-            const cleanName = String(realName || "").trim();
-            if (!cleanAlias || !cleanName || cleanAlias === cleanName || conflictAliases.has(cleanAlias)) {
-                return;
-            }
-            const existingOwner = aliasOwners.get(cleanAlias);
-            if (existingOwner && existingOwner !== cleanName) {
-                aliasOwners.delete(cleanAlias);
-                conflictAliases.add(cleanAlias);
-                return;
-            }
-            aliasOwners.set(cleanAlias, cleanName);
-        };
-
-        Object.entries(synopsisData.locked_character_names || {}).forEach(([name, info]) => {
-            const entry = ensureCharacter(name);
-            if (!entry) {
-                return;
-            }
-            this.sanitizeSynopsisNameAliases(
-                project,
-                name,
-                [
-                    ...this.buildSynopsisNameAliases(name),
-                    ...Utils.ensureArrayFromText(info?.aliases || [])
-                ]
-            ).forEach((alias) => entry.explicitAliases.add(alias));
-            if (info?.identity) {
-                entry.formalSources.add(String(info.identity || "").trim());
-            }
-        });
-
-        Object.values(synopsisData.main_characters || {}).forEach((name) => {
-            const entry = ensureCharacter(name);
-            if (!entry) {
-                return;
-            }
-            this.buildSynopsisNameAliases(name).forEach((alias) => entry.explicitAliases.add(alias));
-        });
-
-        (project?.outline?.characters || []).forEach((character) => {
-            const name = this.normalizeOutlineCharacterLabel(character?.name || "");
-            const entry = ensureCharacter(name);
-            if (!entry) {
-                return;
-            }
-            this.buildSynopsisNameAliases(name).forEach((alias) => entry.explicitAliases.add(alias));
-            Utils.ensureArrayFromText(character?.aliases || character?.["别名"] || "").forEach((alias) => entry.explicitAliases.add(alias));
-            [
-                character?.identity,
-                character?.["身份"],
-                character?.role,
-                character?.["标签"]
-            ].forEach((value) => {
-                if (value) {
-                    entry.formalSources.add(String(value || "").trim());
-                }
-            });
-        });
-
-        characters.forEach((entry) => {
-            entry.explicitAliases.forEach((alias) => {
-                if (this.isUsableSynopsisStrictAlias(project, alias, entry.name)) {
-                    registerAliasOwner(alias, entry.name);
-                }
-            });
-            entry.formalSources.forEach((text) => {
-                this.extractSynopsisFormalAliases(project, entry.name, text).forEach((alias) => registerAliasOwner(alias, entry.name));
-            });
-        });
-
-        const strictMapping = {};
-        const addMapping = (alias, realName) => {
-            const cleanAlias = this.normalizeOutlineCharacterLabel(alias);
-            const cleanName = String(realName || "").trim();
-            if (!cleanAlias || !cleanName || cleanAlias === cleanName) {
-                return;
-            }
-            if (strictMapping[cleanAlias] && strictMapping[cleanAlias] !== cleanName) {
-                return;
-            }
-            strictMapping[cleanAlias] = cleanName;
-        };
-
-        Object.entries(synopsisData.vague_to_name_mapping || {}).forEach(([alias, realName]) => addMapping(alias, realName));
-        Object.entries(synopsisData.generated_vague_aliases || {}).forEach(([alias, realName]) => addMapping(alias, realName));
-        Object.entries(synopsisData.main_characters || {}).forEach(([role, realName]) => {
-            addMapping(role, realName);
-            (this.getSynopsisRoleAliases()[role] || []).forEach((alias) => addMapping(alias, realName));
-        });
-        aliasOwners.forEach((realName, alias) => {
-            if (this.isSafeSynopsisMapping(project, alias, realName)) {
-                addMapping(alias, realName);
-            }
-        });
-
-        return Object.fromEntries(
-            Object.entries(strictMapping).sort((left, right) => right[0].length - left[0].length)
-        );
-    }
-
-    normalizeSynopsisGeneratedText(project, text) {
-        const mappedText = this.applyKnownSynopsisMappings(text, this.buildSynopsisStrictRealNameMapping(project));
-        const repairedText = this.repairSynopsisSuspiciousRoleComposites(project, mappedText);
-        return this.applyKnownSynopsisMappings(repairedText, this.buildSynopsisStrictRealNameMapping(project));
-    }
-
-    normalizeSynopsisGeneratedItems(project, items = []) {
-        return (items || []).map((item, index) => {
-            const chapterNumber = Number(item?.chapter_number || index + 1);
-            const normalizedTitle = this.normalizeSynopsisGeneratedText(project, item?.title || `第${chapterNumber}章`).trim() || `第${chapterNumber}章`;
-            const normalizedSynopsis = this.normalizeSynopsisGeneratedText(project, item?.synopsis || item?.key_event || "").trim();
-            return this.buildNormalizedSynopsisItem(
-                {
-                    ...item,
-                    title: normalizedTitle,
-                    synopsis: normalizedSynopsis,
-                    key_event: normalizedSynopsis
-                },
-                chapterNumber
-            );
-        });
-    }
-
-    getSynopsisNameableRoleFragmentPattern() {
-        return /[\u4e00-\u9fa5]{0,4}(?:男主母亲|女主母亲|男主父亲|女主父亲|舅妈|舅舅|嫂子|嫂嫂|婶子|伯母|伯父|姑妈|姑父|姨妈|姨父|夫人|老爷|小姐|少爷|嬷嬷|婆子|丫鬟|宫女|公公|婆婆|师兄|师姐|师弟|师妹|长老|掌门|宗主|师尊|师父|同门|道友|王爷|福晋|侧福晋|嫡福晋|皇后|太后|皇帝|皇上|陛下|太子|世子|贵妃|妃嫔|贵人|答应|常在|公主|郡主|县主|少主|家主|族长|府主|厂长|主任|科长|处长|总工|总工程师|军代表|连长|营长|队长|老板|经理|医生|老师|秘书)/gu;
-    }
-
-    hashSynopsisSeed(text) {
-        let hash = 0;
-        const source = String(text || "");
-        for (let index = 0; index < source.length; index += 1) {
-            hash = ((hash * 131) + source.charCodeAt(index)) >>> 0;
-        }
-        return hash >>> 0;
-    }
-
-    detectSynopsisAutoNameStyle(project, vagueTerm = "", role = "") {
-        const source = [
-            project?.outline?.genre || "",
-            project?.outline?.subgenre || "",
-            project?.outline?.storyConcept || "",
-            project?.outline?.title || "",
-            vagueTerm,
-            role
-        ].join(" ");
-
-        if (/年代|七零|八零|九零|知青|下乡|筒子楼|家属院|厂|大院|军婚|重生年代/u.test(source)) {
-            return "era";
-        }
-        if (/修仙|仙侠|宗门|灵根|金丹|元婴|化神|渡劫|飞升|师尊|长老|掌门|道友|魔界|仙界|帝君|尊上/u.test(source)) {
-            return "xianxia";
-        }
-        if (/宫斗|古言|宅斗|后宫|王府|侯府|将军府|嫡|庶|太后|皇后|王爷|福晋|世子|太子/u.test(source)) {
-            return "ancient";
-        }
-        if (/民国|少帅|军阀|报馆|戏班/u.test(source)) {
-            return "republic";
-        }
-        if (/都市|校园|现言|豪门|总裁|娱乐圈|职场/u.test(source)) {
-            return "modern";
-        }
-        return "general";
-    }
-
-    inferSynopsisAutoNameGender(vagueTerm = "", role = "") {
-        const source = `${role || ""} ${vagueTerm || ""}`;
-        if (/(?:女主|母亲|娘|娘亲|妻|夫人|小姐|嫂子|嫂嫂|舅妈|婶子|伯母|姑妈|姨妈|婆婆|师姐|师妹|宫女|嬷嬷|丫鬟|皇后|太后|贵妃|妃嫔|贵人|答应|常在|公主|郡主|县主|圣女)/u.test(source)) {
-            return "female";
-        }
-        if (/(?:男主|父亲|爹|夫君|相公|老爷|少爷|舅舅|伯父|姑父|姨父|公公|师兄|师弟|师父|掌门|宗主|长老|王爷|皇帝|皇上|陛下|太子|世子|圣子|少主|家主|族长|厂长|主任|科长|处长|总工|总工程师|军代表|连长|营长|队长|老板|经理|医生|老师)/u.test(source)) {
-            return "male";
-        }
-        return "neutral";
-    }
-
-    getSynopsisAutoNamePool(style = "general", gender = "neutral") {
-        const profiles = {
-            era: {
-                surnames: ["林", "沈", "宋", "周", "许", "方", "叶", "陈", "王", "李", "赵", "吴", "刘", "何", "徐", "朱"],
-                female: ["秀兰", "秀红", "桂香", "玉梅", "春桃", "秋月", "冬梅", "淑芬", "丽华", "晓燕", "红英", "美玲"],
-                male: ["建国", "卫东", "国强", "志远", "志刚", "庆华", "德胜", "春生", "振华", "向前", "成林", "永安"],
-                neutral: ["晓平", "玉成", "安宁", "志新", "明月", "知青", "庆云", "景和", "书宁", "玉书"]
-            },
-            ancient: {
-                surnames: ["沈", "苏", "顾", "谢", "陆", "裴", "宁", "宋", "姜", "柳", "温", "容", "楚", "许", "林", "秦"],
-                female: ["婉清", "明珠", "静宜", "如月", "若云", "清宁", "含章", "知夏", "映秋", "素锦", "玉容", "安禾"],
-                male: ["承安", "明远", "景淮", "修文", "廷舟", "元清", "子珩", "怀安", "景明", "书远", "行简", "叙川"],
-                neutral: ["清和", "安之", "景行", "知言", "书宁", "允和", "明初", "怀宁", "予安", "景安"]
-            },
-            xianxia: {
-                surnames: ["云", "沈", "谢", "顾", "陆", "楚", "宁", "温", "裴", "容", "林", "苏", "凌", "凤", "慕", "秦"],
-                female: ["清宁", "灵月", "若音", "青禾", "云岚", "素月", "听澜", "明音", "映霜", "清璃", "知微", "月白"],
-                male: ["长风", "景玄", "清越", "凌川", "明渊", "云舟", "玄宁", "承安", "临渊", "怀川", "景尧", "玄明"],
-                neutral: ["清衡", "景和", "知遥", "云安", "明和", "清言", "临安", "若尘", "玄和", "归宁"]
-            },
-            republic: {
-                surnames: ["沈", "林", "许", "周", "顾", "叶", "宋", "陆", "苏", "陈", "白", "方"],
-                female: ["曼卿", "玉筠", "清禾", "静秋", "明珠", "素心", "雅宁", "若兰", "婉清", "书宁"],
-                male: ["景明", "少谦", "成安", "子衡", "敬之", "远山", "廷玉", "怀民", "伯言", "明川"],
-                neutral: ["清和", "知行", "书宁", "安和", "景行", "明初", "允之", "静和"]
-            },
-            modern: {
-                surnames: ["林", "沈", "宋", "周", "许", "顾", "叶", "陈", "苏", "陆", "方", "温", "程", "何", "徐", "姜"],
-                female: ["知意", "安宁", "嘉宁", "若溪", "念初", "清禾", "雨桐", "语棠", "可心", "亦宁", "晓彤", "书妍"],
-                male: ["知远", "亦川", "明远", "嘉树", "言川", "时安", "书衡", "承泽", "景明", "子昂", "泽宇", "铭远"],
-                neutral: ["安宁", "清和", "景和", "知言", "书宁", "明初", "若安", "一诺", "予安", "嘉言"]
-            },
-            general: {
-                surnames: ["林", "沈", "周", "许", "顾", "叶", "宋", "苏", "陆", "陈", "温", "宁", "程", "何", "方", "秦"],
-                female: ["清禾", "安宁", "若溪", "晓燕", "玉梅", "书妍", "婉清", "嘉宁", "明珠", "知夏"],
-                male: ["知远", "明远", "长风", "卫东", "志远", "书衡", "景明", "承安", "修远", "廷舟"],
-                neutral: ["清和", "景和", "知言", "书宁", "安之", "明初", "予安", "嘉言"]
-            }
-        };
-        const profile = profiles[style] || profiles.general;
-        return {
-            surnames: profile.surnames,
-            given: profile[gender] || profile.neutral
-        };
-    }
-
-    generateSynopsisAutoName(project, vagueTerm, { role = "", volumeNumber = 1 } = {}) {
-        const usedNames = this.buildSynopsisKnownConcreteNameSet(project);
-        const mainSurnames = new Set(
-            Object.values(this.restoreSynopsisMainCharacters(project)?.main_characters || {})
-                .map((name) => String(name || "").trim().charAt(0))
-                .filter(Boolean)
-        );
-        const style = this.detectSynopsisAutoNameStyle(project, vagueTerm, role);
-        const gender = this.inferSynopsisAutoNameGender(vagueTerm, role);
-        const pool = this.getSynopsisAutoNamePool(style, gender);
-        const seed = this.hashSynopsisSeed(`${project?.outline?.title || ""}|${project?.outline?.genre || ""}|${role}|${vagueTerm}|${volumeNumber}`);
-        const total = Math.max(1, pool.surnames.length * pool.given.length);
-
-        for (let offset = 0; offset < total; offset += 1) {
-            const surname = pool.surnames[(seed + offset) % pool.surnames.length];
-            const given = pool.given[(Math.floor(seed / Math.max(1, pool.surnames.length)) + offset * 3) % pool.given.length];
-            if (!surname || !given) {
-                continue;
-            }
-            if (mainSurnames.has(surname) && offset < pool.surnames.length) {
-                continue;
-            }
-            const candidate = `${surname}${given}`;
-            if (usedNames.has(candidate)) {
-                continue;
-            }
-            if (this.getSynopsisOddAutoNameSet().has(given) || this.getSynopsisOddAutoNameSet().has(candidate)) {
-                continue;
-            }
-            if (!this.isTrustedSynopsisConcreteName(project, candidate) || this.isGenericCharacterCandidateName(candidate)) {
-                continue;
-            }
-            return candidate;
-        }
-
-        return "";
-    }
-
-    getSynopsisCreatableSupportingRoleWords() {
-        return [
-            "丫鬟", "婢女", "侍女", "侍卫", "护卫", "小厮", "书童", "嬷嬷", "婆子", "宫女", "太监", "内侍",
-            "太医", "医女", "郎中", "大夫", "稳婆", "奶娘", "乳母", "管家", "掌柜", "车夫", "伙计", "掌事",
-            "管事", "执事", "弟子", "长老", "护法", "暗卫", "影卫", "侍从", "近侍", "家丁", "随从", "婆婆"
-        ];
-    }
-
-    buildSynopsisSupportingRolePhrasePattern() {
-        const roleWords = this.getSynopsisCreatableSupportingRoleWords()
-            .sort((left, right) => right.length - left.length)
-            .join("|");
-        return `(?:贴身|心腹|陪嫁|掌事|近身|守门|巡山|传话|老|小|大)?(?:${roleWords})`;
-    }
-
-    normalizeSynopsisSupportingRoleDescriptor(roleText = "") {
-        return this.normalizeOutlineCharacterLabel(roleText)
-            .replace(/^(?:那名|那位|这名|这位|一名|一位)/u, "")
-            .replace(/^(?:贴身的|身边的|跟前的|房里的|院里的)/u, "")
-            .replace(/(?:上前|进来|过去|回话|禀报|请脉|诊脉)$/u, "")
-            .trim();
-    }
-
-    extractSynopsisSupportingRoleCore(roleText = "") {
-        const descriptor = this.normalizeSynopsisSupportingRoleDescriptor(roleText);
-        if (!descriptor) {
-            return "";
-        }
-        const roleWords = this.getSynopsisCreatableSupportingRoleWords().sort((left, right) => right.length - left.length);
-        return roleWords.find((word) => descriptor.endsWith(word)) || descriptor;
-    }
-
-    findNearestSynopsisOwnerName(project, text = "", index = 0) {
-        const windowText = String(text || "").slice(Math.max(0, Number(index || 0) - 36), Math.max(0, Number(index || 0)));
-        if (!windowText.trim()) {
-            return "";
-        }
-
-        const strictMapping = this.buildSynopsisStrictRealNameMapping(project);
-        const candidates = Array.from(new Set([
-            ...Object.keys(strictMapping || {}),
-            ...Object.values(strictMapping || {}),
-            ...Array.from(this.buildSynopsisKnownConcreteNameSet(project) || [])
-        ]))
-            .map((item) => this.normalizeOutlineCharacterLabel(item))
-            .filter(Boolean)
-            .sort((left, right) => right.length - left.length);
-
-        let ownerName = "";
-        let ownerIndex = -1;
-        candidates.forEach((candidate) => {
-            const foundIndex = windowText.lastIndexOf(candidate);
-            if (foundIndex === -1 || foundIndex < ownerIndex) {
-                return;
-            }
-            ownerIndex = foundIndex;
-            ownerName = strictMapping[candidate] || candidate;
-        });
-
-        return ownerName;
-    }
-
-    buildSynopsisSupportingCharacterFingerprint(seed = {}) {
-        const ownerName = String(seed.ownerName || "").trim();
-        const roleCore = String(seed.roleCore || "").trim();
-        const roleDescriptor = String(seed.roleDescriptor || "").trim();
-        return [
-            ownerName,
-            ownerName ? roleCore : (roleDescriptor || roleCore)
-        ].filter(Boolean).join("|");
-    }
-
-    collectSynopsisSupportingCharacterSeeds(project, text = "", volumeNumber = 1) {
-        const source = String(text || "");
-        if (!source.trim()) {
-            return [];
-        }
-
-        const normalizedSource = this.applyKnownSynopsisMappings(source, this.buildSynopsisStrictRealNameMapping(project));
-        const rolePhrasePattern = this.buildSynopsisSupportingRolePhrasePattern();
-        const seeds = [];
-        const seen = new Set();
-        const pushSeed = ({ alias, rolePhrase, ownerName = "", index = 0 }) => {
-            const cleanAlias = this.normalizeOutlineCharacterLabel(alias);
-            const roleDescriptor = this.normalizeSynopsisSupportingRoleDescriptor(rolePhrase);
-            const roleCore = this.extractSynopsisSupportingRoleCore(roleDescriptor);
-            const resolvedOwnerName = this.normalizeOutlineCharacterLabel(ownerName) || this.findNearestSynopsisOwnerName(project, normalizedSource, index);
-            if (!cleanAlias || !roleDescriptor || !roleCore || !this.isPseudoConcreteCharacterAlias(roleDescriptor) && !this.matchesGenericRolePattern(roleDescriptor)) {
-                return;
-            }
-
-            const fingerprint = this.buildSynopsisSupportingCharacterFingerprint({
-                ownerName: resolvedOwnerName,
-                roleDescriptor,
-                roleCore
-            });
-            if (!fingerprint || seen.has(fingerprint)) {
-                return;
-            }
-
-            const aliasTerms = new Set([cleanAlias, roleDescriptor]);
-            if (resolvedOwnerName) {
-                aliasTerms.add(`${resolvedOwnerName}的${roleDescriptor}`);
-                aliasTerms.add(`${resolvedOwnerName}的${roleCore}`);
-            }
-            seen.add(fingerprint);
-            seeds.push({
-                alias: cleanAlias,
-                roleDescriptor,
-                roleCore,
-                ownerName: resolvedOwnerName,
-                index,
-                aliasTerms: Array.from(aliasTerms).filter(Boolean),
-                fingerprint
-            });
-        };
-
-        const contextualPatterns = [
-            new RegExp(`([\\u4e00-\\u9fa5]{2,4})(?:身边|跟前|房里|房中的|院里|院中的|手下|手底下|帐下|门下|府上)?的(${rolePhrasePattern})`, "gu"),
-            new RegExp(`(?:唤来|叫来|请来|派来|带来|领来|命(?:人)?去请|命(?:人)?去叫|让(?:人)?去请|让(?:人)?去叫)(${rolePhrasePattern})`, "gu"),
-            new RegExp(`(?:这名|这位|那名|那位|一名|一位)(${rolePhrasePattern})`, "gu")
-        ];
-
-        contextualPatterns.forEach((pattern, patternIndex) => {
-            for (const match of normalizedSource.matchAll(pattern)) {
-                const fullMatch = String(match?.[0] || "").trim();
-                const ownerName = patternIndex === 0 ? String(match?.[1] || "").trim() : "";
-                const rolePhrase = patternIndex === 0 ? String(match?.[2] || "").trim() : String(match?.[1] || "").trim();
-                pushSeed({
-                    alias: fullMatch,
-                    rolePhrase,
-                    ownerName,
-                    index: Number(match?.index || 0)
-                });
-            }
-        });
-
-        const bareRolePattern = new RegExp(rolePhrasePattern, "gu");
-        for (const match of normalizedSource.matchAll(bareRolePattern)) {
-            const rolePhrase = String(match?.[0] || "").trim();
-            if (!rolePhrase) {
-                continue;
-            }
-            const prefix = normalizedSource.slice(Math.max(0, Number(match?.index || 0) - 2), Number(match?.index || 0));
-            if (/[多几众群些诸各两双三四五六七八九十\d]/u.test(prefix)) {
-                continue;
-            }
-            pushSeed({
-                alias: rolePhrase,
-                rolePhrase,
-                index: Number(match?.index || 0)
-            });
-        }
-
-        return seeds;
-    }
-
-    registerSynopsisSupportingCharacter(project, seed = {}, volumeNumber = 1) {
-        if (!project || !seed?.fingerprint) {
-            return "";
-        }
-
-        const synopsisData = this.restoreSynopsisMainCharacters(project);
-        synopsisData.supporting_character_registry = synopsisData.supporting_character_registry && typeof synopsisData.supporting_character_registry === "object"
-            ? synopsisData.supporting_character_registry
-            : {};
-
-        const existingEntry = synopsisData.supporting_character_registry[seed.fingerprint] || null;
-        const existingMappedName = (seed.aliasTerms || [])
-            .map((alias) => synopsisData.vague_to_name_mapping?.[alias] || synopsisData.generated_vague_aliases?.[alias] || "")
-            .find(Boolean);
-        const resolvedName = String(existingEntry?.name || existingMappedName || "").trim()
-            || this.generateSynopsisAutoName(
-                project,
-                `${seed.ownerName || ""}${seed.roleDescriptor || seed.roleCore || seed.alias || ""}`,
-                {
-                    role: seed.roleCore || seed.roleDescriptor || "",
-                    volumeNumber
-                }
-            );
-
-        if (!resolvedName || !this.isTrustedSynopsisConcreteName(project, resolvedName)) {
-            return "";
-        }
-
-        synopsisData.supporting_character_registry[seed.fingerprint] = {
-            name: resolvedName,
-            role_core: seed.roleCore || "",
-            role_descriptor: seed.roleDescriptor || seed.roleCore || "",
-            owner_name: seed.ownerName || "",
-            locked_volume: Number(existingEntry?.locked_volume || volumeNumber || 1) || 1,
-            aliases: this.sanitizeSynopsisSupportingAliases(project, [
-                ...(existingEntry?.aliases || []),
-                ...(seed.aliasTerms || [])
-            ])
-        };
-
-        this.lockSynopsisCharacterName(project, resolvedName, "閰嶈", seed.roleDescriptor || seed.roleCore || "鏈煡", volumeNumber);
-        (seed.aliasTerms || []).forEach((alias) => {
-            if (!alias || alias === resolvedName) {
-                return;
-            }
-            if (this.isSafeSynopsisMapping(project, alias, resolvedName)) {
-                synopsisData.vague_to_name_mapping[alias] = resolvedName;
-            }
-        });
-        return resolvedName;
-    }
-
-    rebuildSynopsisGeneratedSupportingAliases(project) {
-        const synopsisData = this.restoreSynopsisMainCharacters(project);
-        const registryEntries = Object.values(synopsisData.supporting_character_registry || {})
-            .filter((entry) => entry?.name && this.isTrustedSynopsisConcreteName(project, entry.name));
-        const generatedAliases = {};
-        const roleCoreGroups = new Map();
-        const roleDescriptorGroups = new Map();
-        const addGroupEntry = (map, key, entry) => {
-            const cleanKey = this.normalizeOutlineCharacterLabel(key);
-            if (!cleanKey) {
-                return;
-            }
-            const list = map.get(cleanKey) || [];
-            list.push(entry);
-            map.set(cleanKey, list);
-        };
-
-        registryEntries.forEach((entry) => {
-            addGroupEntry(roleCoreGroups, entry.role_core || "", entry);
-            addGroupEntry(roleDescriptorGroups, entry.role_descriptor || "", entry);
-        });
-
-        const addGeneratedAlias = (alias, realName) => {
-            const cleanAlias = this.normalizeOutlineCharacterLabel(alias);
-            const cleanName = String(realName || "").trim();
-            if (!cleanAlias || !cleanName || cleanAlias === cleanName) {
-                return;
-            }
-            if (synopsisData.vague_to_name_mapping?.[cleanAlias] && synopsisData.vague_to_name_mapping[cleanAlias] !== cleanName) {
-                return;
-            }
-            if (this.isSafeSynopsisMapping(project, cleanAlias, cleanName)) {
-                generatedAliases[cleanAlias] = cleanName;
-            }
-        };
-
-        roleCoreGroups.forEach((entries, roleCore) => {
-            if (entries.length === 1 && roleCore) {
-                addGeneratedAlias(roleCore, entries[0].name);
-            }
-        });
-
-        roleDescriptorGroups.forEach((entries, descriptor) => {
-            if (entries.length === 1 && descriptor) {
-                addGeneratedAlias(descriptor, entries[0].name);
-            }
-        });
-
-        synopsisData.generated_vague_aliases = generatedAliases;
-        return generatedAliases;
-    }
-
-    seedSynopsisSupportingCharacters(project, text = "", volumeNumber = 1) {
-        if (!project || !String(text || "").trim()) {
-            return [];
-        }
-
-        const appliedMappings = [];
-        this.collectSynopsisSupportingCharacterSeeds(project, text, volumeNumber).forEach((seed) => {
-            const name = this.registerSynopsisSupportingCharacter(project, seed, volumeNumber);
-            if (name) {
-                appliedMappings.push(`${seed.alias}->${name}`);
-            }
-        });
-        this.rebuildSynopsisGeneratedSupportingAliases(project);
-        return Array.from(new Set(appliedMappings));
-    }
-
-    getSynopsisRoleRepairWords() {
-        return Array.from(new Set([
-            "暗卫首领", "管事太监", "教习姑姑", "贴身嬷嬷", "心腹嬷嬷", "小太监",
-            "说书人", "杀手头目", "杀手首领", "幕僚", "裁缝", "乐师", "舞姬", "厨娘", "戏子", "道姑", "萨满", "护院",
-            ...this.getSynopsisCreatableSupportingRoleWords()
-        ])).sort((left, right) => right.length - left.length);
-    }
-
-    getSynopsisRoleGarbageSuffixes() {
-        return new Set([
-            "健康身体", "时间", "方身份", "方情绪", "报复", "阿哥所有", "将皇帝", "东施效颦", "痴迷", "而对面",
-            "的她", "份完美夺", "个不受宠", "互换带来", "纯元皮囊", "纯元光环", "成了怀孕", "并让四郎",
-            "帝是纯粹", "顶着纯元", "所有", "身体", "皮囊", "光环", "身份", "情绪", "怀孕", "纯粹"
-        ]);
-    }
-
-    isSafeSynopsisRoleContinuation(fragment = "") {
-        const cleanFragment = this.normalizeOutlineCharacterLabel(fragment);
-        if (!cleanFragment) {
-            return false;
-        }
-        return new Set([
-            "奉命", "负责", "上前", "前去", "赶来", "探听", "观察", "伺候", "登记", "劝阻", "请安", "诊治",
-            "请来", "进言", "回话", "回禀", "禀报", "看守", "监视", "散播", "拦下", "查验", "送来", "接生",
-            "护送", "封锁", "款待", "献舞", "探望", "守着", "赶到", "劝说", "通传", "回禀", "通报"
-        ]).has(cleanFragment);
-    }
-
-    isSuspiciousSynopsisRoleSuffix(project, suffix = "") {
-        const cleanSuffix = this.normalizeOutlineCharacterLabel(suffix);
-        if (!cleanSuffix || cleanSuffix.length < 2) {
-            return false;
-        }
-        if (this.isKnownSynopsisConcreteName(project, cleanSuffix) || this.isLikelyChinesePersonName(cleanSuffix)) {
-            return false;
-        }
-        if (this.getSynopsisRoleGarbageSuffixes().has(cleanSuffix)) {
-            return true;
-        }
-        if (this.isSafeSynopsisRoleContinuation(cleanSuffix)) {
-            return false;
-        }
-        if (/[的了在并让将而被把从与给向为因于及且或并]/u.test(cleanSuffix)) {
-            return true;
-        }
-        if (/(?:身体|光环|皮囊|身份|情绪|时间|怀孕|所有|皇帝|对面|纯粹|痴迷|不受宠|完美夺|带来|请脉|报复|互换|东施效颦|健康|成了|顶着)/u.test(cleanSuffix)) {
-            return true;
-        }
-        return true;
-    }
-
-    resolveSynopsisSupportingRegistryNameByRole(project, roleLabel = "", text = "", index = 0) {
-        const synopsisData = this.restoreSynopsisMainCharacters(project);
-        const roleDescriptor = this.normalizeSynopsisSupportingRoleDescriptor(roleLabel);
-        const roleCore = this.extractSynopsisSupportingRoleCore(roleDescriptor);
-        const ownerName = this.findNearestSynopsisOwnerName(project, text, index);
-        const directMapping = synopsisData.generated_vague_aliases?.[roleDescriptor]
-            || synopsisData.generated_vague_aliases?.[roleCore]
-            || synopsisData.vague_to_name_mapping?.[roleDescriptor]
-            || synopsisData.vague_to_name_mapping?.[roleCore]
-            || "";
-        if (directMapping) {
-            return directMapping;
-        }
-
-        const entries = Object.values(synopsisData.supporting_character_registry || {})
-            .filter((entry) => entry?.name)
-            .filter((entry) =>
-                entry.role_descriptor === roleDescriptor
-                || entry.role_core === roleCore
-                || Array.isArray(entry.aliases) && (entry.aliases.includes(roleDescriptor) || entry.aliases.includes(roleCore))
-            );
-
-        if (!entries.length) {
-            return "";
-        }
-
-        const ownerMatches = ownerName
-            ? entries.filter((entry) => this.normalizeOutlineCharacterLabel(entry.owner_name || "") === ownerName)
-            : [];
-        if (ownerMatches.length === 1) {
-            return ownerMatches[0].name;
-        }
-
-        const exactDescriptorMatches = entries.filter((entry) => entry.role_descriptor === roleDescriptor);
-        if (exactDescriptorMatches.length === 1) {
-            return exactDescriptorMatches[0].name;
-        }
-
-        const noOwnerMatches = entries.filter((entry) => !String(entry.owner_name || "").trim());
-        if (noOwnerMatches.length === 1) {
-            return noOwnerMatches[0].name;
-        }
-
-        if (entries.length === 1) {
-            return entries[0].name;
-        }
-
-        return "";
-    }
-
-    repairSynopsisSuspiciousRoleComposites(project, text = "") {
-        let output = String(text || "");
-        if (!project || !output.trim()) {
-            return output;
-        }
-
-        this.getSynopsisRoleRepairWords().forEach((roleWord) => {
-            const escaped = roleWord.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-            const pattern = new RegExp(`(^|[^\\u4e00-\\u9fa5])(${escaped})([\\u4e00-\\u9fa5]{2,4})`, "gmu");
-            output = output.replace(pattern, (match, prefix = "", roleLabel = "", suffix = "", offset = 0, fullText = "") => {
-                if (!this.isSuspiciousSynopsisRoleSuffix(project, suffix)) {
-                    return match;
-                }
-                const roleStart = Number(offset || 0) + String(prefix || "").length;
-                const replacementName = this.resolveSynopsisSupportingRegistryNameByRole(
-                    project,
-                    roleLabel,
-                    fullText,
-                    roleStart
-                );
-                return `${prefix}${replacementName || roleLabel}`;
-            });
-        });
-
-        return output;
-    }
-
-    collectSynopsisNameableTerms(text, project) {
-        const source = String(text || "");
-        const knownMappings = this.buildSynopsisStrictRealNameMapping(project);
-        const terms = new Set([
-            ...this.collectPendingSynopsisTerms(source, project),
-            ...this.collectSynopsisSpecialAliasTerms(source)
-        ]);
-        (source.match(this.getSynopsisNameableRoleFragmentPattern()) || []).forEach((term) => {
-            const cleanTerm = this.normalizeOutlineCharacterLabel(term);
-            if (!cleanTerm || knownMappings[cleanTerm]) {
-                return;
-            }
-            if (this.buildSynopsisKnownConcreteNameSet(project).has(cleanTerm) && !this.isGenericCharacterCandidateName(cleanTerm)) {
-                return;
-            }
-            if (cleanTerm.length >= 2 && (this.matchesGenericRolePattern(cleanTerm) || this.isPseudoConcreteCharacterAlias(cleanTerm))) {
-                terms.add(cleanTerm);
-            }
-        });
-        return Array.from(terms).sort((left, right) => right.length - left.length);
-    }
-
-    autoAssignSynopsisConcreteNames(project, text = "", volumeNumber = 1) {
-        if (!project) {
-            return { mainMappings: [], supportingMappings: [] };
-        }
-
-        this.seedSynopsisConcreteNamesFromText(project, text, volumeNumber);
-        const synopsisData = this.restoreSynopsisMainCharacters(project);
-        synopsisData.vague_to_name_mapping = synopsisData.vague_to_name_mapping && typeof synopsisData.vague_to_name_mapping === "object"
-            ? synopsisData.vague_to_name_mapping
-            : {};
-        synopsisData.vague_supporting_roles = synopsisData.vague_supporting_roles && typeof synopsisData.vague_supporting_roles === "object"
-            ? synopsisData.vague_supporting_roles
-            : {};
-
-        const aliasToRole = this.buildSynopsisAliasToRoleMap();
-        const roleRequirement = this.detectSynopsisRoleRequirements(project, text, volumeNumber);
-        const appliedMainMappings = [];
-        const appliedSupportingMappings = [];
-        const pushMainMapping = (sourceTerm, realName) => {
-            if (sourceTerm && realName) {
-                appliedMainMappings.push(`${sourceTerm}->${realName}`);
-            }
-        };
-        const pushSupportingMapping = (sourceTerm, realName) => {
-            if (sourceTerm && realName) {
-                appliedSupportingMappings.push(`${sourceTerm}->${realName}`);
-            }
-        };
-        const assignSupportingName = (term, specificName) => {
-            const cleanTerm = this.normalizeOutlineCharacterLabel(term);
-            const cleanName = String(specificName || "").trim();
-            if (!cleanTerm || !cleanName || synopsisData.vague_to_name_mapping[cleanTerm]) {
-                return false;
-            }
-            if (!this.isSafeSynopsisMapping(project, cleanTerm, cleanName)) {
-                return false;
-            }
-            synopsisData.vague_to_name_mapping[cleanTerm] = cleanName;
-            this.lockSynopsisCharacterName(project, cleanName, "閰嶈", cleanTerm, volumeNumber);
-            synopsisData.vague_supporting_roles[cleanTerm] = {
-                ...(synopsisData.vague_supporting_roles[cleanTerm] || {}),
-                count: Math.max(1, Number(synopsisData.vague_supporting_roles?.[cleanTerm]?.count || 0)),
-                needs_name: false,
-                suggested_name: cleanName
-            };
-            pushSupportingMapping(cleanTerm, cleanName);
-            return true;
-        };
-
-        const explicitCandidateTerms = Array.from(new Set([
-            ...Object.keys(aliasToRole),
-            ...Object.keys(synopsisData.vague_supporting_roles || {}),
-            ...this.collectSynopsisNameableTerms(text, project)
-        ])).sort((left, right) => right.length - left.length);
-
-        Object.entries(this.inferSynopsisSpecialAliasMappings(project, text, volumeNumber) || {}).forEach(([alias, realName]) => {
-            const mappedRole = aliasToRole[alias];
-            if (mappedRole) {
-                if (this.applySynopsisMainCharacter(project, mappedRole, realName, volumeNumber)) {
-                    pushMainMapping(alias, realName);
-                }
-                return;
-            }
-            assignSupportingName(alias, realName);
-        });
-
-        this.extractExplicitVagueNameMappings(project, text, explicitCandidateTerms).forEach(({ vagueTerm, specificName }) => {
-            const mappedRole = aliasToRole[vagueTerm];
-            if (mappedRole) {
-                if (this.applySynopsisMainCharacter(project, mappedRole, specificName, volumeNumber)) {
-                    pushMainMapping(vagueTerm, specificName);
-                }
-                return;
-            }
-            assignSupportingName(vagueTerm, specificName);
-        });
-
-        this.seedSynopsisSupportingCharacters(project, text, volumeNumber).forEach((mapping) => {
-            appliedSupportingMappings.push(mapping);
-        });
-
-        (roleRequirement.pendingRoles || []).forEach((role) => {
-            if (synopsisData.main_characters?.[role]) {
-                return;
-            }
-            const generatedName = this.generateSynopsisAutoName(project, role, { role, volumeNumber });
-            if (generatedName && this.applySynopsisMainCharacter(project, role, generatedName, volumeNumber)) {
-                pushMainMapping(role, generatedName);
-            }
-        });
-
-        this.collectSynopsisNameableTerms(text, project).forEach((term) => {
-            if (!term) {
-                return;
-            }
-            const mappedRole = aliasToRole[term];
-            if (mappedRole) {
-                const currentName = this.restoreSynopsisMainCharacters(project).main_characters?.[mappedRole];
-                const generatedName = currentName || this.generateSynopsisAutoName(project, term, { role: mappedRole, volumeNumber });
-                if (generatedName && this.applySynopsisMainCharacter(project, mappedRole, generatedName, volumeNumber)) {
-                    pushMainMapping(term, generatedName);
-                }
-                return;
-            }
-            if (synopsisData.vague_to_name_mapping[term]) {
-                return;
-            }
-            const generatedName = this.generateSynopsisAutoName(project, term, { volumeNumber });
-            if (generatedName) {
-                assignSupportingName(term, generatedName);
-            }
-        });
-
-        this.rebuildSynopsisGeneratedSupportingAliases(project);
-
-        project.synopsis_data = JSON.parse(JSON.stringify(synopsisData));
-        project.synopsisData = project.synopsis_data;
-
-        return {
-            mainMappings: Array.from(new Set(appliedMainMappings)),
-            supportingMappings: Array.from(new Set(appliedSupportingMappings))
-        };
-    }
-
     collectPendingSynopsisTerms(text, project) {
         const synopsisData = this.restoreSynopsisMainCharacters(project);
         const roleAliases = this.getSynopsisRoleAliases();
-        const knownMappings = this.buildSynopsisStrictRealNameMapping(project);
+        const knownMappings = synopsisData.vague_to_name_mapping || {};
         const pending = new Set();
 
         Object.values(roleAliases).forEach((aliases) => {
@@ -5373,24 +3370,24 @@
     detectSynopsisRoleRequirements(project, text = "", lockedVolume = 1) {
         const synopsisData = this.restoreSynopsisMainCharacters(project);
         const content = String(text || "");
-        const vagueNames = new Set(["鐢蜂富", "濂充富", "涓昏", "涓讳汉鍏?, "鐢蜂竴", "濂充竴", "鐢蜂竴鍙?, "濂充竴鍙?, "鐢疯", "濂宠"]);
+        const vagueNames = new Set(["男主", "女主", "主角", "主人公", "男一", "女一", "男一号", "女一号", "男角", "女角"]);
         const pendingRoles = new Set();
         const roleHints = [];
 
         (project?.outline?.characters || []).forEach((character) => {
             const rawName = String(character?.name || "").trim();
-            const identity = String(character?.identity || character?.["韬唤"] || "").trim();
+            const identity = String(character?.identity || character?.["身份"] || "").trim();
             if (!identity) {
                 return;
             }
 
             let role = "";
-            if (/濂充富|濂充富瑙抾濂充竴|濂充富浜哄叕|濂宠/.test(identity)) {
-                role = "濂充富";
-            } else if (/鐢蜂富|鐢蜂富瑙抾鐢蜂竴|鐢蜂富浜哄叕|鐢疯/.test(identity)) {
-                role = "鐢蜂富";
-            } else if (/涓昏|涓讳汉鍏?.test(identity)) {
-                role = /濂?.test(identity) ? "濂充富" : /鐢?.test(identity) ? "鐢蜂富" : "";
+            if (/女主|女主角|女一|女主人公|女角/.test(identity)) {
+                role = "女主";
+            } else if (/男主|男主角|男一|男主人公|男角/.test(identity)) {
+                role = "男主";
+            } else if (/主角|主人公/.test(identity)) {
+                role = /女/.test(identity) ? "女主" : /男/.test(identity) ? "男主" : "";
             }
 
             if (!role) {
@@ -5399,12 +3396,12 @@
 
             if (!rawName || vagueNames.has(rawName)) {
                 pendingRoles.add(role);
-                roleHints.push(`瑙掕壊璁惧畾涓€?{role}銆戜粛鏄ā绯婄О鍛硷細${rawName || "绌?}`);
+                roleHints.push(`角色设定中【${role}】仍是模糊称呼：${rawName || "空"}`);
                 return;
             }
 
             if (this.applySynopsisMainCharacter(project, role, rawName, lockedVolume)) {
-                roleHints.push(`宸蹭粠瑙掕壊璁惧畾閿佸畾銆?{role}銆?${rawName}`);
+                roleHints.push(`已从角色设定锁定【${role}】=${rawName}`);
             }
         });
 
@@ -5425,7 +3422,6 @@
 
     buildSynopsisLockedNameTable(project) {
         const synopsisData = this.restoreSynopsisMainCharacters(project);
-        const strictMapping = this.buildSynopsisStrictRealNameMapping(project);
         const protagonistLines = Object.entries(synopsisData.main_characters || {})
             .filter(([, name]) => String(name || "").trim())
             .map(([role, name]) => `【${role}】${name}`);
@@ -5433,26 +3429,8 @@
             .filter(([, info]) => info?.type !== "主角")
             .slice(0, 30)
             .map(([name]) => name);
-        const proactiveSupportingLines = Object.values(synopsisData.supporting_character_registry || {})
-            .filter((entry) => entry?.name && (entry?.role_descriptor || entry?.role_core))
-            .slice(0, 20)
-            .map((entry) => {
-                const label = entry.owner_name
-                    ? `${entry.owner_name}的${entry.role_descriptor || entry.role_core}`
-                    : (entry.role_descriptor || entry.role_core || "配角");
-                return `【${label}】${entry.name}`;
-            });
-        const aliasFallbackLines = Object.entries(strictMapping)
-            .filter(([alias, realName]) =>
-                alias
-                && realName
-                && alias !== realName
-                && !this.buildSynopsisAliasToRoleMap()[alias]
-            )
-            .slice(0, 20)
-            .map(([alias, realName]) => `【${alias}】必须写成：${realName}`);
 
-        if (!protagonistLines.length && !supportingLines.length && !proactiveSupportingLines.length) {
+        if (!protagonistLines.length && !supportingLines.length) {
             return "";
         }
 
@@ -5465,159 +3443,154 @@
             "二、配角名字（已出场配角 - 必须沿用原名）：",
             supportingLines.length ? supportingLines.join("、") : "（暂无配角）",
             "",
-            proactiveSupportingLines.length ? "三、已主动补齐并锁定的新角色（后续各卷必须沿用同名）：" : "",
-            proactiveSupportingLines.length ? proactiveSupportingLines.join("\n") : "",
-            proactiveSupportingLines.length ? "" : "",
-            aliasFallbackLines.length ? "四、已知别名 / 简称 / 身份称呼回写表（后续细纲只能用真名）：" : "",
-            aliasFallbackLines.length ? aliasFallbackLines.join("\n") : "",
-            aliasFallbackLines.length ? "" : "",
             "【强制性规则】：",
-            "1. 以上所有名字均已锁定，AI 只能使用这些完整真名，不能做任何修改。",
-            "2. 禁止使用任何别名、简称、小名、封号、身份称呼、关系称呼、职位称呼代替真名。",
-            "3. 同一角色一旦出现过真名，后续所有卷、所有章都不允许退回成别名或称呼。",
-            "4. 新角色可以起名，但一旦定名就必须全程沿用，不能后面再换成别的写法。",
-            "5. 如果前文已经存在别名映射，生成时必须把这些写法统一回写成真名，而不是继续沿用别名。",
+            "1. 以上所有名字已锁定，AI只能使用这些完整名字，不能做任何修改！",
+            "2. 禁止使用简称、别名、昵称！例如“苏婉儿”不能写成“婉儿”“苏婉”“女主”！",
+            "3. 禁止使用模糊称呼！“男主母亲”必须写成具体名字（如“林夫人”）！",
+            "4. 新出场角色可以起名，但必须符合世界观且有辨识度！",
+            "5. 已锁定名字的别名也禁止单独使用，避免同角漂移。",
             "",
             "【违反锁定表的后果】：生成的章节将被视为错误，需要重新生成！"
         ].join("\n");
     }
 
     buildSynopsisMappingHint(project) {
-        const mappingLines = Object.entries(this.buildSynopsisStrictRealNameMapping(project) || {})
+        const synopsisData = this.restoreSynopsisMainCharacters(project);
+        const mappingLines = Object.entries(synopsisData.vague_to_name_mapping || {})
             .filter(([, specificName]) => String(specificName || "").trim())
-            .slice(0, 24)
-            .map(([alias, realName]) => `  - "${alias}" -> ${realName}`);
+            .slice(0, 20)
+            .map(([vagueTerm, specificName]) => `  · "${vagueTerm}" → ${specificName}`);
 
         if (!mappingLines.length) {
             return "";
         }
 
         return [
-            "【所有别名 / 简称 / 称呼 -> 真名映射表（必须遵守）】",
-            "以下写法都不能继续留在细纲里，必须统一改回真实姓名：",
+            "【🔒 模糊称呼→具体名字映射表（必须遵守！）】",
+            "以下模糊称呼已经对应了具体名字，必须在所有章节中使用具体名字：",
             mappingLines.join("\n"),
             "",
-            "⚠️ 绝对禁止继续使用这些别名或称呼，必须写对应真名。"
+            "⚠️ 绝对禁止继续使用映射表中的模糊称呼，必须写对应的具体名字！"
         ].join("\n");
     }
 
     getSynopsisClichePatterns() {
         return {
-            寮€灞€濂楄矾: {
+            开局套路: {
                 patterns: [
-                    "绌胯秺閲嶇敓鑾峰緱閲戞墜鎸?,
-                    "搴熸煷琚€€濠?缇炶颈鍚庡礇璧?,
-                    "鎹″埌绁炵鍔熸硶/浼犳壙",
-                    "鎰忓鑾峰緱寮哄ぇ琛€鑴夎閱?,
-                    "琚鏃?瀹楅棬椹遍€愬悗宕涜捣"
+                    "穿越重生获得金手指",
+                    "废柴被退婚/羞辱后崛起",
+                    "捡到神秘功法/传承",
+                    "意外获得强大血脉觉醒",
+                    "被家族/宗门驱逐后崛起"
                 ],
                 innovations: [
-                    "銆愬弽鍚戝紑灞€銆戝紑灞€灏辨槸宸呭嘲锛岀劧鍚庡け鍘讳竴鍒囬噸鏂板紑濮?,
-                    "銆愭櫘閫氬紑灞€銆戞病鏈夐噾鎵嬫寚锛屽畬鍏ㄩ潬鍔姏鍜屾櫤鎱?,
-                    "銆愬弽娲惧紑灞€銆戜富瑙掓湰韬氨鏄弽娲捐鑹?,
-                    "銆愬閲嶈韩浠姐€戝紑灞€灏辨湁澶嶆潅韬唤锛岄渶瑕佸湪韬唤闂村懆鏃?
+                    "【反向开局】开局就是巅峰，然后失去一切重新开始",
+                    "【普通开局】没有金手指，完全靠努力和智慧",
+                    "【反派开局】主角本身就是反派角色",
+                    "【多重身份】开局就有复杂身份，需要在身份间周旋"
                 ]
             },
-            鎴樻枟濂楄矾: {
+            战斗套路: {
                 patterns: [
-                    "涓昏琚帇鍒跺悗绐佺劧鐖嗗彂鍙嶆潃",
-                    "鍏抽敭鏃跺埢绐佺牬澧冪晫鑾疯儨",
-                    "闅愯棌瀹炲姏琚綆浼板悗闇囨儕鍏ㄥ満",
-                    "浠ュ急鑳滃己鎴樿儨澶╂墠",
-                    "鏁屼汉涓存鍓嶈浣犵瓑鐫€鐒跺悗鍙潵鏇村己鐨勬晫浜?
+                    "主角被压制后突然爆发反杀",
+                    "关键时刻突破境界获胜",
+                    "隐藏实力被低估后震惊全场",
+                    "以弱胜强战胜天才",
+                    "敌人临死前说你等着然后叫来更强的敌人"
                 ],
                 innovations: [
-                    "銆愬疄鍔涘樊璺濄€戜富瑙掔‘瀹炴墦涓嶈繃锛屽彧鑳芥櫤鍙栨垨閫冭窇",
-                    "銆愪粯鍑轰唬浠枫€戣儨鍒╀即闅忕潃閲嶅ぇ鐗虹壊鎴栨崯澶?,
-                    "銆愭晫浜哄彉鍙嬨€戞垬鏂楀悗涓嶆墦涓嶇浉璇嗭紝鎴愪负鐩熷弸",
-                    "銆愬钩灞€鏀跺満銆戝弻鏂归兘鍙椾激鎾ら€€锛岀暀寰呭悗缁?,
-                    "銆愮涓夋柟浠嬪叆銆戞垬鏂楄绗笁鏂规墦鏂垨鏀跺壊"
+                    "【实力差距】主角确实打不过，只能智取或逃跑",
+                    "【付出代价】胜利伴随着重大牺牲或损失",
+                    "【敌人变友】战斗后不打不相识，成为盟友",
+                    "【平局收场】双方都受伤撤退，留待后续",
+                    "【第三方介入】战斗被第三方打断或收割"
                 ]
             },
-            鎰熸儏濂楄矾: {
+            感情套路: {
                 patterns: [
-                    "鑻遍泟鏁戠編鍚庡コ涓荤埍涓婄敺涓?,
-                    "璇細浜х敓鎰熸儏",
-                    "闈掓绔归┈鎵撹触澶╅檷",
-                    "鎯呮晫鍑虹幇鍚庢渶缁堥€夋嫨涓昏",
-                    "瀹舵棌鍙嶅鐨勬劅鎯呮渶缁堝啿鐮撮樆纰?
+                    "英雄救美后女主爱上男主",
+                    "误会产生感情",
+                    "青梅竹马打败天降",
+                    "情敌出现后最终选择主角",
+                    "家族反对的感情最终冲破阻碍"
                 ],
                 innovations: [
-                    "銆愭晳鍔╂棤鐢ㄣ€戞晳浜哄悗瀵规柟骞朵笉鎰熸縺锛屽弽鑰屽紩鍑烘柊鐭涚浘",
-                    "銆愭劅鎯呮棤鍏炽€戞劅鎯呯嚎鍙槸璋冨懗锛屼笉蹇呮娆℃姠涓荤嚎",
-                    "銆愬鍏冨叧绯汇€戜笉瑕佸彧鍋氫竴瀵逛竴锛屽彲浠ュ啓鏇村鏉傜殑鍏崇郴缃戠粶",
-                    "銆愭劅鎯呭け璐ャ€戞劅鎯呯嚎涓嶅渾婊★紝浣嗚鑹插洜姝ゆ垚闀?
+                    "【救助无用】救人后对方并不感激，反而引出新矛盾",
+                    "【感情无关】感情线只是调味，不必次次抢主线",
+                    "【多元关系】不要只做一对一，可以写更复杂的关系网络",
+                    "【感情失败】感情线不圆满，但角色因此成长"
                 ]
             },
-            鍗囩骇濂楄矾: {
+            升级套路: {
                 patterns: [
-                    "姣忔閬囧埌鏁屼汉閮借兘鍒氬ソ绐佺牬",
-                    "鍚炲櫖鍚告敹鏁屼汉鍔涢噺蹇€熷崌绾?,
-                    "鑾峰緱浼犳壙鍚庡疄鍔涙毚娑?,
-                    "绉樺鍘嗙粌鍚庡疄鍔涘ぇ澧?,
-                    "婵掓绐佺牬鑾峰緱鏂扮敓"
+                    "每次遇到敌人都能刚好突破",
+                    "吞噬吸收敌人力量快速升级",
+                    "获得传承后实力暴涨",
+                    "秘境历练后实力大增",
+                    "濒死突破获得新生"
                 ],
                 innovations: [
-                    "銆愭笎杩涙垚闀裤€戞病鏈夌獊鐒堕璺冿紝姣忎竴姝ラ兘鏉ヤ箣涓嶆槗",
-                    "銆愬崌绾т唬浠枫€戠獊鐮磋浠樺嚭瀵垮懡銆佽蹇嗐€佸叧绯荤瓑浠ｄ环",
-                    "銆愮摱棰堟湡銆戦暱鏃堕棿鍗′綇锛岄€艰鑹叉崲璺緞",
-                    "銆愬け鍘诲姏閲忋€戝疄鍔涘€掗€€鍚庨噸鏂扮Н绱?
+                    "【渐进成长】没有突然飞跃，每一步都来之不易",
+                    "【升级代价】突破要付出寿命、记忆、关系等代价",
+                    "【瓶颈期】长时间卡住，逼角色换路径",
+                    "【失去力量】实力倒退后重新积累"
                 ]
             },
-            鍔垮姏濂楄矾: {
+            势力套路: {
                 patterns: [
-                    "寤虹珛鍔垮姏鍚庝竴璺墿寮?,
-                    "鏁屼汉鍔垮姏鍐呴儴鏈夊彌寰?,
-                    "鑱旂洘瀵规姉鏈€缁堣儨鍒?,
-                    "鍚炲苟鏁屽鍔垮姏澹ぇ鑷繁"
+                    "建立势力后一路扩张",
+                    "敌人势力内部有叛徒",
+                    "联盟对抗最终胜利",
+                    "吞并敌对势力壮大自己"
                 ],
                 innovations: [
-                    "銆愮鐞嗗洶澧冦€戞墿寮犲悗瑕侀潰瀵瑰唴閮ㄥ垎瑁傚拰绠＄悊闅鹃",
-                    "銆愮伆搴﹀娍鍔涖€戞病鏈夌粷瀵规閭紝鍚勬柟閮芥湁鍚堢悊鎬?,
-                    "銆愬悎浣滃叡璧€戞晫浜哄彉鍚堜綔浼欎即锛岃€屼笉鏄彧鑳芥秷鐏?,
-                    "銆愬娍鍔涘穿濉屻€戜富瑙掑娍鍔涗篃鍙兘鍥犲喅绛栧け璇€屽彈鍒?
+                    "【管理困境】扩张后要面对内部分裂和管理难题",
+                    "【灰度势力】没有绝对正邪，各方都有合理性",
+                    "【合作共赢】敌人变合作伙伴，而不是只能消灭",
+                    "【势力崩塌】主角势力也可能因决策失误而受创"
                 ]
             },
-            鎻濂楄矾: {
+            揭秘套路: {
                 patterns: [
-                    "涓昏鐪熷疄韬唤鏄煇鏌愪箣瀛愭垨缁ф壙浜?,
-                    "骞曞悗榛戞墜绔熺劧鏄韩杈逛俊浠荤殑浜?,
-                    "鏁屼汉鍏跺疄鏄鎺у埗鐨勫彈瀹宠€?,
-                    "涓€鍒囬槾璋嬮兘鏄负浜嗕富瑙掑ソ"
+                    "主角真实身份是某某之子或继承人",
+                    "幕后黑手竟然是身边信任的人",
+                    "敌人其实是被控制的受害者",
+                    "一切阴谋都是为了主角好"
                 ],
                 innovations: [
-                    "銆愯韩浠芥棤鍏炽€戣韩浠芥彮闇蹭笉閲嶈锛岄噸瑕佺殑鏄鑹插浣曢€夋嫨",
-                    "銆愬閲嶇湡鐩搞€戜竴灞傜湡鐩歌儗鍚庤繕鏈夋洿娣变竴灞?,
-                    "銆愭棤鐪熺浉銆戞湁浜涗簨鎯呮案杩滄棤娉曞畬鍏ㄥ緱鐭ョ湡鐩?,
-                    "銆愯嚜鎴戝畾涔夈€戣韩浠戒笉鍐冲畾鍛借繍锛岄€夋嫨鎵嶅喅瀹氬懡杩?
+                    "【身份无关】身份揭露不重要，重要的是角色如何选择",
+                    "【多重真相】一层真相背后还有更深一层",
+                    "【无真相】有些事情永远无法完全得知真相",
+                    "【自我定义】身份不决定命运，选择才决定命运"
                 ]
             },
-            澶嶄粐濂楄矾: {
+            复仇套路: {
                 patterns: [
-                    "鍏ㄥ琚潃韪忎笂澶嶄粐璺?,
-                    "鏈€缁堝彂鐜颁粐浜烘湁鑻﹁》",
-                    "澶嶄粐鎴愬姛鍚庢劅鍒扮┖铏?,
-                    "浠囦汉涓存鍓嶈鍑烘洿澶ч槾璋?
+                    "全家被杀踏上复仇路",
+                    "最终发现仇人有苦衷",
+                    "复仇成功后感到空虚",
+                    "仇人临死前说出更大阴谋"
                 ],
                 innovations: [
-                    "銆愬鏉傚姩鏈恒€戜粐鎭ㄨ儗鍚庝笉鏄畝鍗曞閿欙紝鑰屾槸澶嶆潅鍥犳灉",
-                    "銆愯秴瓒婁粐鎭ㄣ€戞斁涓嬩笉鏄師璋咃紝鑰屾槸閫夋嫨鍋滄琚粐鎭ㄩ┍鍔?,
-                    "銆愬浠囦唬浠枫€戞姤浠囨垚鍔熷嵈澶卞幓鏇撮噸瑕佺殑涓滆タ",
-                    "銆愯疆鍥炲洶澧冦€戝浠囦箣鍚庤嚜宸变篃鎴愪簡鍒汉鐨勫浠囧璞?
+                    "【复杂动机】仇恨背后不是简单对错，而是复杂因果",
+                    "【超越仇恨】放下不是原谅，而是选择停止被仇恨驱动",
+                    "【复仇代价】报仇成功却失去更重要的东西",
+                    "【轮回困境】复仇之后自己也成了别人的复仇对象"
                 ]
             },
-            瀹濈墿濂楄矾: {
+            宝物套路: {
                 patterns: [
-                    "绉樺涓幏寰楃绾у疂鐗?,
-                    "瀹濈墿鍐呮湁鍣ㄧ伒鎸囧涓昏",
-                    "瀹濈墿璁や富鍚庢棤浜哄彲澶?,
-                    "鎷嶅崠浼氫笂鎹℃紡瀹濈墿"
+                    "秘境中获得神级宝物",
+                    "宝物内有器灵指导主角",
+                    "宝物认主后无人可夺",
+                    "拍卖会上捡漏宝物"
                 ],
                 innovations: [
-                    "銆愬疂鐗╂湁浠枫€戝疂鐗╅渶瑕佷粯鍑虹浉搴斾唬浠锋墠鑳戒娇鐢?,
-                    "銆愬疂鐗╂湁缂恒€戝疂鐗╂湁缂洪櫡鎴栧壇浣滅敤",
-                    "銆愬疂鐗╀箣浜夈€戝疂鐗╁甫鏉ヨ拷鏉€銆佽瑙庡拰杩為攣楹荤儲",
-                    "銆愬疂鐗╂棤鐢ㄣ€戝疂鐗╂湭蹇呯湡鑳借В鍐抽棶棰橈紝鐢氳嚦浼氬け鏁?
+                    "【宝物有价】宝物需要付出相应代价才能使用",
+                    "【宝物有缺】宝物有缺陷或副作用",
+                    "【宝物之争】宝物带来追杀、觊觎和连锁麻烦",
+                    "【宝物无用】宝物未必真能解决问题，甚至会失效"
                 ]
             }
         };
@@ -5625,95 +3598,95 @@
 
     getSynopsisPlotElements() {
         return {
-            鍐茬獊鏉ユ簮: ["璧勬簮浜夊ず", "鐞嗗康鍐茬獊", "璇細寮曞彂", "鍒╃泭绾犺憶", "鎯呮劅鐭涚浘", "鍔垮姏鍗氬紙", "鍛借繍瀹夋帓", "鎰忓瑙﹀彂"],
-            杞姌鏂瑰紡: ["绗笁鏂逛粙鍏?, "鎰忓鍙戠幇", "淇℃伅鎻湶", "鑳藉姏绐佺牬", "蹇冩€佽浆鍙?, "澶栭儴鍙樻晠", "鐩熷弸鑳屽彌", "鏁屼汉甯姪"],
-            瑙ｅ喅璺緞: ["瀹炲姏纰惧帇", "鏅鸿皨鍙栬儨", "濡ュ崗鍜岃В", "鏆傛椂鍥為伩", "鍊熷姪澶栧姏", "浠樺嚭浠ｄ环", "鏀瑰彉鐩爣", "鏃堕棿鍖栬В"],
-            褰卞搷鑼冨洿: ["涓汉鎴愰暱", "鍏崇郴鍙樺寲", "鍔垮姏鏍煎眬", "涓栫晫瑙傛彮绀?, "涓荤嚎鎺ㄨ繘", "鏀嚎寮€鍚?, "浼忕瑪鍥炴敹", "鏂拌皽鍥㈠嚭鐜?],
-            鎯呮劅璧板悜: ["鐑娌歌吘", "娓╅Θ娌绘剤", "铏愬績鍘嬫姂", "杞绘澗鎼炵瑧", "鎯婃倸绱у紶", "鎰熷姩钀芥唱", "鎰ゆ€掍笉骞?, "鎭嶇劧澶ф偀"]
+            冲突来源: ["资源争夺", "理念冲突", "误会引发", "利益纠葛", "情感矛盾", "势力博弈", "命运安排", "意外触发"],
+            转折方式: ["第三方介入", "意外发现", "信息揭露", "能力突破", "心态转变", "外部变故", "盟友背叛", "敌人帮助"],
+            解决路径: ["实力碾压", "智谋取胜", "妥协和解", "暂时回避", "借助外力", "付出代价", "改变目标", "时间化解"],
+            影响范围: ["个人成长", "关系变化", "势力格局", "世界观揭示", "主线推进", "支线开启", "伏笔回收", "新谜团出现"],
+            情感走向: ["热血沸腾", "温馨治愈", "虐心压抑", "轻松搞笑", "惊悚紧张", "感动落泪", "愤怒不平", "恍然大悟"]
         };
     }
 
     getSynopsisEventTypeSuggestions() {
         return {
-            鎴樻枟: {
-                avoid: ["閲嶅鐨勬垬鏂楀満鏅?, "鐩镐技鐨勬晫浜虹被鍨?, "鍚屾牱鐨勬垬鏂楃粨鏋滄ā寮?],
-                suggest: ["涓嶅悓绫诲瀷鐨勬晫浜猴紙浜?鍏?鏈哄叧/骞诲锛?, "澶氭牱鐨勬垬鏂楃幆澧?, "鎰忓鐨勬垬鏂楃粨鏋?, "鎴樻枟鐨勯潪鎴樻枟鍚庢灉"]
+            战斗: {
+                avoid: ["重复的战斗场景", "相似的敌人类型", "同样的战斗结果模式"],
+                suggest: ["不同类型的敌人（人/兽/机关/幻境）", "多样的战斗环境", "意外的战斗结果", "战斗的非战斗后果"]
             },
-            淇偧: {
-                avoid: ["閲嶅鐨勭獊鐮存弿鍐?, "鍚屾牱鐨勪慨鐐兼柟娉?, "鏃犱唬浠风殑鎻愬崌"],
-                suggest: ["涓嶅悓鐨勪慨鐐肩摱棰?, "鍒涙柊鐨勭獊鐮存柟寮?, "绐佺牬鍚庣殑鍓綔鐢?, "淇偧鐨勬剰澶栨敹鑾?]
+            修炼: {
+                avoid: ["重复的突破描写", "同样的修炼方法", "无代价的提升"],
+                suggest: ["不同的修炼瓶颈", "创新的突破方式", "突破后的副作用", "修炼的意外收获"]
             },
-            瀵硅瘽: {
-                avoid: ["閲嶅鐨勫璇濈洰鐨?, "鐩镐技鐨勪俊鎭彮闇叉柟寮?, "鍗曞悜鐨勪俊鎭紶閫?],
-                suggest: ["澶氶噸鐩殑鐨勫璇?, "淇℃伅鍗氬紙涓庤瘯鎺?, "瀵硅瘽涓殑璇細涓庢殫绀?, "瀵硅瘽鐨勫悗缁奖鍝?]
+            对话: {
+                avoid: ["重复的对话目的", "相似的信息揭露方式", "单向的信息传递"],
+                suggest: ["多重目的的对话", "信息博弈与试探", "对话中的误会与暗示", "对话的后续影响"]
             },
-            鎺㈢储: {
-                avoid: ["閲嶅鐨勫彂鐜版ā寮?, "鍚屾牱鐨勬帰绱㈢洰鐨?, "鏃犻闄╃殑鎺㈢储"],
-                suggest: ["鎺㈢储鐨勬剰澶栧彂鐜?, "鎺㈢储鐨勪唬浠蜂笌椋庨櫓", "鎺㈢储鐨勮繛閿佸弽搴?, "鎺㈢储鐨勯仐鐣欓棶棰?]
+            探索: {
+                avoid: ["重复的发现模式", "同样的探索目的", "无风险的探索"],
+                suggest: ["探索的意外发现", "探索的代价与风险", "探索的连锁反应", "探索的遗留问题"]
             },
-            浜ゆ槗: {
-                avoid: ["閲嶅鐨勪氦鏄撶被鍨?, "椤哄埄鐨勪氦鏄撹繃绋?, "鏃犲悗缁殑浜ゆ槗"],
-                suggest: ["浜ゆ槗鑳屽悗鐨勫崥寮?, "浜ゆ槗鐨勬剰澶栧悗鏋?, "浜ゆ槗鐨勯亾寰峰洶澧?, "浜ゆ槗鐨勪俊鎭樊"]
+            交易: {
+                avoid: ["重复的交易类型", "顺利的交易过程", "无后续的交易"],
+                suggest: ["交易背后的博弈", "交易的意外后果", "交易的道德困境", "交易的信息差"]
             }
         };
     }
 
     getSynopsisAllowedRepeatEvents() {
         return {
-            淇偧绐佺牬: {
-                keywords: ["淇偧", "绐佺牬", "闂叧", "椤挎偀", "澧冪晫"],
-                description: "姣忎釜澧冪晫閮藉彲鑳界獊鐮达紝浣嗘瘡娆＄獊鐮撮兘璇ュ啓鍑轰笉鍚岀殑鏂伴矞鎰熴€?,
+            修炼突破: {
+                keywords: ["修炼", "突破", "闭关", "顿悟", "境界"],
+                description: "每个境界都可能突破，但每次突破都该写出不同的新鲜感。",
                 variations: [
-                    "绐佺牬鏃舵満锛氶棴鍏虫垚鍔?/ 鎴樻枟椤挎偀 / 鏈虹紭宸у悎 / 浼犳壙鍔犳寔",
-                    "绐佺牬鍦烘櫙锛氬畻闂ㄥ瘑瀹?/ 绉樺绂佸湴 / 鎴樺満涔嬩笂 / 浼犳壙涔嬪湴",
-                    "绐佺牬浠ｄ环鎴栧鍔憋細瀹炲姏鏆存定 / 鑾峰緱绁為€?/ 瑙夐啋琛€鑴?/ 寮€鍚娉?,
-                    "绐佺牬鍚庣画锛氱⒕鍘嬪悓闃?/ 鎵撹劯鍢茶鑰?/ 鏀惰幏宕囨嫓 / 寮€鍚柊鍦板浘"
+                    "突破时机：闭关成功 / 战斗顿悟 / 机缘巧合 / 传承加持",
+                    "突破场景：宗门密室 / 秘境禁地 / 战场之上 / 传承之地",
+                    "突破代价或奖励：实力暴涨 / 获得神通 / 觉醒血脉 / 开启秘法",
+                    "突破后续：碾压同阶 / 打脸嘲讽者 / 收获崇拜 / 开启新地图"
                 ],
                 examples: [
-                    "鍙互浠庣獊鐮存椂鏈轰笌绐佺牬浠ｄ环鍏ユ墜锛岄伩鍏嶆瘡娆￠兘鍙槸鈥滄墦鐫€鎵撶潃灏卞崌绾р€濄€?,
-                    "鍙互璁╃獊鐮存敼鍙樹汉鐗╁叧绯绘垨灞€鍔匡紝鑰屼笉鍙槸鏁板€兼彁鍗囥€?"
+                    "可以从突破时机与突破代价入手，避免每次都只是“打着打着就升级”。",
+                    "可以让突破改变人物关系或局势，而不只是数值提升。 "
                 ]
             },
-            鐢熷瓙鎬€瀛? {
-                keywords: ["鎬€瀛?, "鐢熷瓙", "鑳?, "鐢熶骇", "瀛愬棧"],
-                description: "鐢熷瓙鏂囬噷鎬€瀛曞拰鐢熶骇鍙互閲嶅鍑虹幇锛屼絾姣忔閮藉簲褰撳啓鍑轰笉鍚屾儏缁€佷笉鍚屽澧冨拰涓嶅悓鍚庣画銆?,
+            生子怀孕: {
+                keywords: ["怀孕", "生子", "胎", "生产", "子嗣"],
+                description: "生子文里怀孕和生产可以重复出现，但每次都应当写出不同情绪、不同处境和不同后续。",
                 variations: [
-                    "鎯婂枩鏉ユ簮锛氭柊濠氬嵆瀛?/ 姹傚瓙寰楀瓙 / 鎰忓鎯婂枩 / 澶╅檷绁ョ憺",
-                    "瀛曟湡鐘舵€侊細涓堝か瀹犵埍 / 瀹舵棌閲嶈 / 韬綋寮傜姸 / 澶╄祴棰勫厗",
-                    "鐢熶骇缁撴灉锛氭瘝瀛愬钩瀹?/ 榫欏嚖鍛堢ゥ / 瀛╁瓙澶╄祴寮傜 / 寮曞彂鏂板眬鍔?,
-                    "鍚庣画褰卞搷锛氬搴叧绯诲彉鍖?/ 鍔垮姏鎬佸害鍙樺寲 / 濂栧姳闄嶄复 / 鏂扮洰鏍囧紑鍚?
+                    "惊喜来源：新婚即孕 / 求子得子 / 意外惊喜 / 天降祥瑞",
+                    "孕期状态：丈夫宠爱 / 家族重视 / 身体异状 / 天赋预兆",
+                    "生产结果：母子平安 / 龙凤呈祥 / 孩子天赋异禀 / 引发新局势",
+                    "后续影响：家庭关系变化 / 势力态度变化 / 奖励降临 / 新目标开启"
                 ],
                 examples: [
-                    "涓嶈鎶婃瘡涓€鑳庨兘鍐欐垚鍚屾牱鐨勨€滃彂鐜版€€瀛?浼椾汉楂樺叴-椤哄埄鐢熶骇鈥濄€?,
-                    "鍙互浠庡鍔便€佽韩浠藉彉鍖栥€佸瓙鍡ｅぉ璧嬫垨瀹枟鍘嬪姏涓婂仛宸紓銆?
+                    "不要把每一胎都写成同样的“发现怀孕-众人高兴-顺利生产”。",
+                    "可以从奖励、身份变化、子嗣天赋或宫斗压力上做差异。"
                 ]
             },
-            鎰熸儏鍙戝睍: {
-                keywords: ["鎰熸儏", "蹇冨姩", "琛ㄧ櫧", "濠氱害", "鎴愬", "鏆ф槯"],
-                description: "鎰熸儏鎺ㄨ繘鍙互閲嶅锛屼絾姣忎竴娈靛叧绯婚兘璇ユ湁涓嶅悓鐨勮捣鐐广€侀樆鍔涘拰钀界偣銆?,
+            感情发展: {
+                keywords: ["感情", "心动", "表白", "婚约", "成婚", "暧昧"],
+                description: "感情推进可以重复，但每一段关系都该有不同的起点、阻力和落点。",
                 variations: [
-                    "鐩搁亣鏂瑰紡锛氬伓鐒堕倐閫?/ 韬唤鏇濆厜 / 鑻遍泟鏁戠編 / 闈掓閲嶉€?,
-                    "鍗囨俯璺緞锛氬叡鎮ｉ毦 / 鏃ュ父鐩稿 / 鍒╃泭鍚堜綔 / 浠峰€艰鍚稿紩",
-                    "闃诲姏绫诲瀷锛氳韩浠藉樊璺?/ 瀹舵棌鍙嶅 / 鏃ф€ㄦ湭瑙?/ 鐩爣鍐茬獊",
-                    "缁撴灉钀界偣锛氫慨鎴愭鏋?/ 鏆傛椂閿欒繃 / 鍏崇郴鍗囩骇 / 鍩嬩笅鏇村鏉傜殑鐗佃繛"
+                    "相遇方式：偶然邂逅 / 身份曝光 / 英雄救美 / 青梅重逢",
+                    "升温路径：共患难 / 日常相处 / 利益合作 / 价值观吸引",
+                    "阻力类型：身份差距 / 家族反对 / 旧怨未解 / 目标冲突",
+                    "结果落点：修成正果 / 暂时错过 / 关系升级 / 埋下更复杂的牵连"
                 ],
                 examples: [
-                    "涓嶈姣忔潯鎰熸儏绾块兘濂椻€滄晳浜?蹇冨姩-琛ㄧ櫧鈥濆悓涓€妯℃澘銆?,
-                    "鍚屾牱鏄崌娓╋紝涔熷彲浠ュ垎鍒啓鍒╃泭鍚岀洘銆佸懡杩愮壍鎵€佷簰鐩稿埄鐢ㄥ悗杞湡蹇冦€?
+                    "不要每条感情线都套“救人-心动-表白”同一模板。",
+                    "同样是升温，也可以分别写利益同盟、命运牵扯、互相利用后转真心。"
                 ]
             },
-            鑾峰緱瀹濈墿: {
-                keywords: ["瀹濈墿", "娉曞櫒", "绁炲櫒", "鍔熸硶", "浼犳壙", "鑷冲疂"],
-                description: "鑾峰緱瀹濈墿鍙互閲嶅锛屼絾瀹濈墿鏉ユ簮銆佷唬浠峰拰浣滅敤蹇呴』鍙樺寲銆?,
+            获得宝物: {
+                keywords: ["宝物", "法器", "神器", "功法", "传承", "至宝"],
+                description: "获得宝物可以重复，但宝物来源、代价和作用必须变化。",
                 variations: [
-                    "鑾峰緱鏂瑰紡锛氱澧冩墍寰?/ 鎷嶅崠绔炴媿 / 鍑昏触寮烘晫鎺夎惤 / 鎰忓缁ф壙",
-                    "瀹濈墿灞炴€э細绋€鏈夊疂鐗?/ 鍙茶瘲绁炲櫒 / 鏈夌己涔嬬墿 / 闄愬埗鍨嬪簳鐗?,
-                    "鍓綔鐢ㄦ垨浜夊ず锛氳杩芥潃 / 璁や富澶辫触 / 闇€瑕佷唬浠?/ 寮曞彂瑙婅",
-                    "鍚庣画鏁堟灉锛氬疄鍔涘彉鍖?/ 韬唤鍙樺寲 / 鍏崇郴鍙樺寲 / 鏂板湴鍥惧紑鍚?
+                    "获得方式：秘境所得 / 拍卖竞拍 / 击败强敌掉落 / 意外继承",
+                    "宝物属性：稀有宝物 / 史诗神器 / 有缺之物 / 限制型底牌",
+                    "副作用或争夺：被追杀 / 认主失败 / 需要代价 / 引发觊觎",
+                    "后续效果：实力变化 / 身份变化 / 关系变化 / 新地图开启"
                 ],
                 examples: [
-                    "涓嶈姣忔閮藉啓鎴愨€滈殢鎵嬫崱鍒扮绾у疂鐗╃劧鍚庣珛鍒绘毚娑ㄢ€濄€?,
-                    "鍙互鍐欏疂鐗╂湁缂洪櫡銆佹湁闄愬埗锛屾垨鑰呭甫鏉ヨ拷鏉€涓庤繛閿侀棶棰樸€?
+                    "不要每次都写成“随手捡到神级宝物然后立刻暴涨”。",
+                    "可以写宝物有缺陷、有限制，或者带来追杀与连锁问题。"
                 ]
             }
         };
@@ -5721,7 +3694,7 @@
 
     extractSynopsisPatternKeywords(pattern) {
         return String(pattern || "")
-            .replace(/[鈥溾€?'銆侊紝銆傦紒锛燂紱锛?锛堬級()\[\]銆愩€慮/g, " ")
+            .replace(/[“”"'、，。！？；：:（）()\[\]【】]/g, " ")
             .replace(/\//g, " ")
             .split(/\s+/)
             .map((keyword) => keyword.trim())
@@ -5779,7 +3752,7 @@
                     repetitionRisks.push({
                         type,
                         element,
-                        message: `銆?{element}銆嶅凡鍦ㄤ箣鍓嶇珷鑺備腑澶氭鍑虹幇`
+                        message: `「${element}」已在之前章节中多次出现`
                     });
                 }
             });
@@ -5828,7 +3801,7 @@
                 if (!String(synopsis || "").trim()) {
                     return;
                 }
-                sections.push(`銆愮${index + 1}鍗峰凡鏈夌珷鑺?- 绂佹閲嶅杩欎簺鎯呰妭銆慭n${synopsis}`);
+                sections.push(`【第${index + 1}卷已有章节 - 禁止重复这些情节】\n${synopsis}`);
             });
         return sections.join("\n\n");
     }
@@ -5861,10 +3834,10 @@
 
         if (historyText.trim()) {
             const namePatterns = [
-                /[\u4e00-\u9fa5]{2,4}(?=璇磡閬搢绗憒闂畖绛攟鍠妡鍙珅楠倈鐐箌鐪媩璧皘绔檤鍧恷璺憒鎯硘瑙墊鍙戠幇|鐪嬪埌|鍚埌)/g,
-                /([\u4e00-\u9fa5]{2,4})(?=鐨剕涔?/g,
-                /["鈥溾€濄€屻€嶃€庛€廬([\u4e00-\u9fa5]{2,4})["鈥溾€濄€屻€嶃€庛€廬/g,
-                /(?:涓巪鍜寍璺焲鍚寍鍚憒瀵?([\u4e00-\u9fa5]{2,4})(?=[锛屻€傘€侊紒锛焅s]|$)/g
+                /[\u4e00-\u9fa5]{2,4}(?=说|道|笑|问|答|喊|叫|骂|点|看|走|站|坐|跑|想|觉|发现|看到|听到)/g,
+                /([\u4e00-\u9fa5]{2,4})(?=的|之)/g,
+                /["“”「」『』]([\u4e00-\u9fa5]{2,4})["“”「」『』]/g,
+                /(?:与|和|跟|同|向|对)([\u4e00-\u9fa5]{2,4})(?=[，。、！？\s]|$)/g
             ];
             namePatterns.forEach((pattern) => {
                 Array.from(historyText.matchAll(pattern)).forEach((match) => {
@@ -5876,42 +3849,42 @@
             });
 
             const relationPatterns = [
-                /([\u4e00-\u9fa5]{2,4})鏄?[\u4e00-\u9fa5]{2,4})鐨?鐖朵翰|姣嶄翰|鍝ュ摜|寮熷紵|濮愬|濡瑰|甯堢埗|寰掑紵|濡诲瓙|涓堝か|鍎垮瓙|濂冲効|鏈嬪弸|鏁屼汉|瀵规墜|鎭嬩汉|鏈濡粅鏈澶?/g,
-                /([\u4e00-\u9fa5]{2,4})鐨?鐖朵翰|姣嶄翰|鍝ュ摜|寮熷紵|濮愬|濡瑰|甯堢埗|寰掑紵|濡诲瓙|涓堝か|鍎垮瓙|濂冲効|鏈嬪弸|鏁屼汉|瀵规墜|鎭嬩汉|鏈濡粅鏈澶?鏄?[\u4e00-\u9fa5]{2,4})/g,
-                /([\u4e00-\u9fa5]{2,4})(?:涓巪鍜寍璺?([\u4e00-\u9fa5]{2,4})(?:缁撶洘|鎴愬|鎴愪负|寤虹珛)(.+?)(?=锛寍銆倈锛亅锛?/g
+                /([\u4e00-\u9fa5]{2,4})是([\u4e00-\u9fa5]{2,4})的(父亲|母亲|哥哥|弟弟|姐姐|妹妹|师父|徒弟|妻子|丈夫|儿子|女儿|朋友|敌人|对手|恋人|未婚妻|未婚夫)/g,
+                /([\u4e00-\u9fa5]{2,4})的(父亲|母亲|哥哥|弟弟|姐姐|妹妹|师父|徒弟|妻子|丈夫|儿子|女儿|朋友|敌人|对手|恋人|未婚妻|未婚夫)是([\u4e00-\u9fa5]{2,4})/g,
+                /([\u4e00-\u9fa5]{2,4})(?:与|和|跟)([\u4e00-\u9fa5]{2,4})(?:结盟|成婚|成为|建立)(.+?)(?=，|。|！|？)/g
             ];
             relationPatterns.forEach((pattern, index) => {
                 Array.from(historyText.matchAll(pattern)).forEach((match) => {
                     if (index === 0) {
                         const [, left, right, relation] = match;
                         if (left && right && relation) {
-                            relationships.set(`${left}-${right}`, `${left} 鈫?${right}锛?{relation}`);
+                            relationships.set(`${left}-${right}`, `${left} ↔ ${right}：${relation}`);
                         }
                         return;
                     }
                     if (index === 1) {
                         const [, left, relation, right] = match;
                         if (left && right && relation) {
-                            relationships.set(`${left}-${right}`, `${left} 鈫?${right}锛?{relation}`);
+                            relationships.set(`${left}-${right}`, `${left} ↔ ${right}：${relation}`);
                         }
                         return;
                     }
                     const [, left, right, relation] = match;
                     if (left && right && relation) {
-                        relationships.set(`${left}-${right}`, `${left} 鈫?${right}锛?{String(relation || "").trim()}`);
+                        relationships.set(`${left}-${right}`, `${left} ↔ ${right}：${String(relation || "").trim()}`);
                     }
                 });
             });
         }
 
         const excludeWords = new Set([
-            "杩欎釜", "閭ｄ釜", "浠€涔?, "鎬庝箞", "濡備綍", "涓轰粈涔?, "鍝噷", "閭ｉ噷", "杩欓噷",
-            "姝ゆ椂", "褰兼椂", "褰撴椂", "涔嬪悗", "涔嬪墠", "闅忓悗", "鐒跺悗", "鏈€鍚?, "鏈€鍒?,
-            "鍙槸", "浣嗘槸", "涓嶈繃", "鑰屼笖", "骞朵笖", "鎴栬€?, "铏界劧", "鍗充娇", "濡傛灉",
-            "涓€浜?, "鎵€鏈?, "鍏ㄩ儴", "閮ㄥ垎", "澶у", "灏戞暟", "寰堝", "璁稿", "鏌愪簺",
-            "涓昏", "鐢蜂富", "濂充富", "閰嶈", "榫欏", "璺汉", "鍏朵粬浜?, "浼椾汉", "涓栫晫",
-            "鍦版柟", "涓滆タ", "浜嬫儏", "鎯呭喌", "闂", "鍘熷洜", "缁撴灉", "鍔炴硶", "鏃跺€?,
-            "鐬棿", "鐗囧埢", "涓€鐩?, "宸茬粡", "姝ｅ湪", "灏嗚", "鏇剧粡", "缁堜簬"
+            "这个", "那个", "什么", "怎么", "如何", "为什么", "哪里", "那里", "这里",
+            "此时", "彼时", "当时", "之后", "之前", "随后", "然后", "最后", "最初",
+            "可是", "但是", "不过", "而且", "并且", "或者", "虽然", "即使", "如果",
+            "一些", "所有", "全部", "部分", "大多", "少数", "很多", "许多", "某些",
+            "主角", "男主", "女主", "配角", "龙套", "路人", "其他人", "众人", "世界",
+            "地方", "东西", "事情", "情况", "问题", "原因", "结果", "办法", "时候",
+            "瞬间", "片刻", "一直", "已经", "正在", "将要", "曾经", "终于"
         ]);
         const filteredNames = Array.from(names)
             .map((name) => String(name || "").trim())
@@ -5944,7 +3917,7 @@
             });
         });
 
-        const commonSuffixes = new Set(["澶?, "鍦?, "浜?, "瀛?, "鍎?, "涓€", "浜?, "涓?]);
+        const commonSuffixes = new Set(["天", "地", "人", "子", "儿", "一", "二", "三"]);
         const repeatedPatterns = Array.from(suffixMap.entries())
             .filter(([suffix, values]) => suffix && values.length >= 2 && !commonSuffixes.has(suffix))
             .sort((left, right) => right[1].length - left[1].length)
@@ -5955,15 +3928,15 @@
         }
 
         return [
-            "銆愨殸锔?鍚嶅瓧妯″紡閲嶅璀﹀憡 - 鏋佸叾閲嶈锛併€?,
-            "妫€娴嬪埌浠ヤ笅鍚嶅瓧鍚庣紑閲嶅杩囧锛岀姝㈠啀浣跨敤绫讳技妯″紡锛?,
-            repeatedPatterns.map(([suffix, values]) => `  路 鈥?{suffix}鈥濆瓧閲嶅锛?{Array.from(new Set(values)).join("銆?)}`).join("\n"),
+            "【⚠️ 名字模式重复警告 - 极其重要！】",
+            "检测到以下名字后缀重复过多，禁止再使用类似模式：",
+            repeatedPatterns.map(([suffix, values]) => `  · “${suffix}”字重复：${Array.from(new Set(values)).join("、")}`).join("\n"),
             "",
-            "銆愯捣鍚嶈姹傘€?,
-            "1. 绂佹缁х画浣跨敤涓婇潰杩欎簺閲嶅鍚嶅瓧鍚庣紑銆?,
-            "2. 姣忎釜鏂拌鑹茬殑鍚嶅瓧蹇呴』鏈夎鲸璇嗗害锛岄鏍煎悇寮傘€?,
-            "3. 閬垮厤鎵归噺鐢熸垚鈥淴鎷涘ǎ銆乆缈犺姳銆乆绉€鑻扁€濊繖绉嶆ā寮忓寲鍚嶅瓧銆?,
-            "4. 鍚嶅瓧瑕佺鍚堜笘鐣岃鍜屾椂浠ｆ劅锛岄噸鐐规槸绋冲畾涓€鑷淬€?
+            "【起名要求】",
+            "1. 禁止继续使用上面这些重复名字后缀。",
+            "2. 每个新角色的名字必须有辨识度，风格各异。",
+            "3. 避免批量生成“X招娣、X翠花、X秀英”这种模式化名字。",
+            "4. 名字要符合世界观和时代感，重点是稳定一致。"
         ].join("\n");
     }
 
@@ -5975,31 +3948,44 @@
 
         if (Number(volumeNumber || 0) <= 1) {
             return [
-                "銆愰娆″畾鍚嶅悗蹇呴』閿佸畾銆?,
-                "浠ヤ笅瑙掕壊濡傛灉杩樻病鏈夊叿浣撳悕瀛楋紝鍙互鍦ㄩ娆″嚭鍦烘椂琛ヤ竴涓悕瀛楋紱浣嗕竴鏃﹀畾鍚嶏紝鏈嵎鍚庣画鍜屽悗闈㈠悇鍗烽兘蹇呴』娌跨敤鍚屼竴涓悕瀛楋細",
-                pendingTerms.slice(0, 12).map((term) => `  路 鈥?{term}鈥漙).join("\n"),
+                "【首次定名后必须锁定】",
+                "以下角色如果还没有具体名字，可以在首次出场时补一个名字；但一旦定名，本卷后续和后面各卷都必须沿用同一个名字：",
+                pendingTerms.slice(0, 12).map((term) => `  · “${term}”`).join("\n"),
                 "",
-                "銆愬己鍒舵€ц姹傘€?,
-                "1. 鍚屼竴涓鑹蹭竴鏃︾敤浜嗗叿浣撳悕瀛楋紝鍚庣画涓嶈兘鍐嶆崲鍚嶃€?,
-                "2. 宸茬粡鏈夋槧灏勬垨宸查攣瀹氱殑瑙掕壊锛屽彧鑳芥部鐢ㄦ棫鍚嶅瓧銆?,
-                "3. 鍚嶅瓧涓嶉渶瑕佸埢鎰忓じ寮狅紝閲嶇偣鏄ǔ瀹氫竴鑷淬€?
+                "【强制性要求】",
+                "1. 同一个角色一旦用了具体名字，后续不能再换名。",
+                "2. 已经有映射或已锁定的角色，只能沿用旧名字。",
+                "3. 名字不需要刻意夸张，重点是稳定一致。"
             ].join("\n");
         }
 
         return [
-            "銆愬悗缁嵎鍙仛娌跨敤锛屼笉瑕佹敼鍚嶃€?,
-            "浠ヤ笅绉板懠濡傛灉宸茬粡鍦ㄥ墠鏂囧搴旇繃鍏蜂綋鍚嶅瓧锛屾湰鍗峰繀椤荤户缁部鐢ㄥ師鍚嶏紱濡傛灉娌℃湁鎶婃彙锛屽氨涓嶈鎶婃棫瑙掕壊鏀规垚鏂板悕瀛楋細",
-            pendingTerms.slice(0, 12).map((term) => `  路 鈥?{term}鈥漙).join("\n"),
+            "【后续卷只做沿用，不要改名】",
+            "以下称呼如果已经在前文对应过具体名字，本卷必须继续沿用原名；如果没有把握，就不要把旧角色改成新名字：",
+            pendingTerms.slice(0, 12).map((term) => `  · “${term}”`).join("\n"),
             "",
-            "銆愬己鍒舵€ц姹傘€?,
-            "1. 宸查攣瀹氳鑹插彧鑳芥部鐢ㄦ棫鍚嶅瓧锛屼笉鑳戒竴鍗蜂竴涓悕瀛椼€?,
-            "2. 娌℃湁鏄庣‘璇佹嵁鏃讹紝涓嶈缁欐棫瑙掕壊閲嶆柊璧峰悕銆?,
-            "3. 閲嶇偣鏄悓涓€瑙掕壊鍓嶅悗缁熶竴锛屼笉鏄拷姹傛瘡鍗烽兘鏀规垚鏂板悕瀛椼€?
+            "【强制性要求】",
+            "1. 已锁定角色只能沿用旧名字，不能一卷一个名字。",
+            "2. 没有明确证据时，不要给旧角色重新起名。",
+            "3. 重点是同一角色前后统一，不是追求每卷都改成新名字。"
         ].join("\n");
     }
 
     buildSynopsisNameGenerationHint(project, volumeNumber, text = "") {
-        return "";
+        const roleRequirement = this.detectSynopsisRoleRequirements(project, text, volumeNumber);
+        if (Number(volumeNumber || 0) !== 1 || !roleRequirement.pendingRoles?.length) {
+            return "";
+        }
+        return [
+            "【第一卷角色名字处理】",
+            "检测到角色设定或输入里仍有模糊主角称呼：",
+            roleRequirement.pendingRoles.map((role) => `【${role}】当前仍未稳定定名，可在首次出场时自然补具体名字`).join("\n"),
+            "",
+            "【规则】",
+            "1. 如果本卷首次给这些角色起名，后续所有章节和后续所有卷都必须沿用同一个名字。",
+            "2. 如果暂时没有自然的定名机会，不要为了起名而硬改剧情。",
+            "3. 重点不是名字多华丽，而是同一个角色不要再改名。"
+        ].join("\n");
     }
 
     buildSynopsisHardFactHint(project, volumeNumber, contextText = "") {
@@ -6008,9 +3994,9 @@
         const factLines = [];
 
         relevantCharacters.slice(0, 10).forEach((character) => {
-            const identity = String(character?.identity || character?.["韬唤"] || "").trim();
+            const identity = String(character?.identity || character?.["身份"] || "").trim();
             if (character?.name && identity) {
-                factLines.push(`- ${character.name}锛?{identity}`);
+                factLines.push(`- ${character.name}：${identity}`);
             }
         });
         signals.relationships.slice(0, 8).forEach((line) => {
@@ -6019,18 +4005,18 @@
 
         if (!factLines.length) {
             return [
-                "銆愬悓鎵圭粏绾茬‖浜嬪疄閿佸畾銆?,
-                "鍚屼竴鎵规閲岋紝瑙掕壊鐨勮韩浠姐€佷綅浠姐€佽緢鍒嗐€佷翰灞炲叧绯汇€佸閰嶃€佸笀寰掋€佸畼鑱屻€侀樀钀ヤ竴鏃﹂娆℃槑纭紝鍚庢枃蹇呴』鍘熸牱娌跨敤锛岀姝㈡敼鍙ｃ€?,
-                "渚嬪宸茬粡鍐欐垚鈥滃お鍚庣殑鍎垮瓙鏄殗甯濃€濓紝鍚庢枃灏变笉鑳芥敼鎴愨€滃皬鐨囧瓙鈥濓紱宸茬粡鍐欐垚鈥滃お瀛愬鈥濓紝鍚庢枃涔熶笉鑳介檷鍥炩€滅濂斥€濄€?
+                "【同批细纲硬事实锁定】",
+                "同一批次里，角色的身份、位份、辈分、亲属关系、婚配、师徒、官职、阵营一旦首次明确，后文必须原样沿用，禁止改口。",
+                "例如已经写成“太后的儿子是皇帝”，后文就不能改成“小皇子”；已经写成“太子妃”，后文也不能降回“秀女”。"
             ].join("\n");
         }
 
         return [
-            "銆愬悓鎵圭粏绾茬‖浜嬪疄閿佸畾銆?,
-            "浠ヤ笅韬唤涓庡叧绯讳竴鏃﹀啓瀹氾紝鍚庢枃蹇呴』淇濇寔涓€鑷达紝涓嶈兘鍓嶅悗鏀瑰彛锛?,
+            "【同批细纲硬事实锁定】",
+            "以下身份与关系一旦写定，后文必须保持一致，不能前后改口：",
             factLines.join("\n"),
-            "濡傛灉鏈壒鍚庢枃闇€瑕佺户缁彁鍒拌繖浜涗汉锛屽繀椤绘部鐢ㄥ悓鏍风殑韬唤銆佷綅浠姐€佽緢鍒嗗拰鍏崇郴銆?,
-            "宸茬粡鍐欐垚宸茬櫥鍩恒€佸凡鎴愬銆佸凡鎷滃笀銆佸凡璁や翰銆佸凡灏佺埖銆佸凡鎬€瀛曘€佸凡鐢熷瓙绛変簨瀹烇紝鍚庢枃涓嶈兘鍥為€€鎴愭湭鍙戠敓銆?
+            "如果本批后文需要继续提到这些人，必须沿用同样的身份、位份、辈分和关系。",
+            "已经写成已登基、已成婚、已拜师、已认亲、已封爵、已怀孕、已生子等事实，后文不能回退成未发生。"
         ].join("\n");
     }
 
@@ -6042,15 +4028,15 @@
         const namePatternWarning = this.buildSynopsisNamePatternWarning(historicalSignals.names);
         const lockedMainNames = Object.entries(synopsisData.main_characters || {})
             .filter(([, name]) => String(name || "").trim())
-            .map(([role, name]) => `銆?{role}銆?{name}`);
+            .map(([role, name]) => `【${role}】${name}`);
 
         const parts = [];
         if (lockedMainNames.length) {
             parts.push([
-                "銆愷煍?宸查攣瀹氫富瑙掑悕瀛椼€?,
+                "【🔒 已锁定主角名字】",
                 lockedMainNames.join("\n"),
                 "",
-                "鍚庣画鎵€鏈夊嵎鐨勭粏绾查兘蹇呴』缁х画娌跨敤浠ヤ笂涓昏鍚嶅瓧锛岀姝㈡敼鍚嶏紝绂佹閫€鍥炴垚鈥滅敺涓烩€濃€滃コ涓烩€濈瓑妯＄硦绉板懠锛?
+                "后续所有卷的细纲都必须继续沿用以上主角名字，禁止改名，禁止退回成“男主”“女主”等模糊称呼！"
             ].join("\n"));
         }
 
@@ -6060,26 +4046,26 @@
 
         if (historicalSignals.names.length) {
             const relationshipHint = historicalSignals.relationships.length
-                ? `\n\n銆愬凡寤虹珛鐨勪汉鐗╁叧绯汇€慭n${historicalSignals.relationships.slice(0, 10).map((line) => `  路 ${line}`).join("\n")}`
+                ? `\n\n【已建立的人物关系】\n${historicalSignals.relationships.slice(0, 10).map((line) => `  · ${line}`).join("\n")}`
                 : "";
             const mainCharHint = lockedMainNames.length
                 ? [
-                    "銆愷煍答煍答煍?鏍稿績瑙掕壊鍚嶅瓧 - 缁濆绂佹淇敼锛侌煍答煍答煍淬€?,
-                    lockedMainNames.map((line) => line.replace("銆?, "銆? ")).join("\n").replace(/銆? 銆?g, "銆?),
+                    "【🔴🔴🔴 核心角色名字 - 绝对禁止修改！🔴🔴🔴】",
+                    lockedMainNames.map((line) => line.replace("】", "】= ")).join("\n").replace(/】= 】/g, "】"),
                     "",
-                    "鈿狅笍 浠ヤ笂鏄湰灏忚鐨勬牳蹇冧富瑙掞紝鎵€鏈夌珷鑺傚繀椤讳娇鐢ㄨ繖浜涘悕瀛楋紝缁濆绂佹鏀瑰悕锛?,
-                    "鈿狅笍 渚嬪锛氬鏋滃コ涓诲彨鈥滆嫃濠夊効鈥濓紝灏变笉鑳藉啓鎴愨€滆嫃濠夆€濃€滃鍎库€濃€滃コ涓烩€濈瓑鍏朵粬绉板懠锛?
+                    "⚠️ 以上是本小说的核心主角，所有章节必须使用这些名字，绝对禁止改名！",
+                    "⚠️ 例如：如果女主叫“苏婉儿”，就不能写成“苏婉”“婉儿”“女主”等其他称呼！"
                 ].join("\n")
                 : "";
             parts.push([
                 mainCharHint,
-                "銆愨殸锔?鎵€鏈夊凡鍑哄満瑙掕壊鍚嶅瓧涓€鑷存€ц姹?鈿狅笍銆?,
-                "浠ヤ笅瑙掕壊宸插湪鏈皬璇翠腑鍑哄満锛屽繀椤讳娇鐢ㄨ繖浜涘悕瀛楋紙涓昏+閰嶈閮戒笉鑳芥敼鍚嶏級锛?,
-                historicalSignals.names.slice(0, 24).join("銆?),
+                "【⚠️ 所有已出场角色名字一致性要求 ⚠️】",
+                "以下角色已在本小说中出场，必须使用这些名字（主角+配角都不能改名）：",
+                historicalSignals.names.slice(0, 24).join("、"),
                 relationshipHint,
                 "",
-                "绂佹鏀瑰悕銆佺姝娇鐢ㄢ€滅敺涓烩€濃€滃コ涓烩€濃€滃珎瀛愨€濃€滈偅瀹朵紮鈥濈瓑妯＄硦绉板懠锛?,
-                "蹇呴』娌跨敤宸插嚭鐜扮殑瑙掕壊鍚嶅瓧鍜屼汉鐗╁叧绯伙紒",
+                "禁止改名、禁止使用“男主”“女主”“嫂子”“那家伙”等模糊称呼！",
+                "必须沿用已出现的角色名字和人物关系！",
                 namePatternWarning
             ].filter(Boolean).join("\n"));
         } else if (namePatternWarning) {
@@ -6103,9 +4089,9 @@
         return {
             lockedNamesTable,
             currentVolume,
-            currentVolumeTaskLabel: `${currentVolume.title || `绗?{volumeNumber}鍗穈}${volumeSummary ? ` - ${Utils.summarizeText(volumeSummary, 120)}` : ""}`,
+            currentVolumeTaskLabel: `${currentVolume.title || `第${volumeNumber}卷`}${volumeSummary ? ` - ${Utils.summarizeText(volumeSummary, 120)}` : ""}`,
             volumeSynopsisContext: this.buildVolumeSynopsisContext(project, volumeNumber),
-            currentVolumeOutlineContext: this.normalizeSynopsisReferenceText(project, String(outlineSlice.currentOutline || "").trim()),
+            currentVolumeOutlineContext: String(outlineSlice.currentOutline || "").trim(),
             adjacentOutlineSummary: outlineSlice.adjacentSummary || "",
             mappingHint: this.buildSynopsisMappingHint(project),
             synopsisHistoryContext: this.buildSynopsisHistoryContext(project, volumeNumber),
@@ -6138,58 +4124,57 @@
     buildDesktopSynopsisSystemPrompt({ genreConstraint, chapterCount, lockedNamesTable }) {
         return [
             genreConstraint,
-            "浣犳槸涓栫晫涔︽瀯寤轰笓瀹垛€滈粯榛樷€濓紝涓€浣嶈祫娣辩綉鏂囩瓥鍒掔紪杈戙€傝鐢熸垚绔犺妭澶х翰銆?,
+            "你是世界书构建专家“默默”，一位资深网文策划编辑。请生成章节大纲。",
             "",
             lockedNamesTable,
-            "【额外铁律】只要某个角色已经有真名，细纲里就只能写真名。任何别名、简称、小名、身份称呼、关系称呼、封号、职位称呼，都必须改回真名。",
             "",
-            "銆愨槄鈽呪槄 鏈€閲嶈鐨勮鍒?鈽呪槄鈽呫€?,
-            `1. 浣犲繀椤讳竴娆℃€ц緭鍑恒€愭伆濂?{chapterCount}绔犮€?浠庣1绔犲埌绗?{chapterCount}绔?涓嶈兘澶氫篃涓嶈兘灏戯紒`,
-            `2. 涓嶈璇粹€滀互涓嬫槸閮ㄥ垎绔犺妭鈥濇垨鈥滅敱浜庣瘒骞呴檺鍒垛€濅箣绫荤殑璇?蹇呴』瀹屾暣杈撳嚭鎵€鏈?{chapterCount}绔狅紒`,
-            "3. 濡傛灉浣犲彧杈撳嚭浜嗕竴閮ㄥ垎灏卞仠姝?杩欐槸涓ラ噸閿欒锛?,
+            "【★★★ 最重要的规则 ★★★】",
+            `1. 你必须一次性输出【恰好${chapterCount}章】,从第1章到第${chapterCount}章,不能多也不能少！`,
+            `2. 不要说“以下是部分章节”或“由于篇幅限制”之类的话,必须完整输出所有${chapterCount}章！`,
+            "3. 如果你只输出了一部分就停止,这是严重错误！",
             "",
-            "銆愨殸锔忊殸锔忊殸锔?瑙掕壊鍚嶅瓧瑙勮寖 - 鏋佸叾閲嶈锛佲殸锔忊殸锔忊殸锔忋€?,
-            "1. 绂佹鍚岃鏀瑰悕锛氬悓涓€涓鑹蹭竴鏃﹀凡缁忕敤杩囧叿浣撳悕瀛楋紝鍚庣画鎵€鏈夌珷鑺傚拰鍚庣画鎵€鏈夊嵎閮藉繀椤荤户缁部鐢ㄨ繖涓悕瀛椼€?,
-            "2. 宸叉湁鍚嶅瓧浼樺厛锛氭墍鏈夊凡缁忓缓绔嬫槧灏勬垨宸茬粡閿佸畾鐨勮鑹诧紝蹇呴』缁х画浣跨敤鍘熸潵鐨勫叿浣撳悕瀛楋紝涓嶈兘涓€鍗锋崲涓€涓悕瀛椼€?,
-            "3. 涓嶅己鍒堕噸鏂拌捣鍚嶏細鍚庣画鍗风殑閲嶇偣鏄部鐢ㄦ棫鍚嶅瓧锛屼笉鏄粰鏃ц鑹查噸鏂板懡鍚嶏紱娌℃湁鎶婃彙鏃跺畞鍙繚鎸佸師鐘躲€?,
-            "4. 妯＄硦绉板懠鍙綔杈呭姪锛氬鏋滆緭鍏ラ噷鏈夆€滅敺涓烩€濃€滃コ涓烩€濃€滆垍濡堚€濃€滃鍙嬧€濈瓑绉板懠锛屽彧鑳界敤浜庤瘑鍒鑹诧紝鏈€缁堜笉瑕佹妸鍚屼竴瑙掕壊鏀规垚鍙︿竴涓柊鍚嶅瓧銆?,
+            "【⚠️⚠️⚠️ 角色名字规范 - 极其重要！⚠️⚠️⚠️】",
+            "1. 禁止同角改名：同一个角色一旦已经用过具体名字，后续所有章节和后续所有卷都必须继续沿用这个名字。",
+            "2. 已有名字优先：所有已经建立映射或已经锁定的角色，必须继续使用原来的具体名字，不能一卷换一个名字。",
+            "3. 不强制重新起名：后续卷的重点是沿用旧名字，不是给旧角色重新命名；没有把握时宁可保持原状。",
+            "4. 模糊称呼只作辅助：如果输入里有“男主”“女主”“舅妈”“室友”等称呼，只能用于识别角色，最终不要把同一角色改成另一个新名字。",
             "",
-            "銆愪富瑙掑悕瀛楄姹傘€?,
-            "1. 濡傛灉涓昏宸茬粡鏈夊悕瀛楋紝缁濆绂佹淇敼銆?,
-            "2. 濡傛灉绗竴鍗烽娆″畾鍚嶏紝鍙鍚嶅瓧鍓嶅悗涓€鑷村嵆鍙紝涓嶈姹傚埢鎰忓じ寮犳垨妯″紡鍖栥€?,
-            "3. 閰嶈鍚岀悊锛岄噸鐐规槸鍓嶅悗缁熶竴锛屼笉鏄悕瀛楀崕涓界▼搴︺€?,
+            "【主角名字要求】",
+            "1. 如果主角已经有名字，绝对禁止修改。",
+            "2. 如果第一卷首次定名，只要名字前后一致即可，不要求刻意夸张或模式化。",
+            "3. 配角同理，重点是前后统一，不是名字华丽程度。",
             "",
-            "銆愪弗閲嶈鍛娿€戠姝㈡ā寮忓寲璧峰悕锛?,
-            "1. 绂佹鎵归噺鐢熸垚鈥淴鎷涘ǎ銆乆缈犺姳銆乆绉€鑻便€乆妗傝姵鈥濊繖绉嶅悓绫诲瀷鍚嶅瓧銆?,
-            "2. 姣忎釜瑙掕壊鐨勫悕瀛楀繀椤绘湁鐙壒椋庢牸锛岄伩鍏嶉噸澶嶅悗缂€銆?,
-            "3. 鍚嶅瓧瑕佸鏍峰寲锛氬彲浠ュ弬鑰冭瘲璇嶅吀鏁呫€佽嚜鐒舵剰璞°€佺編濂藉瘬鎰忕瓑涓嶅悓鏉ユ簮銆?,
+            "【严重警告】禁止模式化起名：",
+            "1. 禁止批量生成“X招娣、X翠花、X秀英、X桂芳”这种同类型名字。",
+            "2. 每个角色的名字必须有独特风格，避免重复后缀。",
+            "3. 名字要多样化：可以参考诗词典故、自然意象、美好寓意等不同来源。",
             "",
-            "銆愰槻姝㈡儏鑺傞噸澶?- 璁板繂绯荤粺銆?,
-            "1. 浠旂粏闃呰鍓嶉潰鍗风殑绔犺妭鍐呭,纭繚鏂扮珷鑺傜殑鎯呰妭涓庝箣鍓嶅畬鍏ㄤ笉鍚屻€?,
-            "2. 绂佹閲嶅浣跨敤鐩稿悓鐨勶細鍐茬獊绫诲瀷銆佽В鍐虫柟寮忋€佸満鏅瀹氥€佽鑹蹭簰鍔ㄦā寮忋€?,
-            "3. 姣忎釜鏂扮珷鑺傚繀椤绘帹杩涙晠浜?涓嶈兘鍘熷湴韪忔鎴栧洖鍒颁箣鍓嶇殑鎯呰妭銆?,
-            "4. 濡傛灉鍓嶉潰鏈夆€滀富瑙掕幏寰楀疂鐗┾€?鍚庨潰涓嶈兘鍐嶆湁绫讳技鐨勨€滆幏寰楀疂鐗┾€濇儏鑺傘€?,
-            "5. 濡傛灉鍓嶉潰鏈夆€滆浜洪櫡瀹冲悗鍙嶆潃鈥?鍚庨潰涓嶈兘鍐嶆湁绫讳技鐨勨€滈櫡瀹?鍙嶆潃鈥濆璺€?,
+            "【防止情节重复 - 记忆系统】",
+            "1. 仔细阅读前面卷的章节内容,确保新章节的情节与之前完全不同。",
+            "2. 禁止重复使用相同的：冲突类型、解决方式、场景设定、角色互动模式。",
+            "3. 每个新章节必须推进故事,不能原地踏步或回到之前的情节。",
+            "4. 如果前面有“主角获得宝物”,后面不能再有类似的“获得宝物”情节。",
+            "5. 如果前面有“被人陷害后反杀”,后面不能再有类似的“陷害-反杀”套路。",
             "",
-            "銆愬墽鎯呰妭鐐硅璁°€?,
-            "1. 姣忎釜绔犺妭閮芥槸涓€涓€滃墽鎯呰妭鐐光€?鍖呭惈鍦烘櫙銆佸啿绐併€佽浆鎶樸€?,
-            "2. 绔犺妭涔嬮棿瑕佹湁鈥滈挬瀛愨€濃€斺€旀湰绔犵粨灏惧紩鍑轰笅绔犳偓蹇点€?,
-            "3. 閬靛惊鎯呯华鏇茬嚎锛氱揣寮?缂撳拰-鏇寸揣寮?楂樻疆-浣欓煹銆?,
-            "4. 姣?-5绔犲舰鎴愪竴涓皬楂樻疆,鍗锋湯褰㈡垚澶ч珮娼€?,
+            "【剧情节点设计】",
+            "1. 每个章节都是一个“剧情节点”,包含场景、冲突、转折。",
+            "2. 章节之间要有“钩子”——本章结尾引出下章悬念。",
+            "3. 遵循情绪曲线：紧张-缓和-更紧张-高潮-余韵。",
+            "4. 每3-5章形成一个小高潮,卷末形成大高潮。",
             "",
-            "銆愰€昏緫琛旀帴閾佸緥銆?,
-            "1. 缁嗙翰蹇呴』绱ф帴涓婁竴鍗风粨灏炬垨鍓嶆枃鏈€鍚庝竴绔狅紝涓嶈兘璺冲満銆佸洖閫€銆侀噸鍐欏凡鍙戠敓浜嬩欢銆?,
-            "2. 鍚屼竴鎵圭粏绾查噷锛岃韩浠姐€佷綅浠姐€佽緢鍒嗐€佷翰灞炲叧绯汇€佸閰嶃€佸笀寰掋€佸畼鑱屻€侀樀钀ヤ竴鏃﹂娆℃槑纭紝鍚庢枃蹇呴』淇濇寔涓€鑷淬€?,
-            "3. 渚嬪宸茬粡鍐欐垚鈥滃お鍚庣殑鍎垮瓙鏄殗甯濃€濓紝鍚庢枃灏变笉鑳芥敼鎴愨€滃皬鐨囧瓙鈥濓紱宸茬粡鍐欐垚鈥滃お瀛愬鈥濓紝鍚庢枃涔熶笉鑳介檷鍥炩€滅濂斥€濄€?,
-            "4. 涓婁竴绔犵殑缁撴灉鍙兘浣滀负涓嬩竴绔犵殑璧风偣锛屼笉鑳芥崲鍙ヨ瘽閲嶅鍙戠敓銆?,
-            "5. 濡傛灉闇€瑕佽繃妗ョ珷锛岃繃妗ョ珷涔熷繀椤诲甫鏉ヤ竴涓柊鐨勬湁鏁堝彉鍖栥€?,
+            "【逻辑衔接铁律】",
+            "1. 细纲必须紧接上一卷结尾或前文最后一章，不能跳场、回退、重写已发生事件。",
+            "2. 同一批细纲里，身份、位份、辈分、亲属关系、婚配、师徒、官职、阵营一旦首次明确，后文必须保持一致。",
+            "3. 例如已经写成“太后的儿子是皇帝”，后文就不能改成“小皇子”；已经写成“太子妃”，后文也不能降回“秀女”。",
+            "4. 上一章的结果只能作为下一章的起点，不能换句话重复发生。",
+            "5. 如果需要过桥章，过桥章也必须带来一个新的有效变化。",
             "",
-            "銆愯緭鍑烘牸寮忚姹傘€?,
-            "1. 姣忕珷鏍煎紡锛氱X绔狅細绔犺妭鏍囬 - 鏍稿績鍐呭锛?0-40瀛楁弿杩帮級",
-            `2. 浠庣1绔犺繛缁緭鍑哄埌绗?{chapterCount}绔?涓棿涓嶈鏈変换浣曡鏄庢枃瀛椼€俙,
-            "3. 鐩存帴杈撳嚭绔犺妭鍒楄〃,寮€澶村拰缁撳熬閮戒笉瑕佷换浣曢澶栬鏄庛€?,
+            "【输出格式要求】",
+            "1. 每章格式：第X章：章节标题 - 核心内容（20-40字描述）",
+            `2. 从第1章连续输出到第${chapterCount}章,中间不要有任何说明文字。`,
+            "3. 直接输出章节列表,开头和结尾都不要任何额外说明。",
             "",
-            `銆愬啀娆″己璋冦€戜綘蹇呴』杈撳嚭瀹屾暣鐨?{chapterCount}绔?杩欐槸纭€ц姹傦紒`
+            `【再次强调】你必须输出完整的${chapterCount}章,这是硬性要求！`
         ].filter(Boolean).join("\n");
     }
 
@@ -6220,34 +4205,34 @@
         nameGenerationHint
     }) {
         return [
-            `灏忚鏍囬锛氥€?{title || "鏈懡鍚嶅皬璇?}銆媊,
+            `小说标题：《${title || "未命名小说"}》`,
             "",
-            "鏁呬簨姒傚康锛?,
-            concept || "鏆傛棤",
+            "故事概念：",
+            concept || "暂无",
             "",
-            "鍒嗗嵎姒傝锛?,
-            volumeSynopsisContext || volumeSummary || "鏆傛棤",
+            "分卷概要：",
+            volumeSynopsisContext || volumeSummary || "暂无",
             "",
-            worldbuilding ? `涓栫晫瑙傝ˉ鍏咃細\n${worldbuilding}` : "",
-            currentVolumeOutlineContext ? `銆愬綋鍓嶅嵎璇︾粏澶х翰锛堝繀椤讳紭鍏堟墽琛岋級銆慭n${currentVolumeOutlineContext}` : "",
-            adjacentOutlineSummary ? `銆愮浉閭诲嵎杈圭晫鎻愮ず銆慭n${adjacentOutlineSummary}` : "",
-            `褰撳墠浠诲姟锛氫负銆?{currentVolumeTaskLabel || `绗?{volumeNumber}鍗穈}銆戠敓鎴愩€愭伆濂?{chapterCount}绔犮€戠殑绔犺妭澶х翰銆俙,
+            worldbuilding ? `世界观补充：\n${worldbuilding}` : "",
+            currentVolumeOutlineContext ? `【当前卷详细大纲（必须优先执行）】\n${currentVolumeOutlineContext}` : "",
+            adjacentOutlineSummary ? `【相邻卷边界提示】\n${adjacentOutlineSummary}` : "",
+            `当前任务：为【${currentVolumeTaskLabel || `第${volumeNumber}卷`}】生成【恰好${chapterCount}章】的章节大纲。`,
             nameGenerationHint,
             mappingHint,
             characterConsistencyHint,
             synopsisConsistencyContext,
             usedPlotsContext,
             previousSynopsisContext,
-            previousVolumeEnding ? `銆愪笂涓€鍗风粨灏撅紙鐢ㄤ簬琛旀帴锛夛細銆慭n${previousVolumeEnding}` : "",
-            storyStateSummary ? `銆愬墠鏂囩姸鎬佹憳瑕併€慭n${storyStateSummary}` : "",
+            previousVolumeEnding ? `【上一卷结尾（用于衔接）：】\n${previousVolumeEnding}` : "",
+            storyStateSummary ? `【前文状态摘要】\n${storyStateSummary}` : "",
             timelineGuard,
             foreshadowGuard,
             synopsisClarityGuard,
             volumeBoundaryGuard,
             innovationPrompt,
-            existingSynopsis ? `銆愬凡鏈夌粏绾插弬鑰冦€慭n${existingSynopsis}` : "",
+            existingSynopsis ? `【已有细纲参考】\n${existingSynopsis}` : "",
             "",
-            `銆愭渶缁堢‘璁ゃ€戣鐜板湪杈撳嚭绗?{volumeNumber}鍗风殑鍏ㄩ儴${chapterCount}涓珷鑺傚ぇ绾诧紙浠庣1绔犲埌绗?{chapterCount}绔?涓€涓兘涓嶈兘灏戯級锛歚
+            `【最终确认】请现在输出第${volumeNumber}卷的全部${chapterCount}个章节大纲（从第1章到第${chapterCount}章,一个都不能少）：`
         ].filter(Boolean).join("\n\n");
     }
 
@@ -6279,60 +4264,66 @@
         existingSynopsis
     }) {
         return [
-            `灏忚鏍囬锛氥€?{title || "鏈懡鍚嶅皬璇?}銆媊,
+            `小说标题：《${title || "未命名小说"}》`,
             "",
-            "鏁呬簨姒傚康锛?,
-            concept || "鏆傛棤",
+            "故事概念：",
+            concept || "暂无",
             "",
-            "鍒嗗嵎姒傝锛?,
-            volumeSynopsisContext || "鏆傛棤",
+            "分卷概要：",
+            volumeSynopsisContext || "暂无",
             "",
-            worldbuilding ? `涓栫晫瑙傝ˉ鍏咃細\n${worldbuilding}` : "",
-            currentVolumeOutlineContext ? `銆愬綋鍓嶅嵎璇︾粏澶х翰锛堝繀椤讳紭鍏堟墽琛岋級銆慭n${currentVolumeOutlineContext}` : "",
-            adjacentOutlineSummary ? `銆愮浉閭诲嵎杈圭晫鎻愮ず銆慭n${adjacentOutlineSummary}` : "",
-            `褰撳墠浠诲姟锛氱户缁负銆?{currentVolumeTaskLabel || `绗?{volumeNumber}鍗穈}銆戣ˉ榻愮己澶辩珷鑺傦紝鏈€缁堝繀椤诲噾澶?{chapterCount}绔犮€俙,
+            worldbuilding ? `世界观补充：\n${worldbuilding}` : "",
+            currentVolumeOutlineContext ? `【当前卷详细大纲（必须优先执行）】\n${currentVolumeOutlineContext}` : "",
+            adjacentOutlineSummary ? `【相邻卷边界提示】\n${adjacentOutlineSummary}` : "",
+            `当前任务：继续为【${currentVolumeTaskLabel || `第${volumeNumber}卷`}】补齐缺失章节，最终必须凑够${chapterCount}章。`,
             nameGenerationHint,
             mappingHint,
             characterConsistencyHint,
             synopsisConsistencyContext,
             usedPlotsContext,
             previousSynopsisContext,
-            previousVolumeEnding ? `銆愪笂涓€鍗风粨灏撅紙鐢ㄤ簬琛旀帴锛夛細銆慭n${previousVolumeEnding}` : "",
-            storyStateSummary ? `銆愬墠鏂囩姸鎬佹憳瑕併€慭n${storyStateSummary}` : "",
+            previousVolumeEnding ? `【上一卷结尾（用于衔接）：】\n${previousVolumeEnding}` : "",
+            storyStateSummary ? `【前文状态摘要】\n${storyStateSummary}` : "",
             timelineGuard,
             foreshadowGuard,
             synopsisClarityGuard,
             volumeBoundaryGuard,
             innovationPrompt,
-            existingSynopsis ? `銆愬凡鏈夌粏绾插弬鑰冦€慭n${existingSynopsis}` : "",
+            existingSynopsis ? `【已有细纲参考】\n${existingSynopsis}` : "",
             "",
-            "銆愬凡缁忔垚鍔熺敓鎴愮殑绔犺妭缁嗙翰銆?,
-            knownLines || "鏆傛棤",
+            "【已经成功生成的章节细纲】",
+            knownLines || "暂无",
             "",
-            "銆愬彧鍏佽琛ラ綈浠ヤ笅缂哄け绔犺妭銆?,
-            (missingNumbers || []).map((num) => `绗?{num}绔燻).join("銆?),
+            "【只允许补齐以下缺失章节】",
+            (missingNumbers || []).map((num) => `第${num}章`).join("、"),
             "",
-            "璇峰彧杈撳嚭缂哄け绔犺妭锛屼竴绔犱竴琛岋紝涓ユ牸浣跨敤鏍煎紡锛?,
-            "绗琗绔狅細绔犺妭鏍囬 - 鏍稿績鍐呭锛?0-40瀛楁弿杩帮級",
-            "鐩存帴杈撳嚭锛屼笉瑕佷换浣曡鏄庯紝涓嶈閲嶅宸茬粡鐢熸垚杩囩殑绔犺妭銆?
+            "请只输出缺失章节，一章一行，严格使用格式：",
+            "第X章：章节标题 - 核心内容（20-40字描述）",
+            "直接输出，不要任何说明，不要重复已经生成过的章节。"
         ].filter(Boolean).join("\n\n");
     }
 
     prepareSynopsisGenerationInput(project, { concept, volumeSummary, existingSynopsis, volumeNumber }) {
-        const outlineContext = this.extractCurrentVolumeOutlineContext(project, volumeNumber)?.currentOutline || "";
-        const sourceText = `${concept || ""}\n${volumeSummary || ""}\n${existingSynopsis || ""}\n${outlineContext}`;
-        this.autoAssignSynopsisConcreteNames(project, sourceText, volumeNumber);
-
-        const roleRequirement = this.detectSynopsisRoleRequirements(project, sourceText, volumeNumber);
-        const mapping = this.buildSynopsisStrictRealNameMapping(project);
-        const processedConcept = this.normalizeSynopsisReferenceText(project, concept);
-        const processedVolumeSummary = this.normalizeSynopsisReferenceText(project, volumeSummary);
-        const processedExistingSynopsis = this.normalizeSynopsisReferenceText(project, existingSynopsis);
+        const roleRequirement = this.detectSynopsisRoleRequirements(
+            project,
+            `${concept || ""}\n${volumeSummary || ""}\n${existingSynopsis || ""}`,
+            volumeNumber
+        );
+        const synopsisData = this.restoreSynopsisMainCharacters(project);
+        synopsisData.vague_to_name_mapping = synopsisData.vague_to_name_mapping && typeof synopsisData.vague_to_name_mapping === "object"
+            ? synopsisData.vague_to_name_mapping
+            : {};
+        const mapping = synopsisData.vague_to_name_mapping;
+        const processedConcept = this.applyKnownSynopsisMappings(concept, mapping);
+        const processedVolumeSummary = this.applyKnownSynopsisMappings(volumeSummary, mapping);
+        const processedExistingSynopsis = this.applyKnownSynopsisMappings(existingSynopsis, mapping);
         const mappingLines = Object.entries(mapping)
-            .filter(([alias, realName]) => alias && realName && alias !== realName)
             .slice(0, 20)
             .map(([vagueTerm, specificName]) => `- ${vagueTerm} -> ${specificName}`);
-        const pendingTerms = this.collectSynopsisNameableTerms(sourceText, project);
+        const pendingTerms = this.collectPendingSynopsisTerms(
+            `${concept || ""}\n${volumeSummary || ""}\n${existingSynopsis || ""}`,
+            project
+        );
 
         return {
             processedConcept,
@@ -6341,18 +4332,18 @@
             lockedNamesHint: this.buildSynopsisLockedNameTable(project),
             mappingHint: mappingLines.length
                 ? [
-                    "銆愷煍?妯＄硦绉板懠鈫掑叿浣撳悕瀛楁槧灏勮〃锛堝繀椤婚伒瀹堬級銆?,
-                    "浠ヤ笅绉板懠宸茬粡鏈夊浐瀹氬搴斿悕瀛楋紝鏈嵎缁嗙翰蹇呴』娌跨敤鍏蜂綋鍚嶅瓧锛?,
+                    "【🔒 模糊称呼→具体名字映射表（必须遵守）】",
+                    "以下称呼已经有固定对应名字，本卷细纲必须沿用具体名字：",
                     mappingLines.join("\n")
                 ].join("\n")
                 : "",
             pendingHint: pendingTerms.length && Number(volumeNumber || 0) > 0
-                ? `銆愬緟缁х画鏄庣‘鐨勬ā绯婄О鍛笺€慭n${[...new Set([...pendingTerms, ...(roleRequirement.pendingRoles || [])])].slice(0, 12).map((term) => `- ${term}`).join("\n")}\n濡傛灉鏈嵎鏄庣‘鍐欏嚭浜嗙湡瀹炲悕瀛楋紝鍙互鐩存帴鐢ㄧ湡瀹炲悕瀛楋紝涓嶈闀挎湡鍋滅暀鍦ㄦā绯婄О鍛笺€俙
+                ? `【待继续明确的模糊称呼】\n${[...new Set([...pendingTerms, ...(roleRequirement.pendingRoles || [])])].slice(0, 12).map((term) => `- ${term}`).join("\n")}\n如果本卷明确写出了真实名字，可以直接用真实名字，不要长期停留在模糊称呼。`
                 : ""
         };
     }
 
-    lockSynopsisCharacterName(project, name, charType = "閰嶈", identity = "鏈煡", lockedVolume = 1) {
+    lockSynopsisCharacterName(project, name, charType = "配角", identity = "未知", lockedVolume = 1) {
         const cleanName = String(name || "").trim();
         if (!/^[\u4e00-\u9fa5]{2,4}$/.test(cleanName)) {
             return false;
@@ -6362,8 +4353,8 @@
         const aliases = this.buildSynopsisNameAliases(cleanName);
         const existing = synopsisData.locked_character_names[cleanName];
         if (existing) {
-            if (charType === "涓昏") {
-                existing.type = "涓昏";
+            if (charType === "主角") {
+                existing.type = "主角";
                 existing.identity = identity;
             }
             existing.aliases = Array.from(new Set([...(existing.aliases || []), ...aliases]))
@@ -6389,8 +4380,8 @@
         }
 
         const excludedWords = new Set([
-            "杩欐椂", "閭ｆ椂", "姝ゆ椂", "褰兼椂", "浠€涔?, "鎬庝箞", "杩欎釜", "閭ｄ釜", "浠栫殑", "濂圭殑", "浠栦滑",
-            "浼椾汉", "璺汉", "灏戝勾", "灏戝コ", "闈掑勾", "濂冲瓙", "鐢蜂汉", "濂充汉", "寮熷瓙", "闀胯€?, "鎺岄棬"
+            "这时", "那时", "此时", "彼时", "什么", "怎么", "这个", "那个", "他的", "她的", "他们",
+            "众人", "路人", "少年", "少女", "青年", "女子", "男人", "女人", "弟子", "长老", "掌门"
         ]);
         if (excludedWords.has(cleanName) || cleanName === cleanVagueTerm) {
             return false;
@@ -6427,10 +4418,10 @@
 
         const existingLock = synopsisData.locked_character_names?.[cleanName];
         if (existingLock) {
-            if (role && existingLock.type === "涓昏" && existingLock.identity && existingLock.identity !== role) {
+            if (role && existingLock.type === "主角" && existingLock.identity && existingLock.identity !== role) {
                 return false;
             }
-            if (!role && existingLock.type === "涓昏" && existingLock.identity && aliasToRole[cleanVagueTerm] && aliasToRole[cleanVagueTerm] !== existingLock.identity) {
+            if (!role && existingLock.type === "主角" && existingLock.identity && aliasToRole[cleanVagueTerm] && aliasToRole[cleanVagueTerm] !== existingLock.identity) {
                 return false;
             }
         }
@@ -6462,7 +4453,7 @@
 
         const synopsisData = this.restoreSynopsisMainCharacters(project);
         synopsisData.main_characters[cleanRole] = cleanName;
-        this.lockSynopsisCharacterName(project, cleanName, "涓昏", cleanRole, lockedVolume);
+        this.lockSynopsisCharacterName(project, cleanName, "主角", cleanRole, lockedVolume);
         this.getSynopsisRoleAliases()[cleanRole].forEach((alias) => {
             const existing = synopsisData.vague_to_name_mapping[alias];
             if (!existing || existing === cleanName) {
@@ -6493,14 +4484,14 @@
             if (this.lockSynopsisCharacterName(
                 project,
                 realName,
-                isMainCharacter ? "涓昏" : "閰嶈",
-                isMainCharacter ? "涓昏" : (String(character?.identity || "").trim() || "鏈煡"),
+                isMainCharacter ? "主角" : "配角",
+                isMainCharacter ? "主角" : (String(character?.identity || "").trim() || "未知"),
                 volumeNumber
             )) {
                 changed += 1;
             }
 
-            Utils.ensureArrayFromText(character?.aliases || character?.["鍒悕"] || "")
+            Utils.ensureArrayFromText(character?.aliases || character?.["别名"] || "")
                 .map((alias) => this.normalizeOutlineCharacterLabel(alias))
                 .filter((alias) => alias && alias !== realName)
                 .forEach((alias) => {
@@ -6519,40 +4510,18 @@
         return changed;
     }
 
-    extractExplicitVagueNameMappings(project, text, vagueTerms) {
-        if (!project || !text || !Array.isArray(vagueTerms) || !vagueTerms.length) {
+    extractExplicitVagueNameMappings(text, vagueTerms) {
+        if (!text || !Array.isArray(vagueTerms) || !vagueTerms.length) {
             return [];
         }
 
         const content = String(text);
+        const excludedWords = new Set([
+            "这时", "那时", "此时", "彼时", "什么", "怎么", "这个", "那个", "他的", "她的",
+            "少年", "少女", "男人", "女人", "角色", "名字", "某人", "某某"
+        ]);
         const results = [];
         const seen = new Set();
-        const resolveCapturedName = (fragment) => {
-            const cleanFragment = this.normalizeOutlineCharacterLabel(fragment);
-            if (!cleanFragment) {
-                return "";
-            }
-
-            const candidates = [];
-            const pushCandidate = (candidate) => {
-                const cleanCandidate = this.normalizeOutlineCharacterLabel(candidate);
-                if (!cleanCandidate || candidates.includes(cleanCandidate)) {
-                    return;
-                }
-                candidates.push(cleanCandidate);
-            };
-
-            pushCandidate(cleanFragment);
-            for (let length = Math.min(4, cleanFragment.length); length >= 2; length -= 1) {
-                pushCandidate(cleanFragment.slice(0, length));
-            }
-
-            return candidates.find((candidate) =>
-                this.isTrustedSynopsisConcreteName(project, candidate)
-                && (this.isKnownSynopsisConcreteName(project, candidate) || this.hasSynopsisExplicitNameSignal(content, candidate) || this.isLikelyChinesePersonName(candidate))
-                && !this.isGenericCharacterCandidateName(candidate)
-            ) || "";
-        };
 
         vagueTerms
             .filter(Boolean)
@@ -6560,17 +4529,18 @@
             .forEach((vagueTerm) => {
                 const escaped = vagueTerm.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
                 const patterns = [
-                    new RegExp(`${escaped}[（(]([\\u4e00-\\u9fa5]{2,8})[)）]`, "gu"),
-                    new RegExp(`([\\u4e00-\\u9fa5]{2,8})[（(]${escaped}[)）]`, "gu"),
-                    new RegExp(`${escaped}[：:，,\\s]*([\\u4e00-\\u9fa5]{2,8})`, "gu"),
-                    new RegExp(`${escaped}(?:叫|名叫|叫做|便是|就是|正是|乃是)([\\u4e00-\\u9fa5]{2,8})`, "gu"),
-                    new RegExp(`([\\u4e00-\\u9fa5]{2,8})(?:便是|就是|正是|乃是)${escaped}`, "gu")
+                    new RegExp(`${escaped}[：:]\\s*([\\u4e00-\\u9fa5]{2,4})`, "g"),
+                    new RegExp(`${escaped}[（(]([\\u4e00-\\u9fa5]{2,4})[)）]`, "g"),
+                    new RegExp(`([\\u4e00-\\u9fa5]{2,4})[（(]${escaped}[)）]`, "g"),
+                    new RegExp(`${escaped}叫([\\u4e00-\\u9fa5]{2,4})`, "g"),
+                    new RegExp(`${escaped}名叫([\\u4e00-\\u9fa5]{2,4})`, "g"),
+                    new RegExp(`名叫([\\u4e00-\\u9fa5]{2,4})的${escaped}`, "g")
                 ];
 
                 patterns.forEach((pattern) => {
                     for (const match of content.matchAll(pattern)) {
-                        const name = resolveCapturedName(String(match[1] || "").trim());
-                        if (!name || name === vagueTerm) {
+                        const name = String(match[1] || "").trim();
+                        if (!name || excludedWords.has(name)) {
                             continue;
                         }
                         const key = `${vagueTerm}=>${name}`;
@@ -6592,26 +4562,26 @@
         }
 
         const badFragments = new Set([
-            "瀵瑰ス", "瀵逛粬", "瀵瑰ス璇?, "瀵逛粬璇?, "鍘傞暱", "鍓巶闀?, "椋熷爞", "绯荤粺", "闇囨儕", "鎻愪緵",
-            "鍙戠幇", "鐪嬪埌", "鍚埌", "鍙楄繃", "鎭╂儬", "澶╃眮", "浼椾汉", "濂圭殑", "浠栫殑", "缁欏ス", "缁欎粬",
-            "娲惧壇", "娲句汉", "鏁呬簨", "绔犺妭", "缁嗙翰", "鍗风翰", "姝ｆ枃", "闈㈠", "鍋忓績", "璇村叓", "鍏亾",
-            "璇村叓閬?, "闈㈠鍋忓績", "缁欐灄", "鍒板浘", "瀹夋姎", "鎶ゆ矆", "鍥句功棣?
+            "对她", "对他", "对她说", "对他说", "厂长", "副厂长", "食堂", "系统", "震惊", "提供",
+            "发现", "看到", "听到", "受过", "恩惠", "天籁", "众人", "她的", "他的", "给她", "给他",
+            "派副", "派人", "故事", "章节", "细纲", "卷纲", "正文", "面对", "偏心", "说八", "八道",
+            "说八道", "面对偏心", "给林", "到图", "安抚", "护沈", "图书馆"
         ]);
         if (badFragments.has(cleanName)) {
             return false;
         }
 
-        const badSuffixes = ["闇囨儕", "璇撮亾", "璇寸潃", "鎻愪緵", "鎭╂儬", "鍘傞暱", "涓讳换", "缁忕悊", "鍥句功棣?, "鍋忓績", "鍏亾"];
+        const badSuffixes = ["震惊", "说道", "说着", "提供", "恩惠", "厂长", "主任", "经理", "图书馆", "偏心", "八道"];
         if (badSuffixes.some((suffix) => cleanName.endsWith(suffix))) {
             return false;
         }
 
-        const badPrefixes = ["浜?, "瀵?, "鎶?, "琚?, "鍚?, "缁?, "娲?, "闈㈠", "璇?, "鍒?, "瀹夋姎", "鎶?];
+        const badPrefixes = ["了", "对", "把", "被", "向", "给", "派", "面对", "说", "到", "安抚", "护"];
         if (badPrefixes.some((prefix) => cleanName.startsWith(prefix))) {
             return false;
         }
 
-        const badVerbs = ["闈㈠", "瀹夋姎", "娲?, "缁?, "鍒?, "鍘?, "鏉?, "璇?, "鐪嬪埌", "鍙戠幇", "鍚埌", "鍛婅瘔", "鎵朵綇", "鎼€浣?, "鎷変綇"];
+        const badVerbs = ["面对", "安抚", "派", "给", "到", "去", "来", "说", "看到", "发现", "听到", "告诉", "扶住", "搀住", "拉住"];
         if (badVerbs.some((verb) => cleanName.startsWith(verb))) {
             return false;
         }
@@ -6620,17 +4590,41 @@
             return false;
         }
 
-        return this.isLikelyChinesePersonName(cleanName);
+        return true;
     }
 
     collectFrequentNamesFromText(text) {
-        return this.collectSynopsisConcreteNameMentions(text)
-            .filter((item) => item?.likelyPerson || item?.strong)
-            .map((item) => item.name);
+        const content = String(text || "");
+        const candidates = new Set();
+        const addCandidates = (matches = []) => {
+            matches.forEach((name) => {
+                const cleanName = String(name || "").trim();
+                if (this.isLikelySynopsisPersonName(cleanName) && this.isLikelyChinesePersonName(cleanName)) {
+                    candidates.add(cleanName);
+                }
+            });
+        };
+
+        addCandidates(content.match(/[\u4e00-\u9fa5]{2,4}(?=说|道|笑|问|答|喊|叫|骂|点|看|走|站|坐|跑|想|觉|发现|看到|听到)/g) || []);
+
+        const quotedNames = [];
+        for (const match of content.matchAll(/["“”「」『』]([\u4e00-\u9fa5]{2,4})["“”「」『』]/g)) {
+            quotedNames.push(String(match[1] || "").trim());
+        }
+        addCandidates(quotedNames);
+
+        const relationTargets = [];
+        for (const match of content.matchAll(/(?:与|和|跟|同|向|对)([\u4e00-\u9fa5]{2,4})(?=[，。、！？\s]|$)/g)) {
+            relationTargets.push(String(match[1] || "").trim());
+        }
+        addCandidates(relationTargets);
+
+        return Array.from(candidates);
     }
 
     normalizeSynopsisReferenceText(project, text) {
-        return this.applyKnownSynopsisMappings(text, this.buildSynopsisStrictRealNameMapping(project));
+        const synopsisData = this.restoreSynopsisMainCharacters(project);
+        return this.applyKnownSynopsisMappings(text, synopsisData.vague_to_name_mapping || {});
     }
 
     mergeSynopsisStateFromGeneratedChapters(project, chapters, volumeNumber, inputs = {}) {
@@ -6639,6 +4633,15 @@
             `${inputs.concept || ""}\n${inputs.volumeSummary || ""}`,
             volumeNumber
         );
+        const synopsisData = this.restoreSynopsisMainCharacters(project);
+        synopsisData.vague_to_name_mapping = synopsisData.vague_to_name_mapping && typeof synopsisData.vague_to_name_mapping === "object"
+            ? synopsisData.vague_to_name_mapping
+            : {};
+        synopsisData.vague_supporting_roles = synopsisData.vague_supporting_roles && typeof synopsisData.vague_supporting_roles === "object"
+            ? synopsisData.vague_supporting_roles
+            : {};
+
+        const aliasToRole = this.buildSynopsisAliasToRoleMap();
         const text = [
             inputs.concept || "",
             inputs.volumeSummary || "",
@@ -6649,37 +4652,61 @@
             ].join("\n"))
         ].join("\n");
 
-        const appliedMappings = this.autoAssignSynopsisConcreteNames(project, text, volumeNumber);
-        const proactiveSupportingMappings = this.seedSynopsisSupportingCharacters(project, text, volumeNumber);
-        const synopsisData = this.restoreSynopsisMainCharacters(project);
+        const allVagueTerms = new Set([
+            ...Object.keys(aliasToRole),
+            ...Object.keys(synopsisData.vague_supporting_roles || {}),
+            "师兄", "师姐", "师弟", "师妹", "长老", "掌门", "师父", "师母", "同门", "死对头"
+        ]);
+        const explicitMappings = this.extractExplicitVagueNameMappings(text, Array.from(allVagueTerms));
+        const appliedMainMappings = [];
+        const appliedSupportingMappings = [];
+        const pendingTerms = [];
+
+        explicitMappings.forEach(({ vagueTerm, specificName }) => {
+            const role = aliasToRole[vagueTerm];
+            if (role) {
+                if (this.applySynopsisMainCharacter(project, role, specificName, volumeNumber)) {
+                    appliedMainMappings.push(`${vagueTerm}→${specificName}`);
+                }
+                return;
+            }
+
+            if (!this.isSafeSynopsisMapping(project, vagueTerm, specificName)) {
+                return;
+            }
+            synopsisData.vague_to_name_mapping[vagueTerm] = specificName;
+            this.lockSynopsisCharacterName(project, specificName, "配角", vagueTerm, volumeNumber);
+            if (synopsisData.vague_supporting_roles[vagueTerm]) {
+                synopsisData.vague_supporting_roles[vagueTerm].needs_name = false;
+                synopsisData.vague_supporting_roles[vagueTerm].suggested_name = specificName;
+            }
+            appliedSupportingMappings.push(`${vagueTerm}→${specificName}`);
+        });
 
         this.collectFrequentNamesFromText(text).forEach((name) => {
             const isMainCharacter = Object.values(synopsisData.main_characters || {}).includes(name);
-            this.lockSynopsisCharacterName(project, name, isMainCharacter ? "涓昏" : "閰嶈", isMainCharacter ? "涓昏" : "鏈煡", volumeNumber);
+            this.lockSynopsisCharacterName(project, name, isMainCharacter ? "主角" : "配角", isMainCharacter ? "主角" : "未知", volumeNumber);
         });
 
-        const pendingTerms = [];
-        this.collectSynopsisNameableTerms(text, project).forEach((term) => {
-            if (!term || synopsisData.vague_to_name_mapping?.[term]) {
-                return;
-            }
-            const current = synopsisData.vague_supporting_roles?.[term] || {};
-            synopsisData.vague_supporting_roles[term] = {
-                count: Number(current.count || 0) + 1,
-                needs_name: true,
-                suggested_name: current.suggested_name || ""
-            };
-            pendingTerms.push(term);
-        });
+        Array.from(allVagueTerms)
+            .sort((left, right) => right.length - left.length)
+            .forEach((term) => {
+                if (!text.includes(term) || synopsisData.vague_to_name_mapping[term]) {
+                    return;
+                }
+                const current = synopsisData.vague_supporting_roles[term] || {};
+                synopsisData.vague_supporting_roles[term] = {
+                    count: Number(current.count || 0) + 1,
+                    needs_name: true,
+                    suggested_name: current.suggested_name || ""
+                };
+                pendingTerms.push(term);
+            });
 
         project.synopsis_data = JSON.parse(JSON.stringify(synopsisData));
-        project.synopsisData = project.synopsis_data;
         return {
-            mainMappings: Array.from(new Set(appliedMappings.mainMappings || [])),
-            supportingMappings: Array.from(new Set([
-                ...(appliedMappings.supportingMappings || []),
-                ...proactiveSupportingMappings
-            ])),
+            mainMappings: appliedMainMappings,
+            supportingMappings: appliedSupportingMappings,
             pendingTerms: Array.from(new Set(pendingTerms)).slice(0, 12)
         };
     }
@@ -6704,14 +4731,14 @@
     async resolveMainCharacterNamesFromSynopsis({ project, chapters, volumeNumber, concept, volumeSummary }) {
         const synopsisData = this.restoreSynopsisMainCharacters(project);
         const chapterLines = (chapters || [])
-            .map((chapter) => chapter.line || `绗?{chapter.chapter_number || chapter.number}绔狅細${chapter.title || ""} - ${chapter.synopsis || chapter.key_event || ""}`)
+            .map((chapter) => chapter.line || `第${chapter.chapter_number || chapter.number}章：${chapter.title || ""} - ${chapter.synopsis || chapter.key_event || ""}`)
             .filter(Boolean);
 
         if (!chapterLines.length) {
             return { appliedMappings: [], evidence: {} };
         }
 
-        const unresolvedRoles = ["鐢蜂富", "濂充富"].filter((role) => {
+        const unresolvedRoles = ["男主", "女主"].filter((role) => {
             if (synopsisData.main_characters?.[role]) {
                 return false;
             }
@@ -6730,38 +4757,38 @@
             .slice(0, 20)
             .map(([vagueTerm, specificName]) => `- ${vagueTerm} -> ${specificName}`);
         const prompt = [
-            `璇锋牴鎹互涓嬩俊鎭紝璇嗗埆绗?{volumeNumber}鍗风珷鑺傜粏绾查噷宸茬粡鏄庣‘寤虹珛鐨勪富瑙掑悕瀛椼€俙,
+            `请根据以下信息，识别第${volumeNumber}卷章节细纲里已经明确建立的主角名字。`,
             "",
-            `寰呰瘑鍒鑹诧細${unresolvedRoles.join("銆?)}`,
+            `待识别角色：${unresolvedRoles.join("、")}`,
             "",
-            "瑙勫垯锛?,
-            "1. 鍙兘杩斿洖绔犺妭缁嗙翰閲屽凡缁忓疄闄呭嚭鐜拌繃鐨勫叿浣撲腑鏂囧悕瀛楋紝缁濆涓嶈兘鏂拌捣鍚嶃€?,
-            "2. 濡傛灉璇佹嵁涓嶈冻锛屽繀椤昏繑鍥炵┖瀛楃涓诧紝涓嶈鐚溿€?,
-            "3. 鍚屼竴涓悕瀛椾笉鑳藉悓鏃跺垎閰嶇粰涓や釜瑙掕壊銆?,
-            "4. 濡傛灉鏌愪釜瑙掕壊宸茬粡鏈夐攣瀹氬悕瀛楋紝灏变笉瑕佹敼鍐欍€?,
-            "5. 閲嶇偣鏄府鍔╁悗缁嵎娌跨敤宸茬‘瀹氬悕瀛楋紝涓嶈鎶婇厤瑙掕鍒ゆ垚涓昏銆?,
+            "规则：",
+            "1. 只能返回章节细纲里已经实际出现过的具体中文名字，绝对不能新起名。",
+            "2. 如果证据不足，必须返回空字符串，不要猜。",
+            "3. 同一个名字不能同时分配给两个角色。",
+            "4. 如果某个角色已经有锁定名字，就不要改写。",
+            "5. 重点是帮助后续卷沿用已确定名字，不要把配角误判成主角。",
             "",
-            "杈撳嚭涓ユ牸 JSON锛?,
+            "输出严格 JSON：",
             '{',
-            '  "main_characters": {"鐢蜂富": "", "濂充富": ""},',
-            '  "confidence": {"鐢蜂富": "楂?涓?浣?, "濂充富": "楂?涓?浣?},',
-            '  "evidence": {"鐢蜂富": "绠€杩颁緷鎹?, "濂充富": "绠€杩颁緷鎹?}',
+            '  "main_characters": {"男主": "", "女主": ""},',
+            '  "confidence": {"男主": "高/中/低", "女主": "高/中/低"},',
+            '  "evidence": {"男主": "简述依据", "女主": "简述依据"}',
             '}',
             "",
-            `鏁呬簨姒傚康锛歕n${concept || "鏆傛棤"}`,
+            `故事概念：\n${concept || "暂无"}`,
             "",
-            `鍒嗗嵎姒傝锛歕n${volumeSummary || "鏆傛棤"}`,
+            `分卷概要：\n${volumeSummary || "暂无"}`,
             "",
-            `褰撳墠宸茬煡鏄犲皠锛歕n${mappingLines.length ? mappingLines.join("\n") : "锛堟殏鏃狅級"}`,
+            `当前已知映射：\n${mappingLines.length ? mappingLines.join("\n") : "（暂无）"}`,
             "",
-            `绔犺妭缁嗙翰锛歕n${chapterLines.join("\n")}`
+            `章节细纲：\n${chapterLines.join("\n")}`
         ].join("\n");
 
         let parsed = null;
         try {
             const raw = await this.api.callLLM(
                 prompt,
-                "浣犳槸瑙掕壊鏄犲皠鏍″鍔╂墜銆傚彧鍋氫繚瀹堣瘑鍒紝涓嶈琛ュ啓鍓ф儏锛屼笉瑕佸彂鏁ｈВ閲娿€?,
+                "你是角色映射校对助手。只做保守识别，不要补写剧情，不要发散解释。",
                 {
                     temperature: 0.1,
                     maxTokens: Math.min(this.getConfiguredMaxTokens(1200), 4000)
@@ -6782,11 +4809,11 @@
             const name = String(parsed.main_characters?.[role] || "").trim();
             const confidence = String(parsed.confidence?.[role] || "").trim();
             const reason = String(parsed.evidence?.[role] || "").trim();
-            if (!name || !["楂?, "涓?].includes(confidence)) {
+            if (!name || !["高", "中"].includes(confidence)) {
                 return;
             }
             if (this.applySynopsisMainCharacter(project, role, name, volumeNumber)) {
-                appliedMappings.push(`${role}鈫?{name}`);
+                appliedMappings.push(`${role}→${name}`);
                 if (reason) {
                     evidence[role] = reason;
                 }
@@ -6821,57 +4848,51 @@
         extraOutputProtocol
     }) {
         const frequencyPrompt = frequency === "female"
-            ? "銆愰閬撹姹傘€戣繖鏄コ棰戝悜绔犺妭锛屼紭鍏堝己鍖栨儏鎰熸帹杩涖€佺粏鑵诲績鐞嗗拰鍏崇郴寮犲姏銆?
-            : "銆愰閬撹姹傘€戣繖鏄敺棰戝悜绔犺妭锛屼紭鍏堜繚璇佷富绾挎帹杩涖€佸啿绐佸崌绾у拰鎴愬氨鍙嶉銆?;
+            ? "【频道要求】这是女频向章节，优先强化情感推进、细腻心理和关系张力。"
+            : "【频道要求】这是男频向章节，优先保证主线推进、冲突升级和成就反馈。";
 
         const basePrompt = promptTemplate && promptTemplate.trim()
             ? promptTemplate
             : [
                 "{{frequency_prompt}}",
                 "",
-                "灏忚鏍囬锛歿{title}}",
-                "灏忚绫诲瀷锛歿{genre}}",
-                "鏍稿績涓婚锛歿{theme}}",
+                "小说标题：{{title}}",
+                "小说类型：{{genre}}",
+                "核心主题：{{theme}}",
                 "",
                 "{{world_and_plan_context}}",
                 "",
-                "銆愬綋鍓嶅嵎淇℃伅銆?,
-                "鍗峰悕锛歿{current_volume}}",
-                "鍗锋憳瑕侊細{{current_volume_summary}}",
+                "【当前卷信息】",
+                "卷名：{{current_volume}}",
+                "卷摘要：{{current_volume_summary}}",
                 "",
-                "銆愬綋鍓嶅嵎缁嗙翰鍙傝€冦€?,
+                "【当前卷细纲参考】",
                 "{{current_volume_outline_context}}",
                 "",
-                "銆愭湰绔犲ぇ绾层€?,
+                "【本章大纲】",
                 "{{outline}}",
                 "",
                 "{{opening_relay_packet}}",
                 "",
-                "銆愬墠鏂囧ぇ绾叉憳瑕併€?,
+                "【前文大纲摘要】",
                 "{{previous_outline_context}}",
                 "",
-                "銆愬墠鏂囩姸鎬佹憳瑕併€?,
+                "【前文状态摘要】",
                 "{{story_state_summary}}",
                 "",
                 "{{narrative_bridge_plan}}",
                 "",
-                "銆愮浉鍏充汉鐗╄瀹氥€?,
+                "【相关人物设定】",
                 "{{relevant_characters}}",
                 "",
-                "【角色设定使用规则】",
-                "相关人物设定只用于锁定身份、关系、口吻、目标和外观事实，不要把设定里的原句、标签词、描述短语直接抄进正文。",
-                "同一角色的标志性描述一章里最多点到一次，不要反复拿同一句当出场模板。",
-                "不要反复使用‘死死、狠狠、剧烈、用力’这类副词硬顶强度，也不要老写‘胸口起伏’‘衣料随呼吸起伏’‘手指抠住边缘’这类假身体反应句。",
-                "写人物冷淡、傲慢、敷衍时，不要老用‘连眼皮都没抬’‘看都没看’‘头也不抬’这种高频短句，要改用动作、停顿、回话方式来体现。",
-                "",
-                "銆愬墠鏂囦簲绔犮€?,
-                "鐢ㄩ€旓細鍙敤浜庣户鎵垮悕璇嶃€佺姸鎬併€佸彛鍚诲拰鍔ㄤ綔寤剁画锛屼笉瑕佹嬁瀹冨綋浣滄湰绔犲紑澶寸殑澶嶈堪妯℃澘銆?,
+                "【前文五章】",
+                "用途：只用于继承名词、状态、口吻和动作延续，不要拿它当作本章开头的复述模板。",
                 "{{prev_content}}",
                 "",
-                "銆愬叏灞€璁惧畾鎻愰啋銆?,
+                "【全局设定提醒】",
                 "{{global_setting_note}}",
                 "",
-                "銆愭湰绔犺瀹氭彁閱掋€?,
+                "【本章设定提醒】",
                 "{{chapter_setting_note}}",
                 "",
                 "{{transition_guide}}",
@@ -6884,26 +4905,26 @@
                 "",
                 "{{next_chapter_forbidden_preview}}",
                 "",
-                "鍐欎綔閾佸緥锛?,
-                "1. 銆愬悕璇嶄笌鐘舵€佺户鎵裤€戣浠旂粏闃呰涓婃柟銆愬墠鏂囦簲绔犮€戝拰绯荤粺绾︽潫銆備汉鐗┿€佺墿鍝併€佸姛娉曘€佷慨涓恒€佺郴缁熷鍔便€佸湴鐐圭О鍛肩瓑鍚嶈瘝锛屽繀椤绘棤鏉′欢娌跨敤鍓嶆枃宸茬粡纭畾濂界殑鍥哄畾鍚嶇О鍜岀姸鎬侊紝缁濅笉鍏佽鎹㈠悕瀛楁垨鍚冧功銆?,
-                "2. 銆愬ぇ绾叉墽琛屼紭鍏堛€戝墽鎯呬富绾垮繀椤婚伒瀹堟湰绔犮€愬ぇ绾层€戠殑鍙戝睍杞ㄨ抗锛岀粷涓嶈兘鑴辩涓荤嚎璺戝亸銆?,
-                "3. 銆愯鑲夊～鍏呬笌閫傚害鎵╁厖銆戝ぇ绾插彧鏄鏋讹紝浣犺鍦ㄤ弗鏍奸伒瀹堜富绾垮拰鍓嶆枃璁惧畾鐨勫熀纭€涓婏紝涓板瘜鍔ㄤ綔銆佸績鐞嗐€佸璇濄€佺幆澧冨拰鍗氬紙杩囩▼銆?,
-                "4. 銆愭嫆缁濇祦姘磋处銆戝鏋滃ぇ绾插彧鏈変竴鍙ヨ瘽锛屼篃瑕佹墿鎴愭湁娉㈡姌銆佹湁缁嗚妭銆佹湁鎯呯华璧蜂紡鐨勫畬鏁寸珷鑺傦紝涓嶈兘涓€绗斿甫杩囥€?,
-                "5. 銆愰€昏緫鑷唇銆戝鏋滃ぇ绾茶〃杩扮暐绮楋紝浣犺鑷姩琛ヨ冻鍚堢悊鍥犳灉锛岃鍓ф儏鏇撮『锛屼絾涓嶈兘鏀逛富绾跨粨鏋溿€?,
-                "6. 銆愬嵎杈圭晫銆戝彧鑳藉啓褰撳墠鍗疯寖鍥村唴鐨勫墽鎯咃紝涓嶈鎻愬墠鍐欏悗缁嵎鐨勬牳蹇冨湴鍥俱€佹牳蹇冧汉鐗┿€佹牳蹇冨啿绐併€?,
-                "7. 銆愭壙鎺ヤ笂绔犻摵鍨€戝鏋滀笂涓€绔犵粨灏惧凡缁忕暀涓嬩笅绔犻摵鍨紝鏈珷寮€澶村繀椤诲厛鎺ヤ綇閭ｆ潯閾哄灚锛屽啀鎺ㄨ繘鏈珷涓讳簨浠躲€?,
-                "8. 銆愪簨浠舵椂鎬佹纭€戝墠鏂囧凡缁忓彂鐢熺殑浜嬶紝姝ｆ枃閲屼笉鑳藉啀鍐欐垚椹笂瑕佸彂鐢熸垨鍒氳鍙戠敓銆?,
+                "写作铁律：",
+                "1. 【名词与状态继承】请仔细阅读上方【前文五章】和系统约束。人物、物品、功法、修为、系统奖励、地点称呼等名词，必须无条件沿用前文已经确定好的固定名称和状态，绝不允许换名字或吃书。",
+                "2. 【大纲执行优先】剧情主线必须遵守本章【大纲】的发展轨迹，绝不能脱离主线跑偏。",
+                "3. 【血肉填充与适度扩充】大纲只是骨架，你要在严格遵守主线和前文设定的基础上，丰富动作、心理、对话、环境和博弈过程。",
+                "4. 【拒绝流水账】如果大纲只有一句话，也要扩成有波折、有细节、有情绪起伏的完整章节，不能一笔带过。",
+                "5. 【逻辑自洽】如果大纲表述略粗，你要自动补足合理因果，让剧情更顺，但不能改主线结果。",
+                "6. 【卷边界】只能写当前卷范围内的剧情，不要提前写后续卷的核心地图、核心人物、核心冲突。",
+                "7. 【承接上章铺垫】如果上一章结尾已经留下下章铺垫，本章开头必须先接住那条铺垫，再推进本章主事件。",
+                "8. 【事件时态正确】前文已经发生的事，正文里不能再写成马上要发生或刚要发生。",
                 "",
-                "鍐欎綔瑕佹眰锛?,
-                "1. 蹇呴』涓ユ牸閬靛畧鏈珷澶х翰銆佸叏灞€璁惧畾銆佹湰绔犺瀹氥€佷笘鐣岃銆佽缁嗗ぇ绾插弬鑰冨拰瑙掕壊閿佸畾銆?,
-                "2. 寮€澶村繀椤绘壙鎺ュ墠鏂囦簲绔犲拰绔犳湯蹇収锛屼腑闂存帹杩涘墽鎯咃紝缁撳熬瀹屾垚鏈珷閾哄灚浠诲姟銆?,
-            "3. 浜虹墿琛屼负銆佸璇濄€佺墿鍝併€佹妧鑳姐€佽韩浠姐€佹椂闂村湴鐐瑰繀椤讳笌鏃㈡湁鐘舵€佷竴鑷淬€?,
-            "4. 涓嶈鎶婁笅涓€绔犳牳蹇冧簨浠舵彁鍓嶅睍寮€锛屽彧鑳藉仛閾哄灚銆?,
-            "5. 灏氭湭姝ｅ紡瑙侀潰鐨勮鑹诧紝涓嶈兘绐佺劧鍐欐垚鐔熶汉浜掑姩锛涙ā绯婄О鍛煎敖閲忔敼鎴愮湡瀹炲鍚嶃€?,
-            "6. 濡傛灉涓婁竴绔犳儏缁繕娌¤惤涓嬶紝鏈珷寮€澶磋寤剁画閭ｈ偂鎯呯华锛屼笉瑕佺獊鐒舵崲棰戦亾銆?,
-            "7. 濡傛灉鍓嶆枃浜ゆ帴鐣ョ敓纭紝瑕佺敤鍔ㄤ綔銆佸璇濄€佸満鏅彉鍖栬嚜鐒惰ˉ妗ワ紝涓嶈鐢熺‖璺冲垏銆?,
-            "8. 鏈珷缁撳熬蹇呴』鍋滃湪閽╁瓙涓婏紝鍗″湪涓嬩竴绔犳牳蹇冧簨浠跺彂鐢熷墠鏈€鏈夊紶鍔涚殑涓€鍒伙紝缁濆涓嶈兘鎶婁笅涓€绔犲唴瀹瑰厛鍐欒繘鍘汇€?,
-            "9. 姝ｆ枃鍐欏畬鍚庯紝蹇呴』鎸変笅闈㈠崗璁拷鍔犺拷韪緭鍑恒€?,
+                "写作要求：",
+                "1. 必须严格遵守本章大纲、全局设定、本章设定、世界观、详细大纲参考和角色锁定。",
+                "2. 开头必须承接前文五章和章末快照，中间推进剧情，结尾完成本章铺垫任务。",
+            "3. 人物行为、对话、物品、技能、身份、时间地点必须与既有状态一致。",
+            "4. 不要把下一章核心事件提前展开，只能做铺垫。",
+            "5. 尚未正式见面的角色，不能突然写成熟人互动；模糊称呼尽量改成真实姓名。",
+            "6. 如果上一章情绪还没落下，本章开头要延续那股情绪，不要突然换频道。",
+            "7. 如果前文交接略生硬，要用动作、对话、场景变化自然补桥，不要生硬跳切。",
+            "8. 本章结尾必须停在钩子上，卡在下一章核心事件发生前最有张力的一刻，绝对不能把下一章内容先写进去。",
+            "9. 正文写完后，必须按下面协议追加追踪输出。",
             "",
             "{{state_output_protocol}}",
             "",
@@ -6916,27 +4937,27 @@
             genre: project.outline.subgenre || project.outline.genre || "",
             theme: project.outline.theme || "",
             worldbuilding: project.outline.worldbuilding || "",
-            world_and_plan_context: worldAndPlanContext || "銆愪笘鐣岃鏍稿績璁惧畾銆戞殏鏃燶n\n銆愯缁嗗ぇ绾插弬鑰冦€戞殏鏃?,
-            current_volume_outline_context: currentVolumeOutlineContext ? this.limitContext(currentVolumeOutlineContext, 1800) : "鏆傛棤鏄庣‘褰撳墠鍗风粏绾插垏鐗?,
-            relevant_characters: characterDigest || "鏆傛棤鏄庣‘瑙掕壊璁惧畾",
+            world_and_plan_context: worldAndPlanContext || "【世界观核心设定】暂无\n\n【详细大纲参考】暂无",
+            current_volume_outline_context: currentVolumeOutlineContext ? this.limitContext(currentVolumeOutlineContext, 1800) : "暂无明确当前卷细纲切片",
+            relevant_characters: characterDigest || "暂无明确角色设定",
             outline: chapter.summary || "",
             chapter_number: chapter.number || "",
             chapter_title: chapter.title || "",
-            opening_relay_packet: openingRelayPacket || "銆愬紑绡囨帴鍔涙銆慭n鏈珷寮€澶寸洿鎺ユ壙鎺ヤ笂涓€绔犵殑缁撴灉涓庣幇鍦猴紝涓嶈澶嶈堪鍓嶆儏銆?,
-            previous_outline_context: previousOutlineContext || "鏆傛棤鍓嶆枃澶х翰",
-            story_state_summary: storyStateSummary || "鏆傛棤鏄庣‘鍓嶆枃鐘舵€佹憳瑕?,
-            narrative_bridge_plan: narrativeBridgePlan || "銆愭湰绔犺妭濂忔墽琛岄鏋躲€慭n鍏堟帴涓婄珷缁撴灉锛屽啀鎺ㄨ繘鏈珷涓讳簨浠讹紝涓褰㈡垚娉㈡姌锛岀粨灏惧仠鍦ㄤ笅涓€姝ュ紶鍔涚偣銆?,
-            prev_content: prevContent || "鏆傛棤鍓嶆枃",
-            next_outline: nextOutline || "鏆傛棤涓嬩竴绔犵珷绾?,
-            global_setting_note: project.global_setting_note || "鏆傛棤",
-            chapter_setting_note: chapter.chapter_setting_note || "鏆傛棤",
-            transition_guide: transitionGuide || "銆愬紑绔犺鎺ユ寚瀵笺€戣鐩存帴鎵挎帴涓婁竴绔犳渶鍚庝竴涓湁鏁堝満鏅笌鐘舵€佸睍寮€锛屼笉瑕佸钩鍦伴噸寮€銆?,
-            setup_continuity_guard: setupContinuityGuard || "銆愪笅绔犻摵鍨壙鎺ヨ鍒欍€戝鏋滀笂涓€绔犳病鏈夋槑纭摵鍨紝灏辨寜鏈珷澶х翰鑷劧璧峰娍锛屼笉瑕佺‖鎻掓柊鍐茬獊銆?,
-            expansion_hint: expansionHint || "銆愭櫤鑳芥墿鍐欏缓璁€戝彲鍥寸粫鏈珷鏍稿績浜嬩欢琛ュ厖鍔ㄤ綔缁嗚妭銆佷汉鐗╁績鐞嗐€佸璇濆崥寮堛€佺幆澧冨弽棣堝拰浼忕瑪鍛煎簲銆?,
+            opening_relay_packet: openingRelayPacket || "【开篇接力棒】\n本章开头直接承接上一章的结果与现场，不要复述前情。",
+            previous_outline_context: previousOutlineContext || "暂无前文大纲",
+            story_state_summary: storyStateSummary || "暂无明确前文状态摘要",
+            narrative_bridge_plan: narrativeBridgePlan || "【本章节奏执行骨架】\n先接上章结果，再推进本章主事件，中段形成波折，结尾停在下一步张力点。",
+            prev_content: prevContent || "暂无前文",
+            next_outline: nextOutline || "暂无下一章章纲",
+            global_setting_note: project.global_setting_note || "暂无",
+            chapter_setting_note: chapter.chapter_setting_note || "暂无",
+            transition_guide: transitionGuide || "【开章衔接指导】请直接承接上一章最后一个有效场景与状态展开，不要平地重开。",
+            setup_continuity_guard: setupContinuityGuard || "【下章铺垫承接规则】如果上一章没有明确铺垫，就按本章大纲自然起势，不要硬插新冲突。",
+            expansion_hint: expansionHint || "【智能扩写建议】可围绕本章核心事件补充动作细节、人物心理、对话博弈、环境反馈和伏笔呼应。",
             current_volume: volume.title || "",
             current_volume_summary: volume.summary || "",
-            next_chapter_setup_instruction: nextChapterSetupInstruction || "銆愭湰绔犵粨灏鹃摵鍨换鍔°€戝綋鍓嶇珷绾叉湭鎻愪緵 next_chapter_setup锛屽彲鑷鍋氳交搴︽偓蹇甸摵鍨€?,
-            next_chapter_forbidden_preview: nextChapterForbiddenPreview || "銆愬悗缁墽鎯呴鍛婏紙涓嬩竴绔犲墽鎯咃級 - 缁濆涓嶅彲鍐欍€戞殏鏃犱笅涓€绔犵珷绾层€?,
+            next_chapter_setup_instruction: nextChapterSetupInstruction || "【本章结尾铺垫任务】当前章纲未提供 next_chapter_setup，可自行做轻度悬念铺垫。",
+            next_chapter_forbidden_preview: nextChapterForbiddenPreview || "【后续剧情预告（下一章剧情） - 绝对不可写】暂无下一章章纲。",
             state_output_protocol: stateOutputProtocol || "",
             extra_output_protocol: extraOutputProtocol || ""
         };
@@ -6948,35 +4969,35 @@
         });
 
         const hardPinnedFrontMatter = [
-            "銆愭渶楂樹紭鍏堢骇锛氬綋鍓嶇珷鎵ц浠诲姟銆?,
-            `褰撳墠鍙厑璁告墿鍐欑${chapter.number || "?"}绔犮€?{chapter.title || "鏈懡鍚嶇珷鑺?}銆嬬殑姝ｆ枃銆俙,
-            "涓栫晫瑙傘€佽缁嗗ぇ绾层€佸嵎缁嗙翰銆佸墠鏂囩姸鎬侀兘鍙兘杈呭姪褰撳墠绔狅紝缁濅笉鑳借鐩栧綋鍓嶇珷鐨勫ぇ绾茶姹傘€?,
-            "濡傛灉浠讳竴杈呭姪淇℃伅涓庢湰绔犲ぇ绾茬湅浼煎啿绐侊紝浠ャ€愭湰绔犲ぇ绾层€戝拰涓婁竴绔犵粨灏剧殑鐩存帴琛旀帴涓哄噯銆?,
+            "【最高优先级：当前章执行任务】",
+            `当前只允许扩写第${chapter.number || "?"}章《${chapter.title || "未命名章节"}》的正文。`,
+            "世界观、详细大纲、卷细纲、前文状态都只能辅助当前章，绝不能覆盖当前章的大纲要求。",
+            "如果任一辅助信息与本章大纲看似冲突，以【本章大纲】和上一章结尾的直接衔接为准。",
             "",
-            "銆愭湰绔犲ぇ绾诧紙蹇呴』閫愭潯钀藉疄锛夈€?,
-            chapter.summary || "鏆傛棤鏈珷澶х翰",
+            "【本章大纲（必须逐条落实）】",
+            chapter.summary || "暂无本章大纲",
             "",
             openingRelayPacket || "",
             "",
-            "銆愬墠鏂囧師鏂囦娇鐢ㄨ鍒欍€?,
-            "鍓嶄簲绔犲師鏂囩户缁畬鏁存彁渚涚粰妯″瀷锛屼絾鍙兘鐢ㄦ潵缁ф壙浜嬪疄銆佸悕璇嶃€佺姸鎬佸拰璇皵锛屼笉鍏佽鎶婂叾涓凡瀹屾垚鍐呭鏀瑰啓鎴愭柊绔犲紑澶淬€?,
+            "【前文原文使用规则】",
+            "前五章原文继续完整提供给模型，但只能用来继承事实、名词、状态和语气，不允许把其中已完成内容改写成新章开头。",
             "",
-            "銆愬墠鏂囦簲绔狅紙閲嶇偣鐪嬫渶鍚庝竴绔犵粨灏撅級銆?,
-            prevContent || "鏆傛棤鍓嶆枃",
+            "【前文五章（重点看最后一章结尾）】",
+            prevContent || "暂无前文",
             "",
-            "銆愬紑绔犺鎺ユ寚瀵笺€?,
-            transitionGuide || "璇风洿鎺ユ壙鎺ヤ笂涓€绔犳渶鍚庝竴涓湁鏁堝満鏅笌鐘舵€佸睍寮€锛屼笉瑕佸钩鍦伴噸寮€銆?
+            "【开章衔接指导】",
+            transitionGuide || "请直接承接上一章最后一个有效场景与状态展开，不要平地重开。"
         ].join("\n");
 
         const desktopInvariantBundle = [
-            storyStateSummary ? `銆愬綋鍓嶆晠浜嬬姸鎬侊紙蹇呴』寤剁画锛夈€慭n${storyStateSummary}` : "",
+            storyStateSummary ? `【当前故事状态（必须延续）】\n${storyStateSummary}` : "",
             narrativeBridgePlan || "",
-            previousOutlineContext ? `銆愬墠鏂囧ぇ绾叉憳瑕併€慭n${previousOutlineContext}` : "",
-            currentVolumeOutlineContext ? `銆愬綋鍓嶅嵎缁嗙翰鍙傝€冦€慭n${this.limitContext(currentVolumeOutlineContext, 1800)}` : "",
+            previousOutlineContext ? `【前文大纲摘要】\n${previousOutlineContext}` : "",
+            currentVolumeOutlineContext ? `【当前卷细纲参考】\n${this.limitContext(currentVolumeOutlineContext, 1800)}` : "",
             worldAndPlanContext ? worldAndPlanContext : "",
-            characterDigest ? `銆愭湰绔犲嚭鍦?鐩稿叧瑙掕壊璁惧畾锛堥槻宕╁潖鍙傝€冿級銆慭n${characterDigest}` : "",
-            project.global_setting_note ? `銆愬叏灞€璁惧畾鎻愰啋銆慭n${project.global_setting_note}` : "",
-            chapter.chapter_setting_note ? `銆愭湰绔犺瀹氭彁閱掋€慭n${chapter.chapter_setting_note}` : "",
+            characterDigest ? `【本章出场/相关角色设定（防崩坏参考）】\n${characterDigest}` : "",
+            project.global_setting_note ? `【全局设定提醒】\n${project.global_setting_note}` : "",
+            chapter.chapter_setting_note ? `【本章设定提醒】\n${chapter.chapter_setting_note}` : "",
             setupContinuityGuard || "",
             openingAntiRepeatGuard || "",
             expansionHint || "",
@@ -6989,8 +5010,8 @@
         return [
             hardPinnedFrontMatter,
             desktopInvariantBundle,
-            "銆愯ˉ鍏呭啓浣滄ā鏉裤€?,
-            "浠ヤ笅鍐呭鏄ˉ鍏呭啓浣滆姹傦紝浼樺厛绾т綆浜庡墠闈㈢殑鍒氭€х害鏉燂紝涓嶅緱瑕嗙洊鏈珷澶х翰涓庣姸鎬佽鎺ヨ鍒欍€?,
+            "【补充写作模板】",
+            "以下内容是补充写作要求，优先级低于前面的刚性约束，不得覆盖本章大纲与状态衔接规则。",
             output
         ].filter(Boolean).join("\n\n");
     }
@@ -7001,59 +5022,59 @@
         const characterNames = Array.from(new Set(names.length ? names : fallbackNames)).slice(0, 8);
 
         return [
-            "銆愮姸鎬佽緭鍑哄崗璁€?,
-            "姝ｆ枃瀹屾垚鍚庯紝璇峰湪鏂囨湯杩藉姞鍒嗛殧绗?<<<STATE_JSON>>> 锛岀劧鍚庤緭鍑轰竴涓?JSON 瀵硅薄锛岀敤浜庣郴缁熻拷韪姸鎬併€?,
-            `閲嶇偣璺熻釜瑙掕壊锛?{characterNames.length ? characterNames.join("銆?) : "璇疯嚜鍔ㄨ瘑鍒湰绔犱富瑕佽鑹?}`,
-            "JSON 绀轰緥锛?,
+            "【状态输出协议】",
+            "正文完成后，请在文末追加分隔符 <<<STATE_JSON>>> ，然后输出一个 JSON 对象，用于系统追踪状态。",
+            `重点跟踪角色：${characterNames.length ? characterNames.join("、") : "请自动识别本章主要角色"}`,
+            "JSON 示例：",
             "<<<STATE_JSON>>>",
             "{",
-            '  "timeline": "褰撳墠鏁呬簨鏃堕棿鐐?,',
-            '  "current_location": "鏈珷缁撴潫鏃朵富瑙掓墍鍦ㄤ綅缃?,',
-            '  "important_items": "鏈珷鏂板鎴栧彉鍖栫殑閲嶈鐗╁搧",',
+            '  "timeline": "当前故事时间点",',
+            '  "current_location": "本章结束时主角所在位置",',
+            '  "important_items": "本章新增或变化的重要物品",',
             '  "item_updates": [',
             '    {',
-            '      "name": "鐗╁搧鍚?,',
-            '      "holder": "褰撳墠鎸佹湁鑰?,',
-            '      "status": "鎸佹湁/浣跨敤涓?鎹熷潖/涓㈠け/娑堣€?,',
-            '      "type": "鐗╁搧绫诲瀷",',
-            '      "description": "鏈珷閲屽畠鐜板湪鏄粈涔堟牱",',
-            '      "source": "鑾峰緱/杞Щ鍘熷洜",',
+            '      "name": "物品名",',
+            '      "holder": "当前持有者",',
+            '      "status": "持有/使用中/损坏/丢失/消耗",',
+            '      "type": "物品类型",',
+            '      "description": "本章里它现在是什么样",',
+            '      "source": "获得/转移原因",',
             '      "temporary": false',
             "    }",
             "  ],",
-            '  "pending_plots": "鏈珷鐣欎笅鐨勫緟鎺ㄨ繘浜嬮」",',
-            '  "key_event": "鏈珷鏈€鍏抽敭鐨勪竴浠朵簨",',
-            '  "genre_progress": ["澶氶鏉愯繘搴︼紙鏍煎紡锛氳鑹插悕锛氬彉鍖栵級"],',
+            '  "pending_plots": "本章留下的待推进事项",',
+            '  "key_event": "本章最关键的一件事",',
+            '  "genre_progress": ["多题材进度（格式：角色名：变化）"],',
             '  "world_changes": {',
             '    "new_locations": [],',
             '    "character_movements": [],',
             '    "org_changes": [],',
             '    "offscreen_status": []',
             "  },",
-            '  "time_constraints": ["浠嶅湪鎸佺画鐨勬椂闂寸害鏉熸垨鍊掕鏃?],',
+            '  "time_constraints": ["仍在持续的时间约束或倒计时"],',
             '  "characters": {',
-            '    "瑙掕壊鍚?: {',
-            '      "cultivation": "淇负/瀹炲姏鍙樺寲",',
-            '      "location": "褰撳墠浣嶇疆",',
-            '      "identity": "韬唤鍙樺寲",',
-            '      "status": "韬綋/绮剧鐘舵€?,',
-            '      "appearance": "褰撳墠澶栬矊/浼/鍙椾激/鑴忔薄绛夊舰璞＄姸鎬?,',
-            '      "real_appearance": "鑻ユ湰绔犲嚭鐜颁吉瑁呮垨鍙樿韩锛屽啓鐪熷疄褰㈣薄",',
-            '      "appearance_change": "鏈珷褰㈣薄鍙樺寲鎽樿",',
-            '      "possessions": "鍏抽敭鐗╁搧鍙樺寲",',
-            '      "relationships": "鍏崇郴鍙樺寲",',
-            '      "goals": "褰撳墠鐩爣",',
-            '      "secrets": "鐭ユ檽鎴栨毚闇茬殑绉樺瘑"',
+            '    "角色名": {',
+            '      "cultivation": "修为/实力变化",',
+            '      "location": "当前位置",',
+            '      "identity": "身份变化",',
+            '      "status": "身体/精神状态",',
+            '      "appearance": "当前外貌/伪装/受伤/脏污等形象状态",',
+            '      "real_appearance": "若本章出现伪装或变身，写真实形象",',
+            '      "appearance_change": "本章形象变化摘要",',
+            '      "possessions": "关键物品变化",',
+            '      "relationships": "关系变化",',
+            '      "goals": "当前目标",',
+            '      "secrets": "知晓或暴露的秘密"',
             "    }",
             "  },",
             '  "appearance_changes": [',
             '    {',
-            '      "name": "瑙掕壊鍚?,',
-            '      "current_appearance": "鏈珷缁撴潫鏃惰鑹插澶栧憟鐜扮殑褰㈣薄",',
-            '      "real_appearance": "鐪熷疄澶栬矊锛堣嫢鏈変吉瑁?鍙樿韩锛?,',
-            '      "change_type": "姝ｅ父/浼/鍙椾激/鑴忔薄/鎭㈠/鍙樿韩",',
-            '      "reason": "鍙樺寲鍘熷洜",',
-            '      "duration": "鎸佺画鍒颁綍鏃讹紝鍙暀绌?',
+            '      "name": "角色名",',
+            '      "current_appearance": "本章结束时角色对外呈现的形象",',
+            '      "real_appearance": "真实外貌（若有伪装/变身）",',
+            '      "change_type": "正常/伪装/受伤/脏污/恢复/变身",',
+            '      "reason": "变化原因",',
+            '      "duration": "持续到何时，可留空"',
             "    }",
             "  ]",
             "}"
@@ -7062,35 +5083,35 @@
 
     buildExtraOutputProtocol() {
         return [
-            "銆愰檮鍔犺拷韪緭鍑恒€?,
-            "姝ｆ枃鍚庤缁х画鎸変互涓嬫牸寮忚拷鍔狅紝渚夸簬绯荤粺杩借釜锛?,
-            "鍏堝～鍐?<<<CHARACTER_APPEARANCE>>>锛屽彧璁板綍鏈珷姝ｆ枃閲岀湡姝ｅ啓鍑烘潵鐨勫疄鍚?鍥哄畾绉板懠銆?,
-            "瑙掕壊鍚嶅繀椤诲拰姝ｆ枃閫愬瓧涓€鑷达紝鍙互鍐欑帇骞蹭簨銆佽档甯堝倕銆佹潕濠跺瓙锛屼笉鑳藉啓骞蹭簨銆佷汉浜嬬闀裤€佸摥璇夋灄涔︺€佸ス鐨勮€佽档銆佷笉鑻熻█绗戙€佸娍鍒╃溂銆?,
-            "涓嶈鏍规嵁澶х翰銆佽韩浠姐€佸姩浣溿€佹儏缁€佷唬璇嶅幓琛ラ€犲悕瀛楋紱姝ｆ枃閲屾病鏄庣‘鍐欏嚭鏉ワ紝灏变笉瑕佺櫥璁般€?,
+            "【附加追踪输出】",
+            "正文后请继续按以下格式追加，便于系统追踪：",
+            "先填写 <<<CHARACTER_APPEARANCE>>>，只记录本章正文里真正写出来的实名/固定称呼。",
+            "角色名必须和正文逐字一致，可以写王干事、赵师傅、李婶子，不能写干事、人事科长、哭诉林书、她的老赵、不苟言笑、势利眼。",
+            "不要根据大纲、身份、动作、情绪、代词去补造名字；正文里没明确写出来，就不要登记。",
             "",
             "<<<CHARACTER_APPEARANCE>>>",
-            "瑙掕壊鍚峾韬唤|棣栨鍑哄満",
-            "瑙掕壊A|瑙掕壊B|鍏崇郴鎻忚堪|棣栨瑙侀潰",
+            "角色名|身份|首次出场",
+            "角色A|角色B|关系描述|首次见面",
             "<<<END_APPEARANCE>>>",
             "",
-            "鍐嶅～鍐?<<<EXTRA_CHARACTERS>>>銆?,
-            "榫欏瑙掕壊鍙兘浠庝笂闈㈢殑 <<<CHARACTER_APPEARANCE>>> 瑙掕壊鍚嶅崟閲屽鍒讹紝涓斿彧淇濈暀銆愪汉鐗╄瀹氶噷娌℃湁銆戠殑鏂颁复鏃朵汉鐗┿€?,
-            "濡傛灉鏈珷娌℃湁鏂板榫欏锛屽氨鍐欙細榫欏瑙掕壊锛氭棤",
+            "再填写 <<<EXTRA_CHARACTERS>>>。",
+            "龙套角色只能从上面的 <<<CHARACTER_APPEARANCE>>> 角色名单里复制，且只保留【人物设定里没有】的新临时人物。",
+            "如果本章没有新增龙套，就写：龙套角色：无",
             "",
             "<<<EXTRA_CHARACTERS>>>",
-            "榫欏瑙掕壊锛氳鑹插悕1锛堢畝鍗曠壒鐐癸級锛岃鑹插悕2锛堢畝鍗曠壒鐐癸級",
-            "涓存椂鏀嚎锛氭敮绾挎弿杩?,
+            "龙套角色：角色名1（简单特点），角色名2（简单特点）",
+            "临时支线：支线描述",
             "<<<END_EXTRA>>>",
             "",
             "<<<FORESHADOWS>>>",
-            "鏂板煁锛?,
-            "1. 浼忕瑪鍐呭锛堜紡绗旂被鍨嬶級锛岃鍒掔X绔犲洖鏀?,
-            "鍥炴敹锛?,
-            "1. 宸插洖鏀剁殑浼忕瑪鎻忚堪",
+            "新埋：",
+            "1. 伏笔内容（伏笔类型），计划第X章回收",
+            "回收：",
+            "1. 已回收的伏笔描述",
             "<<<END_FORESHADOWS>>>",
             "",
             "<<<PERSONALITY_CHANGE>>>",
-            "瑙掕壊鍚峾浜嬩欢鎻忚堪|鏃ф€ф牸|鏂版€ф牸|杞彉鍘熷洜",
+            "角色名|事件描述|旧性格|新性格|转变原因",
             "<<<END_PERSONALITY_CHANGE>>>"
         ].join("\n");
     }
@@ -7102,41 +5123,41 @@
         }
 
         const keywordRules = [
-            { pattern: /娴嬬伒|娴嬭瘯|鑰冩牳|璇勪及|閫夋嫈/, tips: ["绐佸嚭瑙勫垯鍘嬪姏涓庣粨鏋滄偓蹇?, "鍔犲叆鍥磋鑰呭弽搴斿拰璇勪环鍙嶅樊"] },
-            { pattern: /姣旀|鎿傚彴|绔炶禌|姣旇禌|瀵瑰喅/, tips: ["缁嗗寲鎴樻湳鍗氬紙涓庤妭濂忓彉鍖?, "鍐欏嚭瑙備紬銆佽鍒ゆ垨瀵规墜鐨勫績鐞嗗弽棣?] },
-            { pattern: /淇偧|缁冨姛|绐佺牬|闂叧|鍙傛偀/, tips: ["澧炲姞韬綋鎰熷彈銆佺摱棰堥樆鍔涗笌椤挎偀缁嗚妭", "璁╃獊鐮村拰鍓嶆枃璧勬簮/浼忕瑪褰㈡垚鍥犳灉"] },
-            { pattern: /鐐间腹|鐐煎櫒|鐐艰嵂|閿婚€?, tips: ["琛ュ厖姝ラ澶辫触椋庨櫓鍜屾潗鏂欑粏鑺?, "鍐欏嚭鎴愬搧甯︽潵鐨勫嵆鏃跺弽棣?] },
-            { pattern: /鎺㈤櫓|瀵诲疂|鎺㈢储|鍙戠幇|绉樺/, tips: ["寮哄寲鐜鏈哄叧銆佹湭鐭ユ劅鍜屾帰绱㈠眰娆?, "璁╁彂鐜扮嚎绱笌鍚庣画鍐茬獊鎸傞挬"] },
-            { pattern: /杩涘叆|闂叆|娼滃叆|鍏ヤ镜/, tips: ["澧炲姞娼滆椋庨櫓銆佹毚闇查闄╁拰涓村満搴斿彉", "鍐欐竻妤氳矾绾裤€侀樆纰嶅拰鍘嬭揩鎰?] },
-            { pattern: /鎴樻枟|瀵规垬|浜ゆ墜|鍘潃/, tips: ["閬垮厤鍙姤鎷涘紡锛岃鍐欏眬鍔垮彉鍖栧拰鎯呯华璧蜂紡", "琛ヨ冻鎴樻枟鍚庢灉锛屽奖鍝嶄笅涓€鍦哄墽鎯?] },
-            { pattern: /鍐茬獊|浜夋墽|瀵瑰硻|绾犵悍/, tips: ["璁╁璇濆悇鑷甫绔嬪満鍜岄殣鍚瘔姹?, "鎶婂啿绐佺粨鏋滆惤鍒颁汉鐗╁叧绯诲彉鍖栦笂"] },
-            { pattern: /鐪熺浉|绉樺瘑|韬唤|鎻湶|鏇濆厜/, tips: ["鎺у埗鎻湶鑺傚锛屽厛閾烘儏缁啀钀戒俊鎭?, "閲嶇偣鍐欑煡鎯呰€呭弽搴斿拰鍚庣画浠ｄ环"] },
-            { pattern: /鍛婄櫧|鏆ф槯|蹇冨姩|濠氱害|鎯呮劅/, tips: ["琛ヨ冻蹇冪悊鎷夋壇鍜屽姩浣滅粏鑺?, "璁╁叧绯绘帹杩涗笌涓荤嚎鐭涚浘浜掔浉褰卞搷"] }
+            { pattern: /测灵|测试|考核|评估|选拔/, tips: ["突出规则压力与结果悬念", "加入围观者反应和评价反差"] },
+            { pattern: /比武|擂台|竞赛|比赛|对决/, tips: ["细化战术博弈与节奏变化", "写出观众、裁判或对手的心理反馈"] },
+            { pattern: /修炼|练功|突破|闭关|参悟/, tips: ["增加身体感受、瓶颈阻力与顿悟细节", "让突破和前文资源/伏笔形成因果"] },
+            { pattern: /炼丹|炼器|炼药|锻造/, tips: ["补充步骤失败风险和材料细节", "写出成品带来的即时反馈"] },
+            { pattern: /探险|寻宝|探索|发现|秘境/, tips: ["强化环境机关、未知感和探索层次", "让发现线索与后续冲突挂钩"] },
+            { pattern: /进入|闯入|潜入|入侵/, tips: ["增加潜行风险、暴露风险和临场应变", "写清楚路线、阻碍和压迫感"] },
+            { pattern: /战斗|对战|交手|厮杀/, tips: ["避免只报招式，要写局势变化和情绪起伏", "补足战斗后果，影响下一场剧情"] },
+            { pattern: /冲突|争执|对峙|纠纷/, tips: ["让对话各自带立场和隐含诉求", "把冲突结果落到人物关系变化上"] },
+            { pattern: /真相|秘密|身份|揭露|曝光/, tips: ["控制揭露节奏，先铺情绪再落信息", "重点写知情者反应和后续代价"] },
+            { pattern: /告白|暧昧|心动|婚约|情感/, tips: ["补足心理拉扯和动作细节", "让关系推进与主线矛盾互相影响"] }
         ];
 
         const matched = keywordRules.filter((rule) => rule.pattern.test(text));
         const tips = matched.flatMap((rule) => rule.tips);
 
-        const lines = ["銆愭櫤鑳芥墿鍐欏缓璁€?, "鍦ㄤ笉鏀瑰彉鏈珷涓荤嚎缁撴灉鐨勫墠鎻愪笅锛岃嚜鐢辫ˉ瓒崇粏鑺傘€佹尝鎶樸€佸績鐞嗐€佸姩浣溿€佺幆澧冨拰浼忕瑪鍛煎簲锛屾嫆缁濇祦姘磋处銆?];
+        const lines = ["【智能扩写建议】", "在不改变本章主线结果的前提下，自由补足细节、波折、心理、动作、环境和伏笔呼应，拒绝流水账。"];
         if (chapterNumber) {
-            lines.push(`褰撳墠绔犺妭锛氱 ${chapterNumber} 绔燻);
+            lines.push(`当前章节：第 ${chapterNumber} 章`);
         }
-        lines.push("鎵╁啓鏃惰鍥寸粫绔犺妭楠ㄦ灦琛ヨ冻琛€鑲夛紝涓嶈绌鸿浆姘村瓧鏁般€?);
-        lines.push("鏈珷榛樿鐩爣鏄暱绔犺緭鍑猴細灏介噺鍐欏埌3000-6000瀛楋紝鑷冲皯涓嶈灏戜簬2500瀛椼€?);
-        lines.push("浼樺厛琛ュ厖锛氬姩浣滆繃绋嬨€佷汉鐗╁績鐞嗐€佸満鏅弽棣堛€佸璇濆崥寮堛€佷紡绗斿懠搴斻€佺粨鏋滀綑娉€?);
-        lines.push("濡傛灉绔犵翰鍙湁鍑犲彞璇濓紝涔熻鎶婃瘡涓儏鑺傜偣灞曞紑鎴愬畬鏁村満鏅紝涓嶈鍘嬬缉鎴愭彁瑕佸紡鐭珷銆?);
+        lines.push("扩写时请围绕章节骨架补足血肉，不要空转水字数。");
+        lines.push("本章默认目标是长章输出：尽量写到3000-6000字，至少不要少于2500字。");
+        lines.push("优先补充：动作过程、人物心理、场景反馈、对话博弈、伏笔呼应、结果余波。");
+        lines.push("如果章纲只有几句话，也要把每个情节点展开成完整场景，不要压缩成提要式短章。");
 
         if (tips.length) {
-            lines.push("鏈珷閲嶇偣琛ュ己鏂瑰悜锛?);
+            lines.push("本章重点补强方向：");
             Array.from(new Set(tips)).slice(0, 6).forEach((tip, index) => {
                 lines.push(`${index + 1}. ${tip}`);
             });
         } else {
-            lines.push("鏈珷閲嶇偣琛ュ己鏂瑰悜锛?);
-            lines.push("1. 姣忎釜鎯呰妭鐐归兘瑕佹湁鍏蜂綋瑙﹀彂銆佹帹杩涘拰鍙嶉銆?);
-            lines.push("2. 鍏抽敭瀵硅瘽涓嶈鍙紶閫掍俊鎭紝瑕佷綋鐜扮珛鍦轰笌鎯呯华銆?);
-            lines.push("3. 缁撳熬瑕佺暀涓嬩綑娉€佹偓蹇垫垨鐘舵€佸彉鍖栵紝鏈嶅姟涓嬬珷閾哄灚銆?);
-            lines.push("4. 濡傛灉澶х翰鍐欏緱寰堢煭锛岃涓诲姩琛ヨ冻娉㈡姌锛屼笉瑕佸啓鎴愭彁绾插杩般€?);
+            lines.push("本章重点补强方向：");
+            lines.push("1. 每个情节点都要有具体触发、推进和反馈。");
+            lines.push("2. 关键对话不要只传递信息，要体现立场与情绪。");
+            lines.push("3. 结尾要留下余波、悬念或状态变化，服务下章铺垫。");
+            lines.push("4. 如果大纲写得很短，请主动补足波折，不要写成提纲复述。");
         }
 
         return lines.join("\n");
@@ -7145,23 +5166,23 @@
     buildNextChapterSetupInstruction(chapter) {
         const setup = chapter.next_chapter_setup || {};
         const lines = [
-            "銆愭湰绔犵粨灏鹃摵鍨换鍔★紙蹇呴』瀹屾垚锛夈€?,
-            "鈿狅笍 閲嶈锛氳繖鏄摵鍨紝涓嶆槸棰勫憡銆?,
-            "瑙勫垯锛?,
-            "1. 閾哄灚 = 鍩嬩笅鈥滃洜鈥濓紝缁濅笉鐩存帴鍐欌€滄灉鈥濄€?,
-            "2. 鍙兘鍐欑姸鎬併€佹皼鍥淬€佹偓蹇点€佹殫绀猴紝涓嶈鐩存帴鍐欎笅涓€绔犱細鍙戠敓浠€涔堛€?,
-            "3. 涓嶅厑璁稿嚭鐜扳€滀笅绔犲皢浼氣€濃€滈┈涓婂氨浼氣€濃€滀笅涓€绔犱細鈥濅箣绫荤殑棰勫憡鍙ュ紡銆?,
-            "4. 瀛楁暟鎺у埗鍦?1-2 鍙ヨ瘽锛屼笉瑕佸啓鎴愰暱娈甸鍛娿€?
+            "【本章结尾铺垫任务（必须完成）】",
+            "⚠️ 重要：这是铺垫，不是预告。",
+            "规则：",
+            "1. 铺垫 = 埋下“因”，绝不直接写“果”。",
+            "2. 只能写状态、氛围、悬念、暗示，不要直接写下一章会发生什么。",
+            "3. 不允许出现“下章将会”“马上就会”“下一章会”之类的预告句式。",
+            "4. 字数控制在 1-2 句话，不要写成长段预告。"
         ];
 
-        if (setup.state_setup) lines.push(`- 鐘舵€侀摵鍨細${setup.state_setup}`);
-        if (setup.atmosphere_setup) lines.push(`- 姘涘洿閾哄灚锛?{setup.atmosphere_setup}`);
-        if (setup.suspense_hook) lines.push(`- 鎮康閽╁瓙锛?{setup.suspense_hook}`);
-        if (setup.clue_hint) lines.push(`- 绾跨储鏆楃ず锛?{setup.clue_hint}`);
-        if (setup.countdown) lines.push(`- 鍊掕鏃讹細${setup.countdown}`);
+        if (setup.state_setup) lines.push(`- 状态铺垫：${setup.state_setup}`);
+        if (setup.atmosphere_setup) lines.push(`- 氛围铺垫：${setup.atmosphere_setup}`);
+        if (setup.suspense_hook) lines.push(`- 悬念钩子：${setup.suspense_hook}`);
+        if (setup.clue_hint) lines.push(`- 线索暗示：${setup.clue_hint}`);
+        if (setup.countdown) lines.push(`- 倒计时：${setup.countdown}`);
 
-        lines.push("绀轰緥锛氬彲浠ュ啓鈥滀粬姘旀伅娓愬急锛屽尰鑰呮憞澶翠笉璇€濓紝涓嶈兘鍐欌€滀笅绔犱粬灏嗘鍘烩€濄€?);
-        lines.push("绀轰緥锛氬彲浠ュ啓鈥滆繙澶勫拷鐒朵紶鏉ュ紓鍝嶏紝绌烘皵涓€涓嬪瓙娌変簡涓嬫潵鈥濓紝涓嶈兘鍐欌€滀笅绔犳晫浜哄氨浼氭潃鍒扳€濄€?);
+        lines.push("示例：可以写“他气息渐弱，医者摇头不语”，不能写“下章他将死去”。");
+        lines.push("示例：可以写“远处忽然传来异响，空气一下子沉了下来”，不能写“下章敌人就会杀到”。");
         return lines.join("\n");
     }
 
@@ -7171,13 +5192,13 @@
         }
 
         return [
-            "銆愬悗缁墽鎯呴鍛婏紙涓嬩竴绔犲墽鎯咃級 - 缁濆涓嶅彲鍐欙紒浠呬緵鍙傝€冿紒銆?,
-            `涓嬩竴绔狅細绗?{nextOutline.number}绔?${nextOutline.title || ""}`,
+            "【后续剧情预告（下一章剧情） - 绝对不可写！仅供参考！】",
+            `下一章：第${nextOutline.number}章 ${nextOutline.title || ""}`,
             nextOutline.summary || "",
-            "绾㈢嚎瑙勫垯锛?,
-            "1. 涓嬩竴绔犳墠鍙戠敓鐨勬牳蹇冧簨浠讹紝鏈珷缁濆涓嶈兘鎻愬墠鍐欏嚭鏉ャ€?,
-            "2. 鍙互鍋氭偓蹇靛拰鏆楃ず锛屼絾涓嶈兘鎻愬墠瀹屾垚涓嬩竴绔犵殑鍐茬獊銆佹彮闇层€佺獊鐮淬€佹浜°€佽韩浠芥洕鍏夈€佽幏瀹濈瓑缁撴灉銆?,
-            "3. 鏈珷缁撳熬鍙兘瀵瑰簲涓嬩竴绔犵殑銆愬洜銆戯紝涓嶈兘鎶婁笅涓€绔犵殑銆愭灉銆戝厛鍐欏畬銆?
+            "红线规则：",
+            "1. 下一章才发生的核心事件，本章绝对不能提前写出来。",
+            "2. 可以做悬念和暗示，但不能提前完成下一章的冲突、揭露、突破、死亡、身份曝光、获宝等结果。",
+            "3. 本章结尾只能对应下一章的【因】，不能把下一章的【果】先写完。"
         ].join("\n");
     }
 
@@ -7209,7 +5230,7 @@
         return previousItems
             .map((item) => {
                 const contentText = String(item.content || item.summary || item.keyEvent || "").trim();
-                return `銆愮${item.number}绔?${item.title}銆慭n${contentText}`;
+                return `【第${item.number}章 ${item.title}】\n${contentText}`;
             })
             .join("\n\n");
     }
@@ -7250,7 +5271,7 @@
         const previousItems = all.slice(Math.max(0, index - 10), index);
         return previousItems.map((item) => {
             const brief = item.keyEvent || Utils.summarizeText(item.summary, 180) || item.title;
-            return `- 绗?{item.number}绔?${item.title || ""}锛?{brief}`;
+            return `- 第${item.number}章 ${item.title || ""}：${brief}`;
         }).join("\n");
     }
 
@@ -7282,7 +5303,7 @@
             return [];
         }
 
-        const sectionMatch = summary.match(/銆愬嚭鍦轰汉鐗┿€慭s*([\s\S]*?)(?=\n銆恷$)/);
+        const sectionMatch = summary.match(/【出场人物】\s*([\s\S]*?)(?=\n【|$)/);
         const section = sectionMatch?.[1] ? String(sectionMatch[1]).trim() : "";
         if (!section) {
             return [];
@@ -7291,10 +5312,10 @@
         const names = [];
         section.split(/\r?\n/).forEach((line) => {
             const rawLine = String(line || "").trim();
-            if (!rawLine || (!rawLine.startsWith("-") && !rawLine.startsWith("鈥?))) {
+            if (!rawLine || (!rawLine.startsWith("-") && !rawLine.startsWith("•"))) {
                 return;
             }
-            const cleaned = rawLine.replace(/^[鈥?]\s*/, "");
+            const cleaned = rawLine.replace(/^[•-]\s*/, "");
             const match = cleaned.match(/^([\u4e00-\u9fa5]{2,4})/);
             const name = String(match?.[1] || "").trim();
             if (name) {
@@ -7317,9 +5338,9 @@
         chars.forEach((character) => {
             const aliases = Array.isArray(character.aliases)
                 ? character.aliases
-                : Utils.ensureArrayFromText(character.aliases || character["鍒悕"]);
+                : Utils.ensureArrayFromText(character.aliases || character["别名"]);
             const names = [character.name, ...aliases];
-            const identities = Utils.ensureArrayFromText(character.identity || character["韬唤"] || "");
+            const identities = Utils.ensureArrayFromText(character.identity || character["身份"] || "");
             const matched = names.some((token) => token && preferredNameSet.has(token))
                 || [...names, ...identities].some((token) => token && token.length >= 2 && contextText.includes(token));
             if (matched && character.name && !seen.has(character.name)) {
@@ -7337,72 +5358,15 @@
         }
         return foundChars.map((character) => {
             const chunks = [];
-            if (character.identity) chunks.push(`韬唤锛?{character.identity}`);
-            if (character.personality) chunks.push(`鎬ф牸锛?{Utils.summarizeText(character.personality, 70)}`);
-            if (character.background) chunks.push(`鑳屾櫙锛?{Utils.summarizeText(character.background, 90)}`);
-            if (character.relationships) chunks.push(`鍏崇郴锛?{Utils.summarizeText(character.relationships, 80)}`);
-            if (character.appearance) chunks.push(`澶栬矊锛?{Utils.summarizeText(character.appearance, 70)}`);
-            if (character.abilities) chunks.push(`鑳藉姏锛?{Utils.summarizeText(character.abilities, 70)}`);
-            if (character.goals) chunks.push(`鐩爣锛?{Utils.summarizeText(character.goals, 70)}`);
-            return `- ${character.name || "鏈懡鍚?}\n  ${chunks.join("\n  ")}`;
+            if (character.identity) chunks.push(`身份：${character.identity}`);
+            if (character.personality) chunks.push(`性格：${Utils.summarizeText(character.personality, 70)}`);
+            if (character.background) chunks.push(`背景：${Utils.summarizeText(character.background, 90)}`);
+            if (character.relationships) chunks.push(`关系：${Utils.summarizeText(character.relationships, 80)}`);
+            if (character.appearance) chunks.push(`外貌：${Utils.summarizeText(character.appearance, 70)}`);
+            if (character.abilities) chunks.push(`能力：${Utils.summarizeText(character.abilities, 70)}`);
+            if (character.goals) chunks.push(`目标：${Utils.summarizeText(character.goals, 70)}`);
+            return `- ${character.name || "未命名"}\n  ${chunks.join("\n  ")}`;
         }).join("\n");
-    }
-
-    sanitizeCharacterPromptField(value, field = "general", max = 80) {
-        const raw = Utils.summarizeText(String(value || "").replace(/\s+/g, " ").trim(), max * 2);
-        if (!raw) {
-            return "";
-        }
-
-        const clauses = raw
-            .split(/[，。；、\n]/)
-            .map((item) => this.rewriteCharacterPromptClause(item, field))
-            .filter(Boolean);
-
-        const deduped = Array.from(new Set(clauses)).slice(0, field === "appearance" ? 3 : 4);
-        return Utils.summarizeText(deduped.join("；"), max);
-    }
-
-    rewriteCharacterPromptClause(clause, field = "general") {
-        let text = String(clause || "").trim();
-        if (!text) {
-            return "";
-        }
-
-        const replacements = [
-            [/(?:居高临下(?:地)?)(?:看着|盯着|望着)?[^，。；！？\n]{0,8}/g, ""],
-            [/(领口|衣领)洗得发白/g, "衣领磨旧"],
-            [/(袖口|衣角|衣摆)洗得发白/g, "$1磨旧"],
-            [/(袖口|衣角|衣摆)磨得发白/g, "$1磨旧"],
-            [/褪色的蓝布褂子/g, "旧蓝布褂子"],
-            [/洗得发白的(?:确良|衬衫|衣领|外套)/g, "旧衣服"],
-            [/一袭(白衣|青衣|红衣|黑衣)/g, "常穿$1"],
-            [/(白衣|青衣|红衣|黑衣)猎猎(?:作响)?/g, "$1被风吹起"],
-            [/衣袂(?:翻飞|飘飘|猎猎)/g, "衣摆被风带起"],
-            [/墨发(?:如瀑|飞扬)/g, "长发"],
-            [/仙风道骨/g, "气度出众"],
-            [/手上用了死力气/g, ""],
-            [/(指甲|指节|骨节)[^，。；！？\n]{0,8}(掐进|陷进|嵌进)[^，。；！？\n]{0,8}(肉里|皮肉)/g, ""],
-            [/随着呼吸上下起伏/g, ""],
-            [/胸口(?:剧烈|明显|轻轻|微微)?起伏/g, ""],
-            [/(手指|指尖)(?:用力|死死|狠狠)?(?:抠住|扣住|攥住|抓住)[^；，。！？\n]{0,12}/g, ""],
-            [/死死(抓着|抓住|攥着|攥住|按着|按住|盯着|瞪着|咬着|咬住)/g, "$1"],
-            [/狠狠(抓着|抓住|攥着|攥住|按着|按住|盯着|瞪着|咬着|咬住)/g, "$1"]
-        ];
-        replacements.forEach(([pattern, replacement]) => {
-            text = text.replace(pattern, replacement);
-        });
-
-        if (field !== "appearance" && /^(常穿白衣|常穿青衣|常穿红衣|常穿黑衣|衣摆被风带起|白衣被风吹起|青衣被风吹起|红衣被风吹起|黑衣被风吹起|衣领磨旧|袖口磨旧|旧衣服|长发|气度出众)$/.test(text)) {
-            return "";
-        }
-
-        text = text
-            .replace(/[，；、]{2,}/g, "；")
-            .replace(/^[，；、\s]+|[，；、\s]+$/g, "")
-            .trim();
-
-        return text;
     }
 
     buildRelevantCharactersInfo(foundChars) {
@@ -7412,32 +5376,19 @@
 
         const body = foundChars.map((character) => {
             const chunks = [];
-            const aliases = Utils.ensureArrayFromText(character.aliases || character["鍒悕"] || "");
-            const identity = this.sanitizeCharacterPromptField(character.identity, "identity", 50);
-            const personality = this.sanitizeCharacterPromptField(character.personality, "personality", 60);
-            const background = this.sanitizeCharacterPromptField(character.background, "background", 80);
-            const relationships = this.sanitizeCharacterPromptField(character.relationships, "relationships", 70);
-            const appearance = this.sanitizeCharacterPromptField(character.appearance, "appearance", 55);
-            const abilities = this.sanitizeCharacterPromptField(character.abilities, "abilities", 60);
-            const goals = this.sanitizeCharacterPromptField(character.goals, "goals", 60);
-
-            if (identity) chunks.push(`身份：${identity}`);
+            const aliases = Utils.ensureArrayFromText(character.aliases || character["别名"] || "");
+            if (character.identity) chunks.push(`身份：${character.identity}`);
             if (aliases.length) chunks.push(`固定称呼/别名：${aliases.join("、")}`);
-            if (personality) chunks.push(`性格事实：${personality}`);
-            if (background) chunks.push(`背景事实：${background}`);
-            if (relationships) chunks.push(`关系：${relationships}`);
-            if (appearance) chunks.push(`外观事实：${appearance}`);
-            if (abilities) chunks.push(`能力：${abilities}`);
-            if (goals) chunks.push(`目标：${goals}`);
+            if (character.personality) chunks.push(`性格：${Utils.summarizeText(character.personality, 70)}`);
+            if (character.background) chunks.push(`背景：${Utils.summarizeText(character.background, 90)}`);
+            if (character.relationships) chunks.push(`关系：${Utils.summarizeText(character.relationships, 80)}`);
+            if (character.appearance) chunks.push(`外貌：${Utils.summarizeText(character.appearance, 70)}`);
+            if (character.abilities) chunks.push(`能力：${Utils.summarizeText(character.abilities, 70)}`);
+            if (character.goals) chunks.push(`目标：${Utils.summarizeText(character.goals, 70)}`);
             return `- ${character.name || "未命名"}\n  ${chunks.join("\n  ")}`;
         }).join("\n");
 
-        return [
-            "【本章出场相关角色设定（防崩坏参考）】",
-            "以下只用于锁定身份、关系、目标、固定称呼和外观事实。",
-            "不要把设定里的原句、标签词、描写套话直接照抄进正文，更不要在同一章里反复复用同一描述词。",
-            body
-        ].join("\n");
+        return `【本章出场/相关角色设定（防崩坏参考）】\n以下是本章相关角色的设定和固定名字，在正文中必须严格使用这些名字和人设，不得自行更改：\n${body}`;
     }
 
     buildVolumeSynopsisContext(project, currentVolumeNumber) {
@@ -7448,13 +5399,13 @@
             if (!volume.summary && !volume.cliffhanger) {
                 return "";
             }
-            const prefix = index + 1 === currentVolumeNumber ? "銆愬綋鍓嶅嵎銆? : "銆愬弬鑰冨嵎銆?;
+            const prefix = index + 1 === currentVolumeNumber ? "【当前卷】" : "【参考卷】";
             const normalizedSummary = this.normalizeSynopsisReferenceText(project, volume.summary || "");
             const normalizedCliffhanger = this.normalizeSynopsisReferenceText(project, volume.cliffhanger || "");
             return [
-                `${prefix} 绗?{index + 1}鍗?${volume.title || ""}`,
+                `${prefix} 第${index + 1}卷 ${volume.title || ""}`,
                 normalizedSummary,
-                normalizedCliffhanger ? `鍗锋湯閽╁瓙锛?{normalizedCliffhanger}` : ""
+                normalizedCliffhanger ? `卷末钩子：${normalizedCliffhanger}` : ""
             ].filter(Boolean).join("\n");
         }).filter(Boolean).join("\n\n");
     }
@@ -7473,7 +5424,7 @@
                     .map((line) => line.trim())
                     .filter(Boolean)
                     .forEach((line, lineIndex) => {
-                        const chapterMatch = line.match(/^绗琝s*(\d+)\s*绔?);
+                        const chapterMatch = line.match(/^第\s*(\d+)\s*章/);
                         items.push({
                             volumeNumber: volumeIndex + 1,
                             chapterNumber: Number(chapterMatch?.[1] || lineIndex + 1),
@@ -7487,7 +5438,7 @@
 
     formatSynopsisHistoryItem(item, bodyMax = 32) {
         const body = Utils.summarizeText(item?.body || item?.line || "", bodyMax);
-        return `- 绗?{item?.volumeNumber || "?"}鍗风${item?.chapterNumber || "?"}绔狅細${body}`;
+        return `- 第${item?.volumeNumber || "?"}卷第${item?.chapterNumber || "?"}章：${body}`;
     }
 
     buildSynopsisHistoryContext(project, currentVolumeNumber) {
@@ -7496,7 +5447,7 @@
             return "";
         }
 
-        return items.map((item) => `绗?{item.volumeNumber}鍗?${item.line}`).join("\n");
+        return items.map((item) => `第${item.volumeNumber}卷 ${item.line}`).join("\n");
     }
 
     buildSynopsisPhaseGuide(chapterCount) {
@@ -7506,39 +5457,39 @@
         }
         if (total <= 5) {
             return [
-                "銆愭湰鍗疯妭濂忔姢鏍忋€?,
-                `鍏?${total} 绔狅紝鍓嶅崐娈靛厛鎵挎帴涓婁竴鍗风粨灏惧苟绔嬭捣鏈嵎鐩爣锛屽悗鍗婃鎶婂啿绐佹帹楂樺悗瀹屾垚闃舵鎬ф敹鏉燂紝缁撳熬鍐嶇暀閽╁瓙銆俙
+                "【本卷节奏护栏】",
+                `共 ${total} 章，前半段先承接上一卷结尾并立起本卷目标，后半段把冲突推高后完成阶段性收束，结尾再留钩子。`
             ].join("\n");
         }
 
         const openingEnd = Math.max(1, Math.min(total, Math.ceil(total * 0.25)));
         const escalationEnd = Math.max(openingEnd + 1, Math.min(total, Math.ceil(total * 0.65)));
         const turnEnd = Math.max(escalationEnd + 1, Math.min(total, Math.ceil(total * 0.85)));
-        const formatRange = (start, end) => start >= end ? `绗?{start}绔燻 : `绗?{start}-${end}绔燻;
-        const lines = ["銆愭湰鍗疯妭濂忔姢鏍忋€?];
+        const formatRange = (start, end) => start >= end ? `第${start}章` : `第${start}-${end}章`;
+        const lines = ["【本卷节奏护栏】"];
 
-        lines.push(`${formatRange(1, openingEnd)}锛氬厛鎵挎帴涓婁竴鍗风粨灏撅紝鏄庣‘鏈嵎鐩爣銆佸帇鍔涘拰琛屽姩鏂瑰悜锛屼笉瑕佺┖杞€俙);
+        lines.push(`${formatRange(1, openingEnd)}：先承接上一卷结尾，明确本卷目标、压力和行动方向，不要空转。`);
         if (openingEnd + 1 <= escalationEnd) {
-            lines.push(`${formatRange(openingEnd + 1, escalationEnd)}锛氭寔缁崌绾ч樆鍔涳紝璁╀俊鎭€佸叧绯汇€佷唬浠锋垨浣嶇疆鍙戠敓杩炵画鍙樺寲锛岄伩鍏嶅弽澶嶅洿鐫€鍚屼竴鍐茬獊鎵撹浆銆俙);
+            lines.push(`${formatRange(openingEnd + 1, escalationEnd)}：持续升级阻力，让信息、关系、代价或位置发生连续变化，避免反复围着同一冲突打转。`);
         }
         if (escalationEnd + 1 <= turnEnd) {
-            lines.push(`${formatRange(escalationEnd + 1, turnEnd)}锛氬畨鎺掑叧閿浆鎶樸€佸け鎺х偣鎴栭噸澶т唬浠凤紝璁╁眬鍔挎槑鏄炬敼閬撱€俙);
+            lines.push(`${formatRange(escalationEnd + 1, turnEnd)}：安排关键转折、失控点或重大代价，让局势明显改道。`);
         }
         if (turnEnd + 1 <= total) {
-            lines.push(`${formatRange(turnEnd + 1, total)}锛氬畬鎴愭湰鍗烽樁娈垫€ф敹鏉熷苟鐣欎笅鍗锋湯閽╁瓙锛屼絾涓嶈鐩存帴灞曞紑涓嬩竴鍗蜂富绾裤€俙);
+            lines.push(`${formatRange(turnEnd + 1, total)}：完成本卷阶段性收束并留下卷末钩子，但不要直接展开下一卷主线。`);
         }
         return lines.join("\n");
     }
 
     buildSynopsisClarityGuard({ volumeNumber, chapterCount, hasDetailedOutline = false }) {
-        const lines = ["銆愬綋鍓嶅嵎鎵ц鎶ゆ爮銆?];
+        const lines = ["【当前卷执行护栏】"];
         if (hasDetailedOutline) {
-            lines.push(`绗?${volumeNumber} 鍗峰瓨鍦ㄨ缁嗗ぇ绾叉椂锛屼紭鍏堟湇浠庤缁嗗ぇ绾诧紱绠€鐣ュ嵎绾插彧璐熻矗鎻愰啋鏂瑰悜锛屼笉瑕佸彧鍥寸潃鎶借薄璇嶆墦杞€俙);
+            lines.push(`第 ${volumeNumber} 卷存在详细大纲时，优先服从详细大纲；简略卷纲只负责提醒方向，不要只围着抽象词打转。`);
         }
-        lines.push("濡傛灉褰撳墠鍗峰嵎绾插彧鍐欎簡鎶借薄鏂瑰悜锛屼綘蹇呴』鍏堝湪鑴戜腑琛ュ叏锛氬紑灞€鎵挎帴浜嬩欢銆佹湰鍗锋樉鎬х洰鏍囥€佷腑娈垫寔缁樆鍔涖€佸叧閿浆鎶樸€佸嵎鏈惤鐐癸紝鍐嶅垎閰嶅埌绔犺妭銆?);
-        lines.push("鍏佽蹇呰杩囨ˉ绔狅紝浣嗚繃妗ョ珷蹇呴』鑷冲皯甯︽潵涓€涓彲瑙佸彉鍖栵細鏂颁俊鎭€佹柊鍐冲畾銆佹柊浠ｄ环銆佹柊浣嶇疆鎴栨柊鍏崇郴銆?);
-        lines.push("涓嶈鎶婁笂涓€绔犵粨灏炬崲鍙ヨ瘽鍐嶅啓涓€閬嶏紱涓婁竴绔犵殑缁撴灉鍙兘浣滀负涓嬩竴绔犵殑璧风偣銆?);
-        lines.push("绂佹鐢ㄢ€滅户缁皟鏌モ€濃€滅户缁慨鐐尖€濃€滃叧绯诲崌娓┾€濃€滃眬鍔垮彉鍖栤€濃€滄殫娴佹秾鍔ㄢ€濊繖绫绘娊璞¤瘝鍗曠嫭鍏呭綋鏍稿績浜嬩欢锛屽繀椤昏惤鍒板叿浣撳姩浣滃拰缁撴灉銆?);
+        lines.push("如果当前卷卷纲只写了抽象方向，你必须先在脑中补全：开局承接事件、本卷显性目标、中段持续阻力、关键转折、卷末落点，再分配到章节。");
+        lines.push("允许必要过桥章，但过桥章必须至少带来一个可见变化：新信息、新决定、新代价、新位置或新关系。");
+        lines.push("不要把上一章结尾换句话再写一遍；上一章的结果只能作为下一章的起点。");
+        lines.push("禁止用“继续调查”“继续修炼”“关系升温”“局势变化”“暗流涌动”这类抽象词单独充当核心事件，必须落到具体动作和结果。");
 
         const phaseGuide = this.buildSynopsisPhaseGuide(chapterCount);
         if (phaseGuide) {
@@ -7551,15 +5502,15 @@
         const history = (project?.outline?.volumes || [])
             .map((volume, index) => ({ index, summary: volume.summary || "" }))
             .filter((item) => item.summary.trim())
-            .map((item) => `绗?{item.index + 1}鍗凤細${item.summary}`)
+            .map((item) => `第${item.index + 1}卷：${item.summary}`)
             .slice(-4);
 
         return [
-            "浼樺厛瑙勯伩濂楄矾鍖栧嵎绾诧細閲嶅鎵撹劯銆佹満姊板崌绾с€佸悓鏋勫壇鏈€佸彧闈犲弽杞‖鎷藉墽鎯呫€?,
-            "姣忓嵎鏈€濂芥湁鏂扮殑鐩爣銆佹柊鐨勫帇鍔涙簮銆佹柊鐨勪俊鎭閲忓拰鏂扮殑鍗锋湯閽╁瓙銆?,
-            history.length ? `宸叉湁鍗风翰鍙傝€冿細\n${history.join("\n")}` : "",
-            concept ? `鏁呬簨姒傚康鎻愰啋锛?{this.limitContext(concept, 500)}` : "",
-            worldbuilding ? `涓栫晫瑙傛彁閱掞細${this.limitContext(worldbuilding, 500)}` : ""
+            "优先规避套路化卷纲：重复打脸、机械升级、同构副本、只靠反转硬拽剧情。",
+            "每卷最好有新的目标、新的压力源、新的信息增量和新的卷末钩子。",
+            history.length ? `已有卷纲参考：\n${history.join("\n")}` : "",
+            concept ? `故事概念提醒：${this.limitContext(concept, 500)}` : "",
+            worldbuilding ? `世界观提醒：${this.limitContext(worldbuilding, 500)}` : ""
         ].filter(Boolean).join("\n");
     }
 
@@ -7574,7 +5525,7 @@
                     project,
                     volume.chapterSynopsis || volume.chapter_synopsis || ""
                 );
-                return synopsis ? `銆愮${index + 1}鍗风粏绾层€慭n${this.limitContext(synopsis, 2400)}` : "";
+                return synopsis ? `【第${index + 1}卷细纲】\n${this.limitContext(synopsis, 2400)}` : "";
             })
             .filter(Boolean)
             .join("\n\n");
@@ -7589,10 +5540,10 @@
         const clicheWarning = this.buildSynopsisClicheWarning(project, currentVolumeNumber);
         return [
             clicheWarning,
-            "銆愨殸锔?浠ヤ笅鎯呰妭宸茬粡浣跨敤杩囷紝缁濆绂佹閲嶅鎴栧彉鐩搁噸澶嶏紒銆?,
+            "【⚠️ 以下情节已经使用过，绝对禁止重复或变相重复！】",
             previousLines.join("\n"),
             "",
-            `锛堝叡${previousLines.length}绔狅級`
+            `（共${previousLines.length}章）`
         ].filter(Boolean).join("\n");
     }
 
@@ -7601,28 +5552,28 @@
         if (!text) {
             return "";
         }
-        const match = text.match(/^绗琝s*\d+\s*绔燵锛?銆?\-锛?]?\s*(.+?)\s*[鈥擻-锛嶁€揮\s*(.+)$/);
+        const match = text.match(/^第\s*\d+\s*章[：:、.\-）)]?\s*(.+?)\s*[—\-－–]\s*(.+)$/);
         if (match) {
             return `${match[1].trim()} ${match[2].trim()}`.trim();
         }
-        return text.replace(/^绗琝s*\d+\s*绔燵锛?銆?\-锛?]?\s*/, "").trim();
+        return text.replace(/^第\s*\d+\s*章[：:、.\-）)]?\s*/, "").trim();
     }
 
     normalizeSynopsisEventFingerprint(text) {
         return String(text || "")
-            .replace(/[绗嵎绔犺妭锛?銆?\-鈥旓紞鈥揬s]/g, "")
-            .replace(/[锛屻€傦紒锛燂紱銆佲€溾€?']/g, "")
+            .replace(/[第卷章节：:、.\-—－–\s]/g, "")
+            .replace(/[，。！？；、“”"']/g, "")
             .slice(0, 24);
     }
 
     buildSynopsisRepeatRiskSummary(lines) {
         const eventMap = new Map();
         const keywordRules = [
-            { label: "姣旇禌/鑰冩牳", pattern: /姣旀|鎿傚彴|绔炶禌|姣旇禌|鑰冩牳|娴嬭瘯/g },
-            { label: "淇偧/绐佺牬", pattern: /淇偧|闂叧|绐佺牬|鍙傛偀/g },
-            { label: "鎺㈢储/绉樺", pattern: /鎺㈢储|绉樺|瀵诲疂|鎺㈤櫓/g },
-            { label: "韬唤鎻湶", pattern: /韬唤|鐪熺浉|鎻湶|鏇濆厜/g },
-            { label: "鍐茬獊瀵瑰硻", pattern: /浜夋墽|瀵瑰硻|鍐茬獊|浜ら攱/g }
+            { label: "比赛/考核", pattern: /比武|擂台|竞赛|比赛|考核|测试/g },
+            { label: "修炼/突破", pattern: /修炼|闭关|突破|参悟/g },
+            { label: "探索/秘境", pattern: /探索|秘境|寻宝|探险/g },
+            { label: "身份揭露", pattern: /身份|真相|揭露|曝光/g },
+            { label: "冲突对峙", pattern: /争执|对峙|冲突|交锋/g }
         ];
 
         (lines || []).forEach((line) => {
@@ -7653,12 +5604,12 @@
         }
 
         return [
-            "銆愰噸澶嶉闄╂憳瑕併€?,
+            "【重复风险摘要】",
             repeatedEvents.length
-                ? `杩欎簺浜嬩欢琛ㄨ揪鍦ㄥ墠鏂囬噷宸茬粡澶氭鍑虹幇锛岃閬垮厤鍚屾瀯澶嶅啓锛歕n${repeatedEvents.map((item) => `- ${this.limitContext(item.body, 48)}锛堢害 ${item.count} 娆★級`).join("\n")}`
+                ? `这些事件表达在前文里已经多次出现，请避免同构复写：\n${repeatedEvents.map((item) => `- ${this.limitContext(item.body, 48)}（约 ${item.count} 次）`).join("\n")}`
                 : "",
             repeatedPatterns.length
-                ? `杩欎簺妗ユ绫诲瀷鍦ㄥ墠鏂囦腑鍋忓锛屾湰鍗疯鎹㈣搴︺€佹崲闃诲姏銆佹崲缁撴灉锛歕n${repeatedPatterns.map((item) => `- ${item.label}锛堢害 ${item.count} 娆★級`).join("\n")}`
+                ? `这些桥段类型在前文中偏多，本卷请换角度、换阻力、换结果：\n${repeatedPatterns.map((item) => `- ${item.label}（约 ${item.count} 次）`).join("\n")}`
                 : ""
         ].filter(Boolean).join("\n");
     }
@@ -7669,66 +5620,66 @@
         const promptParts = [];
 
         if (analysis.allowedRepeatEvents.length) {
-            promptParts.push("銆愨湪 鏍稿績鎯呰妭鍒涙柊鍚彂銆?);
-            promptParts.push("浠ヤ笅鎯呰妭绫诲瀷鍙互鍐嶆鍑虹幇锛屼絾蹇呴』鍐欏嚭鍜屽墠鏂囦笉鍚岀殑缁嗚妭銆侀樆鍔涗笌鍚庢灉锛?);
-            promptParts.push("锛堜互涓嬪唴瀹逛粎浣滃惎鍙戯紝榧撳姳鑷敱鍙戞尌锛屼笉鏄‖鎬ч€夐」锛?);
+            promptParts.push("【✨ 核心情节创新启发】");
+            promptParts.push("以下情节类型可以再次出现，但必须写出和前文不同的细节、阻力与后果：");
+            promptParts.push("（以下内容仅作启发，鼓励自由发挥，不是硬性选项）");
             analysis.allowedRepeatEvents.slice(0, 4).forEach((event) => {
-                promptParts.push(`銆?{event.type}銆戠害宸插嚭鐜?${event.count} 娆);
-                promptParts.push(`  馃挕 鎬濊€冩柟鍚戯細${event.description}`);
+                promptParts.push(`【${event.type}】约已出现 ${event.count} 次`);
+                promptParts.push(`  💡 思考方向：${event.description}`);
                 (event.variations || []).slice(0, 2).forEach((variation) => {
-                    const [dimension] = String(variation || "").split("锛?);
-                    promptParts.push(`  - 鍙互浠庘€?{dimension || variation}鈥濊搴︽崲鍐欐硶`);
+                    const [dimension] = String(variation || "").split("：");
+                    promptParts.push(`  - 可以从“${dimension || variation}”角度换写法`);
                 });
                 if (event.examples?.[0]) {
-                    promptParts.push(`  鉁?鍙傝€冨惎鍙戯細${event.examples[0]}`);
+                    promptParts.push(`  ✨ 参考启发：${event.examples[0]}`);
                 }
-                promptParts.push("  浠ヤ笂鍙粰鏂瑰悜锛屼笉闄愬埗浣犺嚜鐢卞垱鏂般€?);
+                promptParts.push("  以上只给方向，不限制你自由创新。");
             });
         }
 
         const eventTypeSuggestions = this.getSynopsisEventTypeSuggestions();
         const selectedEventTypes = [];
-        if (/鎴榺鏂梶鎵搢鏉€|鍙嶆潃|浜ら攱/.test(currentOutlineText)) {
-            selectedEventTypes.push("鎴樻枟");
+        if (/战|斗|打|杀|反杀|交锋/.test(currentOutlineText)) {
+            selectedEventTypes.push("战斗");
         }
-        if (/淇偧|绐佺牬|澧冪晫|闂叧|椤挎偀/.test(currentOutlineText)) {
-            selectedEventTypes.push("淇偧");
+        if (/修炼|突破|境界|闭关|顿悟/.test(currentOutlineText)) {
+            selectedEventTypes.push("修炼");
         }
-        if (/鎺㈢储|绉樺|瀵诲疂|鎺㈡煡|璋冩煡/.test(currentOutlineText)) {
-            selectedEventTypes.push("鎺㈢储");
+        if (/探索|秘境|寻宝|探查|调查/.test(currentOutlineText)) {
+            selectedEventTypes.push("探索");
         }
-        if (/瀵硅瘽|璋堝垽|鍟嗛噺|闂瓟|璇曟帰/.test(currentOutlineText)) {
-            selectedEventTypes.push("瀵硅瘽");
+        if (/对话|谈判|商量|问答|试探/.test(currentOutlineText)) {
+            selectedEventTypes.push("对话");
         }
         if (!selectedEventTypes.length) {
-            selectedEventTypes.push("鎴樻枟", "淇偧", "鎺㈢储");
+            selectedEventTypes.push("战斗", "修炼", "探索");
         }
 
-        promptParts.push("銆愷煄?鍒涗綔鍚彂銆?);
-        promptParts.push("浠ヤ笅鍐呭浠呬緵鍙傝€冿紝榧撳姳澶ц儐鍒涙柊锛?);
+        promptParts.push("【🎨 创作启发】");
+        promptParts.push("以下内容仅供参考，鼓励大胆创新：");
         selectedEventTypes.slice(0, 3).forEach((eventType) => {
             const suggestion = eventTypeSuggestions[eventType];
             if (!suggestion) {
                 return;
             }
-            promptParts.push(`銆?{eventType}绫绘儏鑺傘€慲);
+            promptParts.push(`【${eventType}类情节】`);
             if (suggestion.avoid?.[0]) {
-                promptParts.push(`  涓嶅缓璁細${suggestion.avoid[0]}`);
+                promptParts.push(`  不建议：${suggestion.avoid[0]}`);
             }
             if (suggestion.suggest?.[0]) {
-                promptParts.push(`  鍙互鑰冭檻锛?{suggestion.suggest[0]}`);
+                promptParts.push(`  可以考虑：${suggestion.suggest[0]}`);
             }
-            promptParts.push("  鏇撮紦鍔变綘绐佺牬甯歌锛岃嚜鐢卞垱閫犮€?);
+            promptParts.push("  更鼓励你突破常规，自由创造。");
         });
 
         const plotElements = this.getSynopsisPlotElements();
-        promptParts.push("銆愷煂?鐏垫劅鍏冪礌銆?);
-        promptParts.push("鍙嚜鐢辩粍鍚堛€佹媶鍒嗐€佹敼閫犮€佸拷鐣ワ細");
+        promptParts.push("【🌈 灵感元素】");
+        promptParts.push("可自由组合、拆分、改造、忽略：");
         Object.entries(plotElements).slice(0, 2).forEach(([type, elements]) => {
-            promptParts.push(`  - ${type}锛?{(elements || []).slice(0, 2).join("銆?)}`);
+            promptParts.push(`  - ${type}：${(elements || []).slice(0, 2).join("、")}`);
         });
         if (analysis.repetitionRisks.length) {
-            promptParts.push("銆愷煍?閲嶅椋庨櫓鎻愰啋銆?);
+            promptParts.push("【🔁 重复风险提醒】");
             analysis.repetitionRisks.slice(0, 3).forEach((risk) => {
                 promptParts.push(`  - ${risk.message}`);
             });
@@ -7745,8 +5696,8 @@
         }
 
         return [
-            "銆愨殸锔?宸叉娴嬪埌鐨勫璺鍛娿€?,
-            ...warnings.map((item) => `鈥?${item.category}锛?{item.pattern}${item.suggestion?.[0] ? `\n  寤鸿锛?{item.suggestion[0]}` : ""}`)
+            "【⚠️ 已检测到的套路警告】",
+            ...warnings.map((item) => `• ${item.category}：${item.pattern}${item.suggestion?.[0] ? `\n  建议：${item.suggestion[0]}` : ""}`)
         ].join("\n");
     }
 
@@ -7759,13 +5710,13 @@
         const currentVolume = volumes[volumeNumber - 1];
         const nextVolume = volumes[volumeNumber];
         const lines = [
-            "銆愬綋鍓嶅嵎杈圭晫瑙勫垯銆?,
-            `褰撳墠鍙厑璁哥紪鍐欑 ${volumeNumber} 鍗风殑缁嗙翰锛?{currentVolume?.title || ""}`,
-            "鏈嵎瑕佸畬鎴愭湰鍗疯嚜宸辩殑鎺ㄨ繘銆侀珮娼拰鏀舵潫锛屼笉鑳芥妸鍚庣画鍗锋牳蹇冨墽鎯呮彁鍓嶅啓杩涙潵銆?
+            "【当前卷边界规则】",
+            `当前只允许编写第 ${volumeNumber} 卷的细纲：${currentVolume?.title || ""}`,
+            "本卷要完成本卷自己的推进、高潮和收束，不能把后续卷核心剧情提前写进来。"
         ];
 
         if (nextVolume?.title || nextVolume?.summary) {
-            lines.push(`涓嬩竴鍗峰瓨鍦細${nextVolume.title || `绗?{volumeNumber + 1}鍗穈}銆傚綋鍓嶅嵎缁撳熬鍙互鐣欓挬瀛愶紝浣嗕笉鑳界洿鎺ュ啓鎴愪笅涓€鍗峰紑绡囥€俙);
+            lines.push(`下一卷存在：${nextVolume.title || `第${volumeNumber + 1}卷`}。当前卷结尾可以留钩子，但不能直接写成下一卷开篇。`);
         }
 
         return lines.join("\n");
@@ -7799,7 +5750,7 @@
                     project,
                     volume.chapterSynopsis || volume.chapter_synopsis || ""
                 );
-                return synopsis ? `銆愮${index + 1}鍗风粏绾层€慭n${this.limitContext(synopsis, 2400)}` : "";
+                return synopsis ? `【第${index + 1}卷细纲】\n${this.limitContext(synopsis, 2400)}` : "";
             })
             .filter(Boolean)
             .join("\n\n");
@@ -7812,10 +5763,10 @@
             return { currentOutline: fullOutline, adjacentSummary: "" };
         }
 
-        const volumeTitles = volumes.map((volume, index) => String(volume?.title || `绗?{index + 1}鍗穈).trim()).filter(Boolean);
+        const volumeTitles = volumes.map((volume, index) => String(volume?.title || `第${index + 1}卷`).trim()).filter(Boolean);
         const patterns = [];
         for (let i = 0; i < volumes.length + 3; i += 1) {
-            patterns.push(`绗?{i + 1}鍗穈);
+            patterns.push(`第${i + 1}卷`);
         }
         volumeTitles.forEach((title) => {
             if (title.length >= 2) {
@@ -7823,7 +5774,7 @@
             }
         });
 
-        const splitPattern = new RegExp(`(?:^|\\n)(?:#{1,3}\\s*|銆恷={3,}\\s*)?(${patterns.join("|")})(?:銆憒锛殀:|\\s|={3,})`, "g");
+        const splitPattern = new RegExp(`(?:^|\\n)(?:#{1,3}\\s*|【|={3,}\\s*)?(${patterns.join("|")})(?:】|：|:|\\s|={3,})`, "g");
         const sections = {};
         let currentKey = "__intro__";
         sections[currentKey] = "";
@@ -7837,7 +5788,7 @@
             const marker = match[1];
             let matchedIndex = volumeTitles.findIndex((title) => title && marker.includes(title));
             if (matchedIndex < 0) {
-                const generic = marker.match(/绗?\d+)鍗?);
+                const generic = marker.match(/第(\d+)卷/);
                 if (generic) {
                     matchedIndex = Number(generic[1]) - 1;
                 }
@@ -7853,11 +5804,11 @@
         let currentOutline = String(sections[targetKey] || "").trim();
 
         if (!currentOutline) {
-            const fallbackTitle = volumeTitles[volumeNumber - 1] || `绗?{volumeNumber}鍗穈;
+            const fallbackTitle = volumeTitles[volumeNumber - 1] || `第${volumeNumber}卷`;
             const startPos = fullOutline.indexOf(fallbackTitle);
             if (startPos >= 0) {
                 let endPos = fullOutline.length;
-                const nextTitle = volumeTitles[volumeNumber] || `绗?{volumeNumber + 1}鍗穈;
+                const nextTitle = volumeTitles[volumeNumber] || `第${volumeNumber + 1}卷`;
                 const nextPos = fullOutline.indexOf(nextTitle, startPos + fallbackTitle.length);
                 if (nextPos > startPos) {
                     endPos = nextPos;
@@ -7871,11 +5822,11 @@
         const adjacent = [];
         const previousSection = String(sections[`vol_${volumeNumber - 2}`] || "").trim();
         if (previousSection) {
-            adjacent.push(`涓婁竴鍗锋湯灏炬憳瑕侊細${Utils.summarizeText(previousSection.slice(-240), 240)}`);
+            adjacent.push(`上一卷末尾摘要：${Utils.summarizeText(previousSection.slice(-240), 240)}`);
         }
         const nextSection = String(sections[`vol_${volumeNumber}`] || "").trim();
         if (nextSection) {
-            adjacent.push(`涓嬩竴鍗锋柟鍚戞彁绀猴紙浠呬緵杈圭晫鍙傝€冿紝涓ョ鎻愬墠鍐欏叆锛夛細${Utils.summarizeText(nextSection.slice(0, 120), 120)}`);
+            adjacent.push(`下一卷方向提示（仅供边界参考，严禁提前写入）：${Utils.summarizeText(nextSection.slice(0, 120), 120)}`);
         }
 
         return {
@@ -7893,7 +5844,7 @@
             const title = String(chapter.title || "").trim();
             const text = keyEvent || Utils.summarizeText(summary, 120) || title;
             if (text) {
-                events.push(`绗?{number || "?"}绔狅細${text}`);
+                events.push(`第${number || "?"}章：${text}`);
             }
         };
 
@@ -7917,8 +5868,8 @@
         }
 
         return [
-            "銆愬凡鏈夊墽鎯呬簨浠讹紙涓ョ閲嶅锛夈€?,
-            "浠ヤ笅浜嬩欢宸插湪宸叉湁绔犺妭涓彂鐢熻繃锛屾柊鐢熸垚绔犺妭涓笉寰楀嚭鐜扮浉鍚屾垨楂樺害鐩镐技鐨勬儏鑺傦細",
+            "【已有剧情事件（严禁重复）】",
+            "以下事件已在已有章节中发生过，新生成章节中不得出现相同或高度相似的情节：",
             ...uniqueEvents.map((item, index) => `${index + 1}. ${item}`)
         ].join("\n");
     }
@@ -7943,26 +5894,26 @@
 
         if (previousChapters.length) {
             const briefLines = previousChapters.map((chapter) => {
-                const title = chapter.title || `绗?{chapter.number || chapter.chapter_number || "?"}绔燻;
+                const title = chapter.title || `第${chapter.number || chapter.chapter_number || "?"}章`;
                 const keyEvent = chapter.key_event || chapter.keyEvent || "";
                 const summary = chapter.summary || "";
                 const brief = keyEvent || Utils.summarizeText(summary, 160);
                 return `[${title}] ${brief}`;
             });
-            parts.push(`銆愬墠鏂囧叏閮ㄥぇ绾叉憳瑕侊紙鍏?{previousChapters.length}绔狅紝鍘嬬缉鐗堬紝鐢ㄤ簬鐞嗚В瀹屾暣鍓ф儏鑴夌粶锛夈€慭n${briefLines.join("\n")}`);
+            parts.push(`【前文全部大纲摘要（共${previousChapters.length}章，压缩版，用于理解完整剧情脉络）】\n${briefLines.join("\n")}`);
 
             const recentFull = previousChapters.slice(-10).map((chapter) => {
-                const title = chapter.title || `绗?{chapter.number || chapter.chapter_number || "?"}绔燻;
-                return `銆?{title}銆慭n${Utils.summarizeText(chapter.summary || chapter.key_event || "", 600)}`;
+                const title = chapter.title || `第${chapter.number || chapter.chapter_number || "?"}章`;
+                return `【${title}】\n${Utils.summarizeText(chapter.summary || chapter.key_event || "", 600)}`;
             });
             if (recentFull.length) {
-                parts.push(`銆愬墠鏂囨渶杩?0绔犲畬鏁村ぇ绾诧紙缁啓蹇呴』绱ф帴鏈€鍚庝竴绔犵殑缁撳熬锛夈€慭n${recentFull.join("\n\n")}`);
+                parts.push(`【前文最近10章完整大纲（续写必须紧接最后一章的结尾）】\n${recentFull.join("\n\n")}`);
             }
         }
 
         const previousSynopsisContext = this.buildPreviousChapterSynopsisContext(project, volumeNumber);
         if (previousSynopsisContext) {
-            parts.push(`銆愬墠闈㈢粏绾叉眹鎬汇€慭n${previousSynopsisContext}`);
+            parts.push(`【前面细纲汇总】\n${previousSynopsisContext}`);
         }
 
         return parts.join("\n---\n");
@@ -7973,64 +5924,64 @@
         const lastUnit = Math.floor((Math.max(1, endChapter) - 1) / 8) + 1;
         const phaseFor = (chapter) => {
             const pos = ((chapter - 1) % 8) + 1;
-            if (pos <= 2) return "寮€绔?;
-            if (pos <= 5) return "鍙戝睍";
-            if (pos <= 7) return "楂樻疆";
-            return "缁撳熬";
+            if (pos <= 2) return "开端";
+            if (pos <= 5) return "发展";
+            if (pos <= 7) return "高潮";
+            return "结尾";
         };
 
         const lines = [
-            `鐢熸垚绔犺妭鑼冨洿锛氱 ${startChapter}-${endChapter} 绔燻,
-            `娑夊強鍓ф儏鍗曞厓锛氱 ${firstUnit}${lastUnit > firstUnit ? ` - ${lastUnit}` : ""} 鍗曞厓`,
-            "姣?8 绔犵粍鎴愪竴涓畬鏁村皬鍓ф儏鍗曞厓锛?-2 绔犲紑绔紝3-5 绔犲彂灞曪紝6-7 绔犻珮娼紝绗?8 绔犳敹鏉熴€?,
-            `璧峰绔犺妭鎵€澶勯樁娈碉細${phaseFor(startChapter)}`,
-            `缁撴潫绔犺妭鎵€澶勯樁娈碉細${phaseFor(endChapter)}`
+            `生成章节范围：第 ${startChapter}-${endChapter} 章`,
+            `涉及剧情单元：第 ${firstUnit}${lastUnit > firstUnit ? ` - ${lastUnit}` : ""} 单元`,
+            "每 8 章组成一个完整小剧情单元：1-2 章开端，3-5 章发展，6-7 章高潮，第 8 章收束。",
+            `起始章节所处阶段：${phaseFor(startChapter)}`,
+            `结束章节所处阶段：${phaseFor(endChapter)}`
         ];
 
-        if (phaseFor(startChapter) === "寮€绔? && firstUnit > 1) {
-            lines.push(`褰撳墠鎵规寮€澶磋鎵挎帴绗?${firstUnit - 1} 鍗曞厓缁撳熬鐣欎笅鐨勪紡绗斻€俙);
+        if (phaseFor(startChapter) === "开端" && firstUnit > 1) {
+            lines.push(`当前批次开头要承接第 ${firstUnit - 1} 单元结尾留下的伏笔。`);
         }
-        if (phaseFor(endChapter) === "缁撳熬") {
-            lines.push(`褰撳墠鎵规缁撳熬瑕佷负绗?${lastUnit + 1} 鍗曞厓鍩嬩笅鎮康閽╁瓙銆俙);
+        if (phaseFor(endChapter) === "结尾") {
+            lines.push(`当前批次结尾要为第 ${lastUnit + 1} 单元埋下悬念钩子。`);
         }
 
-        lines.push("next_chapter_setup 瀛楁蹇呴』涓ユ牸閬靛畧锛氬彧鍐欓摵鍨紝涓嶅啓缁撴灉銆?);
+        lines.push("next_chapter_setup 字段必须严格遵守：只写铺垫，不写结果。");
         return lines.join("\n");
     }
 
     getPlotUnitPhaseBlueprint() {
         return {
-            寮€绔? {
-                coreTasks: ["寮曞叆褰撳墠鍗曞厓鍐茬獊", "鎵挎帴涓婁竴鍗曞厓浣欐尝", "寤虹珛鏈崟鍏冪洰鏍?],
+            开端: {
+                coreTasks: ["引入当前单元冲突", "承接上一单元余波", "建立本单元目标"],
                 elements: {
-                    寮曠垎鐐? ["鏂扮殑浠诲姟", "鏂扮殑鏁屾剰", "鏂扮殑璇細", "鏂扮殑绾跨储"],
-                    鎵挎帴鐐? ["涓婄珷鐣欎笅鐨勫紓鏍?, "鏈В閲婄殑鍔ㄤ綔", "鏈厬鐜扮殑鎵胯", "浠嶅湪鍙戦叺鐨勫悗鏋?]
+                    引爆点: ["新的任务", "新的敌意", "新的误会", "新的线索"],
+                    承接点: ["上章留下的异样", "未解释的动作", "未兑现的承诺", "仍在发酵的后果"]
                 },
-                guidance: "寮€绔樁娈佃鍏堟妸褰撳墠8绔犲崟鍏冪殑鏍稿績鐭涚浘绔嬩綇锛屽悓鏃舵槑纭壙鎺ヤ笂涓€娈靛墽鎯咃紝涓嶈涓€涓婃潵灏辨妸楂樻疆鍐欏畬銆?
+                guidance: "开端阶段要先把当前8章单元的核心矛盾立住，同时明确承接上一段剧情，不要一上来就把高潮写完。"
             },
-            鍙戝睍: {
-                coreTasks: ["鎺ㄨ繘涓诲啿绐?, "鎶珮浠ｄ环", "璁╀汉鐗╁叧绯绘垨淇℃伅鍙戠敓鍙樺寲"],
+            发展: {
+                coreTasks: ["推进主冲突", "抬高代价", "让人物关系或信息发生变化"],
                 elements: {
-                    鍗囩骇鐐? ["璇垽鍗囩骇", "绾跨储鍙嶈浆", "灞€鍔垮帇杩?, "璧勬簮鍙楅檺"],
-                    浜虹墿鍏崇郴: ["鍚堜綔鐢熻鐥?, "鏁屾剰鍔犳繁", "淇′换璇曟帰", "鍒╃泭浜ゆ崲"]
+                    升级点: ["误判升级", "线索反转", "局势压迫", "资源受限"],
+                    人物关系: ["合作生裂痕", "敌意加深", "信任试探", "利益交换"]
                 },
-                guidance: "鍙戝睍闃舵瑕佹寔缁帹杩涳紝涓嶈鍘熷湴韪忔銆傛瘡绔犻兘瑕佹湁鏂颁俊鎭€佹柊鍙樺寲鎴栨柊鐨勪唬浠枫€?
+                guidance: "发展阶段要持续推进，不要原地踏步。每章都要有新信息、新变化或新的代价。"
             },
-            楂樻疆: {
-                coreTasks: ["闆嗕腑鐖嗗彂涓昏鐭涚浘", "閫艰鑹插仛鍏抽敭閫夋嫨", "璁╁墠鏂囬摵鍨骇鐢熷洖鍝?],
+            高潮: {
+                coreTasks: ["集中爆发主要矛盾", "逼角色做关键选择", "让前文铺垫产生回响"],
                 elements: {
-                    鐖嗗彂鐐? ["姝ｉ潰浜ら攱", "鐪熺浉鎾曞紑", "璁″垝澶辨帶", "鎯呯华澶卞畧"],
-                    浠ｄ环: ["澶卞幓绛圭爜", "鍏崇郴鐮磋", "鏆撮湶绉樺瘑", "灞€闈㈠弽鍣?]
+                    爆发点: ["正面交锋", "真相撕开", "计划失控", "情绪失守"],
+                    代价: ["失去筹码", "关系破裂", "暴露秘密", "局面反噬"]
                 },
-                guidance: "楂樻疆闃舵瑕佹湁寮虹儓鍐茬獊鍜屾槑纭唬浠凤紝涓嶈兘鍙槸鍠婂彛鍙凤紝蹇呴』鐪熺殑鏀瑰彉灞€鍔裤€?
+                guidance: "高潮阶段要有强烈冲突和明确代价，不能只是喊口号，必须真的改变局势。"
             },
-            缁撳熬: {
-                coreTasks: ["瀹屾垚鏈崟鍏冩敹鏉?, "鍥炴敹鑷冲皯涓€椤归摵鍨?, "涓轰笅涓€鍗曞厓鐣欎笅閽╁瓙"],
+            结尾: {
+                coreTasks: ["完成本单元收束", "回收至少一项铺垫", "为下一单元留下钩子"],
                 elements: {
-                    鏀舵潫鏂瑰紡: ["闃舵鎬ц儨璐?, "灞€闈㈡殏绋?, "璇細鍔犳繁", "鏂扮殑浠诲姟钀戒笅"],
-                    鎮康閽╁瓙: ["鏇村ぇ鐨勬晫浜?, "鏂版毚闇茬殑鐪熺浉", "绐佸鍏舵潵鐨勬秷鎭?, "灏氭湭瑙ｉ噴鐨勫紓甯?]
+                    收束方式: ["阶段性胜负", "局面暂稳", "误会加深", "新的任务落下"],
+                    悬念钩子: ["更大的敌人", "新暴露的真相", "突如其来的消息", "尚未解释的异常"]
                 },
-                guidance: "缁撳熬闃舵瑕佹湁闃舵鎬х粨鏋滐紝浣嗕笉鑳藉钩骞宠惤鍦般€傚繀椤荤暀鍑烘帹鍔ㄤ笅涓€鍗曞厓鐨勬偓蹇甸挬瀛愩€?
+                guidance: "结尾阶段要有阶段性结果，但不能平平落地。必须留出推动下一单元的悬念钩子。"
             }
         };
     }
@@ -8050,15 +6001,15 @@
     getPlotUnitPhase(chapterNumber) {
         const position = ((Math.max(1, Number(chapterNumber || 1)) - 1) % 8) + 1;
         if (position <= 2) {
-            return { phase: "寮€绔?, position };
+            return { phase: "开端", position };
         }
         if (position <= 5) {
-            return { phase: "鍙戝睍", position };
+            return { phase: "发展", position };
         }
         if (position <= 7) {
-            return { phase: "楂樻疆", position };
+            return { phase: "高潮", position };
         }
-        return { phase: "缁撳熬", position };
+        return { phase: "结尾", position };
     }
 
     getPlotUnitForChapter(project, volumeNumber, chapterNumber) {
@@ -8081,11 +6032,11 @@
 
         if (!unit) {
             suggestions.push({
-                priority: "楂?,
-                message: `寤鸿鍒涘缓绗?${unitNumber} 涓墽鎯呭崟鍏冿紝鏄庣‘褰撳墠8绔犵殑鏍稿績鍐茬獊鍜岄樁娈电洰鏍囥€俙,
-                coreTasks: ["纭畾鏈崟鍏冧富鍐茬獊", "瀹夋帓涓庝笂涓€鍗曞厓鐨勬壙鎺?, "鎻愭棭鍩嬩笅缁撳熬閽╁瓙"],
-                elements: ["鏂颁换鍔?, "鏂版晫鎰?, "鏂扮瀵?],
-                guidance: "濡傛灉杩欐槸鏂板崟鍏冨紑绔紝鍏堢珛鐩爣鍜岀煕鐩撅紝涓嶈涓€涓婃潵鎶婄粨鏋滆绌裤€?
+                priority: "高",
+                message: `建议创建第 ${unitNumber} 个剧情单元，明确当前8章的核心冲突和阶段目标。`,
+                coreTasks: ["确定本单元主冲突", "安排与上一单元的承接", "提早埋下结尾钩子"],
+                elements: ["新任务", "新敌意", "新秘密"],
+                guidance: "如果这是新单元开端，先立目标和矛盾，不要一上来把结果说穿。"
             });
             return suggestions;
         }
@@ -8097,33 +6048,33 @@
             .filter(Boolean);
 
         suggestions.push({
-            priority: "楂?,
-            message: `绗?${unit.unit_number} 涓崟鍏冨綋鍓嶅浜?{phase.phase}闃舵锛堢 ${phase.position} 绔狅級銆俙,
+            priority: "高",
+            message: `第 ${unit.unit_number} 个单元当前处于${phase.phase}阶段（第 ${phase.position} 章）。`,
             coreTasks: currentPhaseInfo.coreTasks || [],
             elements: elementHints,
             guidance: currentPhaseInfo.guidance || ""
         });
 
-        if (phase.phase === "寮€绔? && unit.unit_number > 1) {
+        if (phase.phase === "开端" && unit.unit_number > 1) {
             const prevUnit = manager.plot_units[`pu_v${volumeNumber}_u${unit.unit_number - 1}`];
             if (prevUnit) {
                 suggestions.push({
-                    priority: "鏋侀珮",
-                    message: `蹇呴』鎵挎帴绗?${unit.unit_number - 1} 涓崟鍏冪粨灏剧暀涓嬬殑鎮康銆俙,
+                    priority: "极高",
+                    message: `必须承接第 ${unit.unit_number - 1} 个单元结尾留下的悬念。`,
                     coreTasks: prevUnit.connection_to_next ? [prevUnit.connection_to_next] : [],
                     elements: prevUnit.suspense_hook ? [prevUnit.suspense_hook] : [],
-                    guidance: "寮€绔樁娈靛厛鎺ヤ笂鍓嶉潰鐣欎笅鐨勯棶棰橈紝鍐嶅睍寮€褰撳墠鍗曞厓鐨勪富鍐茬獊銆?
+                    guidance: "开端阶段先接上前面留下的问题，再展开当前单元的主冲突。"
                 });
             }
         }
 
-        if (phase.phase === "缁撳熬") {
+        if (phase.phase === "结尾") {
             suggestions.push({
-                priority: "鏋侀珮",
-                message: "鏈珷娈靛鏋滄敹鍦ㄥ崟鍏冪粨灏撅紝蹇呴』褰㈡垚闃舵鎬х粨鏋滐紝骞跺煁涓嬩笅涓€鍗曞厓閽╁瓙銆?,
-                coreTasks: ["鍥炴敹鑷冲皯涓€椤逛紡绗?, "鐣欎笅鏂版偓蹇?, "next_chapter_setup 鍙啓鍥犱笉鍐欐灉"],
-                elements: (phaseInfo.缁撳熬?.elements?.鎮康閽╁瓙 || []).slice(0, 3),
-                guidance: phaseInfo.缁撳熬?.guidance || ""
+                priority: "极高",
+                message: "本章段如果收在单元结尾，必须形成阶段性结果，并埋下下一单元钩子。",
+                coreTasks: ["回收至少一项伏笔", "留下新悬念", "next_chapter_setup 只写因不写果"],
+                elements: (phaseInfo.结尾?.elements?.悬念钩子 || []).slice(0, 3),
+                guidance: phaseInfo.结尾?.guidance || ""
             });
         }
 
@@ -8136,17 +6087,17 @@
             return "";
         }
 
-        const lines = ["銆愬墽鎯呭崟鍏冨彂灞曞缓璁€?];
+        const lines = ["【剧情单元发展建议】"];
         suggestions.slice(0, 3).forEach((item) => {
-            lines.push(`鈥?[${item.priority}] ${item.message}`);
+            lines.push(`• [${item.priority}] ${item.message}`);
             if (item.coreTasks?.length) {
-                lines.push(`  鏍稿績浠诲姟锛?{item.coreTasks.slice(0, 2).join("銆?)}`);
+                lines.push(`  核心任务：${item.coreTasks.slice(0, 2).join("、")}`);
             }
             if (item.elements?.length) {
-                lines.push(`  鍏冪礌鍚彂锛?{item.elements.join("銆?)}`);
+                lines.push(`  元素启发：${item.elements.join("、")}`);
             }
             if (item.guidance) {
-                lines.push(`  鎻愮ず锛?{item.guidance}`);
+                lines.push(`  提示：${item.guidance}`);
             }
         });
         return lines.join("\n");
@@ -8169,32 +6120,32 @@
             })
             .slice(0, 3);
 
-        const lines = ["", "鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲", "銆愬墽鎯呭崟鍏冭拷韪姤鍛娿€?, "鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲"];
+        const lines = ["", "════════════════════════════════════════════", "【剧情单元追踪报告】", "════════════════════════════════════════════"];
         if (activeUnits.length) {
-            lines.push("銆愬綋鍓嶆椿璺冨崟鍏冦€?);
+            lines.push("【当前活跃单元】");
             activeUnits.forEach((unit) => {
-                lines.push(`鈥?绗?{unit.unit_number}鍗曞厓锛堢${unit.start_chapter}-${unit.end_chapter}绔狅級`);
-                lines.push(`  闃舵锛?{unit.current_phase || "鏈煡"} | 鏍稿績鍐茬獊锛?{unit.core_conflict || "寰呰ˉ鍏?}`);
+                lines.push(`• 第${unit.unit_number}单元（第${unit.start_chapter}-${unit.end_chapter}章）`);
+                lines.push(`  阶段：${unit.current_phase || "未知"} | 核心冲突：${unit.core_conflict || "待补充"}`);
                 if (unit.suspense_hook) {
-                    lines.push(`  鎮康閽╁瓙锛?{unit.suspense_hook}`);
+                    lines.push(`  悬念钩子：${unit.suspense_hook}`);
                 }
                 if (unit.connection_to_previous) {
-                    lines.push(`  瀵逛笂涓€鍗曞厓鎵挎帴锛?{unit.connection_to_previous}`);
+                    lines.push(`  对上一单元承接：${unit.connection_to_previous}`);
                 }
                 if (unit.connection_to_next) {
-                    lines.push(`  瀵逛笅涓€鍗曞厓閾哄灚锛?{unit.connection_to_next}`);
+                    lines.push(`  对下一单元铺垫：${unit.connection_to_next}`);
                 }
             });
         }
 
         if (currentChapter && plotUnits.length > 1) {
-            lines.push("", "銆愬崟鍏冭鎺ユ彁閱掋€?);
-            lines.push("鈥?鍓嶄竴鍗曞厓鐨勭粨灏撅紝瑕佽嚜鐒跺彉鎴愬悗涓€鍗曞厓鐨勫紑绔€?);
-            lines.push("鈥?鍗曞厓缁撳熬蹇呴』鐣欎笅閽╁瓙锛屽崟鍏冨紑绔繀椤绘壙鎺ユ棫闂銆?);
-            lines.push("鈥?涓嶈鎶婂悗缁崟鍏冪殑澶ч珮娼彁鍓嶅帇缂╁埌褰撳墠鎵规銆?);
+            lines.push("", "【单元衔接提醒】");
+            lines.push("• 前一单元的结尾，要自然变成后一单元的开端。");
+            lines.push("• 单元结尾必须留下钩子，单元开端必须承接旧问题。");
+            lines.push("• 不要把后续单元的大高潮提前压缩到当前批次。");
         }
 
-        lines.push("鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲");
+        lines.push("════════════════════════════════════════════");
         return lines.join("\n");
     }
 
@@ -8211,8 +6162,8 @@
             ].filter((value) => String(value || "").trim()).length;
             const background = String(character.background || "").trim();
             const hasGeneratedBackground = background
-                && !background.includes("鎻愬強瑙掕壊")
-                && !background.includes("鍚庣画鍙ˉ鍏呰儗鏅?);
+                && !background.includes("提及角色")
+                && !background.includes("后续可补充背景");
             const shouldExclude = !this.isGenericCharacterCandidateName(primaryName)
                 && (substantiveFieldCount >= 2 || hasGeneratedBackground);
             if (!shouldExclude) {
@@ -8221,7 +6172,7 @@
             if (primaryName) {
                 existingAllNames.add(primaryName);
             }
-            Utils.ensureArrayFromText(character.aliases || character["鍒悕"] || "")
+            Utils.ensureArrayFromText(character.aliases || character["别名"] || "")
                 .map((alias) => String(alias || "").trim())
                 .filter(Boolean)
                 .forEach((alias) => existingAllNames.add(alias));
@@ -8250,7 +6201,7 @@
             }
 
             if (roleMap[cleanName]) {
-                roleMap[cleanName].description = [roleMap[cleanName].description, String(description || "").trim()].filter(Boolean).join("锛?);
+                roleMap[cleanName].description = [roleMap[cleanName].description, String(description || "").trim()].filter(Boolean).join("；");
                 roleMap[cleanName].needsNaming = roleMap[cleanName].needsNaming && resolved.needsNaming;
                 roleMap[cleanName].aliases = Array.from(new Set([...(roleMap[cleanName].aliases || []), ...(resolved.aliases || [])])).filter(Boolean);
                 return;
@@ -8273,15 +6224,15 @@
                 if (!line) {
                     return;
                 }
-                if (line.includes("銆愬嚭鍦轰汉鐗┿€?)) {
+                if (line.includes("【出场人物】")) {
                     inCharSection = true;
                     return;
                 }
-                if (inCharSection && line.startsWith("銆?)) {
+                if (inCharSection && line.startsWith("【")) {
                     inCharSection = false;
                     return;
                 }
-                if (!inCharSection || (!line.startsWith("-") && !line.startsWith("鈥?))) {
+                if (!inCharSection || (!line.startsWith("-") && !line.startsWith("•"))) {
                     return;
                 }
 
@@ -8292,16 +6243,16 @@
 
                 let label = content;
                 let desc = "";
-                if (content.includes("锛?)) {
-                    const parts = content.split("锛?, 2);
+                if (content.includes("（")) {
+                    const parts = content.split("（", 2);
                     label = parts[0].trim();
-                    desc = parts[1].replace(/锛?g, "").trim();
+                    desc = parts[1].replace(/）/g, "").trim();
                 } else if (content.includes("(")) {
                     const parts = content.split("(", 2);
                     label = parts[0].trim();
                     desc = parts[1].replace(/\)/g, "").trim();
-                } else if (content.includes("锛?)) {
-                    const parts = content.split("锛?, 2);
+                } else if (content.includes("：")) {
+                    const parts = content.split("：", 2);
                     label = parts[0].trim();
                     desc = parts[1].trim();
                 } else if (content.includes(":")) {
@@ -8310,7 +6261,7 @@
                     desc = parts[1].trim();
                 }
 
-                addRole(label, desc || `绗?{chapter.number}绔犲嚭鍦轰汉鐗ー);
+                addRole(label, desc || `第${chapter.number}章出场人物`);
             });
         });
 
@@ -8319,13 +6270,13 @@
 
     normalizeOutlineCharacterLabel(value) {
         let normalized = String(value || "")
-            .replace(/^[鈥-]\s*/, "")
+            .replace(/^[•\-]\s*/, "")
             .replace(/\s+/g, " ")
-            .replace(/^(濂圭殑|浠栫殑|鎴戠殑|浣犵殑|鍏秥杩欎釜|閭ｄ釜|杩欎綅|閭ｄ綅|杩欏悕|閭ｅ悕|璇浠東濂?/, "")
-            .split(/[锛?锛?]/)[0]
+            .replace(/^(她的|他的|我的|你的|其|这个|那个|这位|那位|这名|那名|该|他|她)/, "")
+            .split(/[（(：:]/)[0]
             .trim();
 
-        normalized = normalized.replace(/^(缁檤瀵箌鍚憒璺焲鍜寍鎶妡琚?(?=[\u4e00-\u9fa5]{2,8}$)/u, "");
+        normalized = normalized.replace(/^(给|对|向|跟|和|把|被)(?=[\u4e00-\u9fa5]{2,8}$)/u, "");
         normalized = normalized.replace(/^(?:\u5979\u7684|\u4ed6\u7684|\u6211\u7684|\u4f60\u7684|\u8fd9\u4e2a|\u90a3\u4e2a|\u8fd9\u4f4d|\u90a3\u4f4d|\u8fd9\u540d|\u90a3\u540d)/u, "");
         return normalized.trim();
     }
@@ -8350,12 +6301,12 @@
             return false;
         }
 
-        const rolePattern = "(?:榫欑|绁炶儙|瀹″垽瀹榺楠戝＋|鍦ｉ獞澹珅涓绘暀|绁徃|渚嶅コ|涓瑹|濠㈠コ|鎶ゅ崼|涓嬪睘|鎵嬩笅|甯堝厔|甯堝|甯堝紵|甯堝|甯堢埗|甯堟瘝|鐖朵翰|姣嶄翰|浜插|鍚庡|鍏绘瘝|鍏荤埗|缁ф瘝|缁х埗|鍝ュ摜|濮愬|濡瑰|寮熷紵|缁у|缁у|缁у厔|缁у紵|鑰佸﹩|鑰佸叕|鍓嶅か|鍓嶅|涓堝か|濡诲瓙|鏈澶珅鏈濡粅濠嗗﹩|鍏叕|宀虫瘝|宀崇埗|瀚傚瓙|濮愬か|濡瑰か|灏忓Ж|濮ㄥ|濠跺瓙|濮戝|鑸呭|鑸呰垍|濮戠埗|鍚岄棬|鍚屼即|閭诲眳|瀹ゅ弸|鍚屼簨|涓婂徃|鑰佹澘|鑰佸笀|瀛︾敓|鏌愪汉|鏌愬姪鐞唡鏌愬悓浜媩鏌愯€佸笀|鏌愬尰鐢焲鏌愭姢澹珅鏌愯瀹榺鏌愮涔鍔╃悊|绉樹功|鍖荤敓|鎶ゅ＋|璀﹀畼|璺汉|淇濋晼|鍙告満|绠″|鏍″尰|鍚屽|瀛﹂暱|瀛﹀|鍓嶅彴|搴楀憳|缁忕悊|鎬荤洃|闄㈤暱|鏁欐巿|瀵煎笀|鐮旂┒鍛榺椤鹃棶|瀛﹀緬|宸ョ▼甯坾鎶€宸缁勯暱|鍘傞暱|鍓巶闀縷鎶€鏈憳|缁勫憳|绉戝憳|妫€鏌ョ粍闀縷妫€鏌ョ粍缁勯暱)";
-        const suffixIndexPattern = "[A-Za-z鐢蹭箼涓欎竵鎴婂繁搴氳緵澹櫢涓€浜屼笁鍥涗簲鍏竷鍏節鍗?-9]*";
+        const rolePattern = "(?:龙神|神胎|审判官|骑士|圣骑士|主教|祭司|侍女|丫鬟|婢女|护卫|下属|手下|师兄|师姐|师弟|师妹|师父|师母|父亲|母亲|亲妈|后妈|养母|养父|继母|继父|哥哥|姐姐|妹妹|弟弟|继姐|继妹|继兄|继弟|老婆|老公|前夫|前妻|丈夫|妻子|未婚夫|未婚妻|婆婆|公公|岳母|岳父|嫂子|姐夫|妹夫|小姨|姨妈|婶子|姑妈|舅妈|舅舅|姑父|同门|同伴|邻居|室友|同事|上司|老板|老师|学生|某人|某助理|某同事|某老师|某医生|某护士|某警官|某秘书|助理|秘书|医生|护士|警官|路人|保镖|司机|管家|校医|同学|学长|学姐|前台|店员|经理|总监|院长|教授|导师|研究员|顾问|学徒|工程师|技工|组长|厂长|副厂长|技术员|组员|科员|检查组长|检查组组长)";
+        const suffixIndexPattern = "[A-Za-z甲乙丙丁戊己庚辛壬癸一二三四五六七八九十0-9]*";
         if (new RegExp(`^[\\u4e00-\\u9fa5]{0,4}${rolePattern}${suffixIndexPattern}$`).test(cleanName)) {
             return true;
         }
-        return /^(?:[\u4e00-\u9fa5]{1,6}鐨??(?:浜插|鍚庡|鍏绘瘝|鍏荤埗|缁ф瘝|缁х埗|缁у|缁у|缁у厔|缁у紵|姣嶄翰|鐖朵翰|濮愬|鍝ュ摜|濡瑰|寮熷紵|瀚傚瓙|濮愬か|鍓嶅か|鍓嶅|鏈澶珅鏈濡?$/.test(cleanName);
+        return /^(?:[\u4e00-\u9fa5]{1,6}的)?(?:亲妈|后妈|养母|养父|继母|继父|继姐|继妹|继兄|继弟|母亲|父亲|姐姐|哥哥|妹妹|弟弟|嫂子|姐夫|前夫|前妻|未婚夫|未婚妻)$/.test(cleanName);
     }
 
     isLikelyActionLikeCharacterCandidate(name) {
@@ -8364,23 +6315,23 @@
             return true;
         }
 
-        if (/^(鏉ュ埌|璧板埌|璧板悜|鍥炲埌|鍓嶅線|杩涘叆|閫€鍑簗瀹夋姎|鎼€鎵秥鎵朵綇|鎶变綇|鎺ㄥ紑|鎷変綇|鎶ょ潃|鎶や綇|闄潃|璺熺潃|鐪嬪悜|鐩潃|鍚|璇村嚭|闂亾|浣庡ご|鎶ご|浼告墜|鎶墜|杞韩|璧疯韩|鍧愬湪|绔欏湪|绔欏埌|璺戝埌|鍐插悜|甯︾潃|甯﹀洖|鏀句笅|鎷胯捣|閫掔粰|閫佸埌|鎷栫潃|鎶辩潃|鎵剁潃)/.test(cleanName)) {
+        if (/^(来到|走到|走向|回到|前往|进入|退出|安抚|搀扶|扶住|抱住|推开|拉住|护着|护住|陪着|跟着|看向|盯着|听见|说出|问道|低头|抬头|伸手|抬手|转身|起身|坐在|站在|站到|跑到|冲向|带着|带回|放下|拿起|递给|送到|拖着|抱着|扶着)/.test(cleanName)) {
             return true;
         }
 
-        if (/^(鎶鏁憒杩絴鎵緗閫亅闄獆鎵秥鎷墊鎺▅鎶眧鑳寍鎷東甯鎷杩借刀|瀹夋姎)[\u4e00-\u9fa5]{2,4}$/.test(cleanName) && !this.matchesGenericRolePattern(cleanName)) {
+        if (/^(护|救|追|找|送|陪|扶|拉|推|抱|背|拖|带|拦|追赶|安抚)[\u4e00-\u9fa5]{2,4}$/.test(cleanName) && !this.matchesGenericRolePattern(cleanName)) {
             return true;
         }
 
-        if (/(鍥句功棣唡鏁欏|鍔炲叕瀹鍏徃|鍖婚櫌|瀹胯垗|闂ㄥ彛|妤间笅|妤间笂|浼氳瀹娲楁墜闂磡鐥呮埧|澶у巺|杞﹂噷|璺竟|琛椾笂|椁愬巺|涔︽埧|鍘ㄦ埧)$/.test(cleanName)) {
+        if (/(图书馆|教室|办公室|公司|医院|宿舍|门口|楼下|楼上|会议室|洗手间|病房|大厅|车里|路边|街上|餐厅|书房|厨房)$/.test(cleanName)) {
             return true;
         }
 
-        if (/[锛屻€傦紒锛熴€?.!?]/.test(cleanName)) {
+        if (/[，。！？、,.!?]/.test(cleanName)) {
             return true;
         }
 
-        if ((cleanName.includes("鐨?) || cleanName.includes("浜?) || cleanName.includes("鐫€") || cleanName.includes("鍦?)) && !this.matchesGenericRolePattern(cleanName)) {
+        if ((cleanName.includes("的") || cleanName.includes("了") || cleanName.includes("着") || cleanName.includes("地")) && !this.matchesGenericRolePattern(cleanName)) {
             return true;
         }
 
@@ -8394,20 +6345,20 @@
         }
 
         const compoundSurnames = [
-            "娆ч槼", "涓婂畼", "鍙搁┈", "鎱曞", "璇歌憶", "鍗楀", "澶忎警", "浠ょ嫄", "鐨囩敨", "杞╄緯",
-            "瀹囨枃", "闀垮瓩", "鍙稿緬", "鍙哥┖", "瑗块棬", "涓滄柟", "鐙", "鍖楀啣", "鍏瓩", "灏夎繜",
-            "婢瑰彴", "鎷撹穻", "鐧鹃噷", "閽熺", "涓滈儹", "鍛煎欢"
+            "欧阳", "上官", "司马", "慕容", "诸葛", "南宫", "夏侯", "令狐", "皇甫", "轩辕",
+            "宇文", "长孙", "司徒", "司空", "西门", "东方", "独孤", "北冥", "公孙", "尉迟",
+            "澹台", "拓跋", "百里", "钟离", "东郭", "呼延"
         ];
         if (compoundSurnames.some((surname) => cleanName.startsWith(surname) && cleanName.length >= surname.length + 1)) {
             return true;
         }
 
-        const commonSurnames = new Set("璧甸挶瀛欐潕鍛ㄥ惔閮戠帇鍐檲瑜氬崼钂嬫矆闊╂潹鏈辩Е灏よ浣曞悤鏂藉紶瀛旀浌涓ュ崕閲戦瓘闄跺鎴氳阿閭瑰柣鏌忔按绐︾珷浜戣嫃娼樿憶濂氳寖褰儙椴侀煢鏄岄┈鑻楀嚖鑺辨柟淇炰换琚佹煶椴嶅彶鍞愯垂寤夊矐钖涢浄璐哄€堡婊曟缃楁瘯閮濋偓瀹夊父涔愪簬鏃跺倕鐨崬榻愬悍浼嶄綑鍏冨崪椤惧瓱骞抽粍鍜岀﹩钀у肮濮氶偟婀涙豹绁佹瘺绂圭媱绫宠礉鏄庤嚙璁′紡鎴愭埓璋堝畫鑼呭簽鐔婄邯鑸掑眻椤圭钁ｆ鏉滈槷钃濋椀甯楹诲己璐捐矾濞勫嵄姹熺棰滈儹姊呯洓鏋楀垇閽熷緪閭遍獑楂樺钄＄敯妯婅儭鍑岄湇铏炰竾鏀煰鏄濈鍗㈣帿缁忔埧瑁樼吉骞茶В搴斿畻涓佸璐查倱閮佸崟鏉椽鍖呭乏鐭冲磾鍚夐挳榫氱▼宓囬偄瑁撮檰鑽ｇ縼鑽€缇婃柤鎯犵攧鏇插皝鍌ㄩ澇鐒︾墽灞辫敗鐢版▕鑳￠湇鍙搁粠涔旇媿鍙岄椈鑾樺厷缈熻碍璐″姵閫勫К鐢虫壎鍫靛唹瀹伴儲闆嶇挬妗戞婵墰瀵块€氳竟鎵堢嚂鍐€閮忔郸灏氬啘娓╁埆搴勬檹鏌寸灴闃庡厖鎱曡繛鑼逛範瀹﹁壘楸煎鍚戝彜鏄撴厧鎴堝粬搴剧粓鏆ㄥ眳琛℃閮借€挎弧寮樺尅鍥芥枃瀵囧箍绂勯槞涓滄娈虫矁鍒╄敋瓒婂闅嗗笀宸╁帊鑱傛檨鍕炬晼铻嶅喎杈涢槡閭ｇ畝楗剁┖鏇炬矙涔滃吇闉犻』涓板发鍏宠挴鐩告煡鍚庤崋绾㈡父绔烘潈閫洊鐩婃鍏粔鐫ｅ渤甯呯紤浜㈠喌閮堟湁鐞村綊娴锋涓樺乏涓樹笢闂ㄥ崡闂ㄥ晢鐗熶綐浣熷ⅷ鍝堣隘绗勾鐖遍槼浣翠集璧忓崡鑽ｆ鏅?.split(""));
+        const commonSurnames = new Set("赵钱孙李周吴郑王冯陈褚卫蒋沈韩杨朱秦尤许何吕施张孔曹严华金魏陶姜戚谢邹喻柏水窦章云苏潘葛奚范彭郎鲁韦昌马苗凤花方俞任袁柳鲍史唐费廉岑薛雷贺倪汤滕殷罗毕郝邬安常乐于时傅皮卞齐康伍余元卜顾孟平黄和穆萧尹姚邵湛汪祁毛禹狄米贝明臧计伏成戴谈宋茅庞熊纪舒屈项祝董梁杜阮蓝闵席季麻强贾路娄危江童颜郭梅盛林刁钟徐邱骆高夏蔡田樊胡凌霍虞万支柯昝管卢莫经房裘缪干解应宗丁宣贲邓郁单杭洪包左石崔吉钮龚程嵇邢裴陆荣翁荀羊於惠甄曲封储靳焦牧山蔡田樊胡霍司黎乔苍双闻莘党翟谭贡劳逄姬申扶堵冉宰郦雍璩桑桂濮牛寿通边扈燕冀郏浦尚农温别庄晏柴瞿阎充慕连茹习宦艾鱼容向古易慎戈廖庾终暨居衡步都耿满弘匡国文寇广禄阙东殴殳沃利蔚越夔隆师巩厍聂晁勾敖融冷辛阚那简饶空曾沙乜养鞠须丰巢关蒯相查后荆红游竺权逯盖益桓公仉督岳帅缑亢况郈有琴归海梁丘左丘东门南门商牟佘佟墨哈谯笪年爱阳佴伯赏南荣楚晋".split(""));
         if (commonSurnames.has(cleanName.charAt(0))) {
             return true;
         }
 
-        if (/^[鑰佸皬闃縘[\u4e00-\u9fa5]{1,3}$/.test(cleanName)) {
+        if (/^[老小阿][\u4e00-\u9fa5]{1,3}$/.test(cleanName)) {
             const rest = cleanName.slice(1);
             if (compoundSurnames.some((surname) => rest.startsWith(surname)) || commonSurnames.has(rest.charAt(0))) {
                 return true;
@@ -8425,13 +6376,13 @@
         if (this.isLikelyActionLikeCharacterCandidate(cleanName)) {
             return false;
         }
-        if (/绯荤粺|绌洪棿|闈㈡澘|浠诲姟|濂栧姳|鎻愮ず|闆疯揪|閫氱煡/.test(cleanName)) {
+        if (/系统|空间|面板|任务|奖励|提示|雷达|通知/.test(cleanName)) {
             return false;
         }
-        if (/^(鐢峰疂|濂冲疂)$/.test(cleanName)) {
+        if (/^(男宝|女宝)$/.test(cleanName)) {
             return true;
         }
-        return /(鐜嬬埛|鐜嬪|鍥藉笀|璐ㄥ瓙|澶尰浠澶尰|渚嶉儙|灏氫功|缁熼|棣栭|鎬荤|瀹椾护|瀹コ|瀣峰|鍒哄|鍏氱窘|鎶ゅ崼|鏆楀崼|渚嶅崼|渚嶄粠|鍐涘笀|鐭ュ簻|鍘夸护|鍏富|閮′富|涓栧瓙|鐨囧瓙|鐨囧コ|鐨囧瓩|澶瓙|澶コ|澶悗|鐨囧悗|鎺屾煖|浼欒|鍏堢敓|濮戝|鍏瓙|鐜媩浠瀹榺浣縷鍗珅灏唡甯厊甯坾鍖?$/.test(cleanName);
+        return /(王爷|王妃|国师|质子|太医令|太医|侍郎|尚书|统领|首领|总管|宗令|宫女|嬷嬷|刺客|党羽|护卫|暗卫|侍卫|侍从|军师|知府|县令|公主|郡主|世子|皇子|皇女|皇孙|太子|太女|太后|皇后|掌柜|伙计|先生|姑娘|公子|王|令|官|使|卫|将|帅|师|医)$/.test(cleanName);
     }
 
     isPlausibleOutlineCharacterLabel(name) {
@@ -8460,7 +6411,7 @@
             return true;
         }
 
-        if (/^[\u4e00-\u9fa5]{2,8}(鍏堢敓|灏忓|濂冲＋|鑰佸笀|鍖荤敓|鎶ゅ＋|涓讳换|鏁欐巿)$/.test(cleanName)) {
+        if (/^[\u4e00-\u9fa5]{2,8}(先生|小姐|女士|老师|医生|护士|主任|教授)$/.test(cleanName)) {
             return true;
         }
 
@@ -8472,7 +6423,7 @@
             return [];
         }
 
-        const sectionMatch = text.match(/銆愬嚭鍦轰汉鐗┿€慭s*([\s\S]*?)(?=\n銆恷$)/);
+        const sectionMatch = text.match(/【出场人物】\s*([\s\S]*?)(?=\n【|$)/);
         const section = sectionMatch?.[1] ? String(sectionMatch[1]).trim() : "";
         if (!section) {
             return [];
@@ -8481,24 +6432,24 @@
         const entries = [];
         section.split(/\r?\n/).forEach((line) => {
             const rawLine = line.trim();
-            if (!rawLine || (!rawLine.startsWith("-") && !rawLine.startsWith("鈥?))) {
+            if (!rawLine || (!rawLine.startsWith("-") && !rawLine.startsWith("•"))) {
                 return;
             }
 
-            const cleaned = rawLine.replace(/^[鈥?]\s*/, "");
+            const cleaned = rawLine.replace(/^[•-]\s*/, "");
             let label = cleaned;
             let description = "";
 
-            if (cleaned.includes("锛?)) {
-                const parts = cleaned.split("锛?, 2);
+            if (cleaned.includes("（")) {
+                const parts = cleaned.split("（", 2);
                 label = parts[0].trim();
-                description = String(parts[1] || "").replace(/锛?g, "").trim();
+                description = String(parts[1] || "").replace(/）/g, "").trim();
             } else if (cleaned.includes("(")) {
                 const parts = cleaned.split("(", 2);
                 label = parts[0].trim();
                 description = String(parts[1] || "").replace(/\)/g, "").trim();
-            } else if (cleaned.includes("锛?)) {
-                const parts = cleaned.split("锛?, 2);
+            } else if (cleaned.includes("：")) {
+                const parts = cleaned.split("：", 2);
                 label = parts[0].trim();
                 description = String(parts[1] || "").trim();
             } else if (cleaned.includes(":")) {
@@ -8533,12 +6484,12 @@
 
         (project.outline?.characters || []).forEach((character) => {
             const name = String(character.name || "").trim();
-            const relationships = String(character.relationships || character["浜虹墿鍏崇郴"] || "").trim();
+            const relationships = String(character.relationships || character["人物关系"] || "").trim();
             if (!name || !relationships) {
                 return;
             }
             if (!focusSet.size || focusSet.has(name) || Array.from(focusSet).some((target) => relationships.includes(target))) {
-                pushLine(`- ${name}锛?{Utils.summarizeText(relationships, 120)}`);
+                pushLine(`- ${name}：${Utils.summarizeText(relationships, 120)}`);
             }
         });
 
@@ -8551,17 +6502,17 @@
             if (focusSet.size && !focusSet.has(left) && !focusSet.has(right)) {
                 return;
             }
-            const relation = value?.鍏崇郴 || value?.relationship || value?.relations || "鐩稿叧";
-            pushLine(`- ${left} <-> ${right}锛?{relation}`);
+            const relation = value?.关系 || value?.relationship || value?.relations || "相关";
+            pushLine(`- ${left} <-> ${right}：${relation}`);
         });
 
-        return lines.length ? lines.join("\n") : "鏆傛棤宸插缓绔嬪叧绯?;
+        return lines.length ? lines.join("\n") : "暂无已建立关系";
     }
 
     getOutlineCharacterExcludedNames() {
         return new Set([
-            "涓昏", "鐢蜂富", "濂充富", "鍙嶆淳", "璺汉", "浼椾汉", "灏戝勾", "灏戝コ", "鐢蜂汉", "濂充汉",
-            "甯堝皧", "鎺岄棬", "闀胯€?, "寮熷瓙", "鍚岄棬", "鏁屼汉", "瀵规墜", "榛戝奖", "鏉ヤ汉", "鍖昏€?
+            "主角", "男主", "女主", "反派", "路人", "众人", "少年", "少女", "男人", "女人",
+            "师尊", "掌门", "长老", "弟子", "同门", "敌人", "对手", "黑影", "来人", "医者"
         ]);
     }
 
@@ -8578,7 +6529,6 @@
 
         const synopsisData = this.restoreSynopsisMainCharacters(project) || {};
         Object.entries(synopsisData.vague_to_name_mapping || {}).forEach(([alias, realName]) => addAlias(alias, realName));
-        Object.entries(this.buildSynopsisStrictRealNameMapping(project) || {}).forEach(([alias, realName]) => addAlias(alias, realName));
         Object.entries(synopsisData.main_characters || {}).forEach(([role, realName]) => {
             addAlias(role, realName);
             (this.getSynopsisRoleAliases()[role] || []).forEach((alias) => addAlias(alias, realName));
@@ -8603,7 +6553,7 @@
                 return;
             }
             addAlias(primaryName, primaryName);
-            Utils.ensureArrayFromText(character.aliases || character["鍒悕"] || "")
+            Utils.ensureArrayFromText(character.aliases || character["别名"] || "")
                 .filter((alias) => String(alias || "").trim().length >= 2)
                 .forEach((alias) => addAlias(alias, primaryName));
         });
@@ -8698,7 +6648,7 @@
         }
         const rawName = this.normalizeOutlineCharacterLabel(character?.name || character?.real_name || character?.realName || "");
         const aliasValues = [
-            ...(Array.isArray(character?.aliases) ? character.aliases : Utils.ensureArrayFromText(character?.aliases || character?.["鍒悕"] || ""))
+            ...(Array.isArray(character?.aliases) ? character.aliases : Utils.ensureArrayFromText(character?.aliases || character?.["别名"] || ""))
         ]
             .map((value) => String(value || "").trim())
             .filter(Boolean);
@@ -8754,7 +6704,7 @@
                     return;
                 }
                 protectedText = protectedText.replace(
-                    new RegExp(`(^|[锛?銆侊紝锛?锛?\\s])${cleanAlias.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}(?=鐨剕鏄瘄涓巪鍜寍璺焲鍙妡銆亅锛寍锛泑銆倈锛墊\\)|\\s|$)`, "g"),
+                    new RegExp(`(^|[：:、，；;（(\\s])${cleanAlias.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}(?=的|是|与|和|跟|及|、|，|；|。|）|\\)|\\s|$)`, "g"),
                     (match, prefix) => `${prefix}${cleanRealName}`
                 );
             });
@@ -8768,8 +6718,8 @@
 
     sanitizeGeneratedRelationshipText(project, currentName, relationships, sourceMeta = {}) {
         const rawText = String(relationships || "").trim();
-        const relationKeywords = /鐖朵翰|姣嶄翰|浜插|鍚庡|鍏绘瘝|鍏荤埗|缁ф瘝|缁х埗|缁у|缁у|缁у厔|缁у紵|鍝ュ摜|濮愬|濡瑰|寮熷紵|澶|濡诲瓙|涓堝か|鎭嬩汉|鏈澶珅鏈濡粅鏈嬪弸|鏁屽|鏁屼汉|浠囨晫|瀵规墜|鍚岄棬|甯堝緬|甯堝厔濡箌涓婁笅绾涓婂徃|涓嬪睘|鍚屼簨|鐩熷弸|甯嚩|鏃ц瘑|浜插睘|姣嶅コ|鐖跺コ|濮愬|鍏勫/;
-        const noiseKeywords = /鍚庣画鍙ˉ鍏厊淇℃伅鍚庣画琛ュ厖|鎻愬強瑙掕壊|鍓ф儏涓瓅缁忓巻浜唡蹇冪悊钀藉樊|涓嶆蹇億鎯宠鎶ュ|鐓介鐐圭伀|鏃犳儏绮夌|瑁呬綔|璇曞浘|浼佸浘|琛ㄩ潰涓妡瀹炲垯/;
+        const relationKeywords = /父亲|母亲|亲妈|后妈|养母|养父|继母|继父|继姐|继妹|继兄|继弟|哥哥|姐姐|妹妹|弟弟|夫妻|妻子|丈夫|恋人|未婚夫|未婚妻|朋友|敌对|敌人|仇敌|对手|同门|师徒|师兄妹|上下级|上司|下属|同事|盟友|帮凶|旧识|亲属|母女|父女|姐妹|兄妹/;
+        const noiseKeywords = /后续可补充|信息后续补充|提及角色|剧情中|经历了|心理落差|不死心|想要报复|煽风点火|无情粉碎|装作|试图|企图|表面上|实则/;
         const knownNames = new Set(
             (project?.outline?.characters || [])
                 .map((character) => String(character?.name || "").trim())
@@ -8781,14 +6731,14 @@
         const cleanClause = (text) => String(text || "")
             .replace(/[\r\n]+/g, " ")
             .replace(/\s+/g, " ")
-            .replace(/^[锛屻€侊紱;锛?\-鈥s]+/, "")
-            .replace(/[锛屻€侊紱;锛?\-鈥s]+$/, "")
+            .replace(/^[，、；;：:\-•\s]+/, "")
+            .replace(/[，、；;：:\-•\s]+$/, "")
             .replace(/([\u4e00-\u9fa5]{2,4})(?:\1){1,}/g, "$1")
-            .replace(/([\u4e00-\u9fa5]{2,4})鐨刓1鐨?g, "$1鐨?)
+            .replace(/([\u4e00-\u9fa5]{2,4})的\1的/g, "$1的")
             .trim();
 
         const clauses = normalized
-            .split(/[\r\n]+|[锛?銆俔+/)
+            .split(/[\r\n]+|[；;。]+/)
             .map(cleanClause)
             .filter(Boolean)
             .filter((clause) => !noiseKeywords.test(clause))
@@ -8803,7 +6753,7 @@
             .slice(0, 3);
 
         if (deduped.length) {
-            return deduped.join("锛?);
+            return deduped.join("；");
         }
 
         const fallbackDesc = cleanClause(sourceMeta?.description || "");
@@ -8818,4 +6768,3 @@
         return Utils.summarizeText(text, max);
     }
 }
-
