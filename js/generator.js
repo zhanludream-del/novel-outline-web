@@ -1253,6 +1253,7 @@
             "16. 少写‘胸口剧烈起伏’‘衣服随着呼吸上下起伏’‘手指用力抠住纸张边缘’这种假身体反应句。能删就删，能改就改成实际动作结果。",
             "17. 少用‘死死、狠狠、剧烈、用力’这类副词硬压强度。不要把力道和情绪全靠副词顶出来。",
             "18. 严禁错误句横跳。不要把一种坏句改成另一种坏句，比如把‘指节泛白’改成‘指甲掐进肉里’，把‘全场死寂’改成‘台下安静下来’，把‘死死抓着’改成‘狠狠攥着’。",
+            "19. 不要老写‘连眼皮都没抬’‘看都没看’‘头也不抬’这种冷淡摆拍短句。人物可以冷淡，但要靠动作、对白、处理方式来体现，不要靠高频模板句。",
             "",
             "【真人感参考】",
             humanStyleGuide,
@@ -1307,9 +1308,14 @@
                 weakRewriteEntries.forEach((entry) => {
                     const retryRewrite = strictRewriteMap.get(entry.index) || entry.rewritten;
                     if (this.isWeakAiFlavorRewrite(entry.original, retryRewrite, entry.reasons)) {
+                        const safeFallback = this.buildSafeAiFlavorRewriteFallback(entry.original, retryRewrite, entry.reasons);
+                        if (safeFallback) {
+                            updated[entry.index] = this.applyAiFlavorRewrite(entry.original, safeFallback);
+                            return;
+                        }
                         updated[entry.index] = this.canDeleteAiFlavorSentence(entry.original, entry.reasons)
                             ? ""
-                            : this.applyAiFlavorRewrite(entry.original, retryRewrite);
+                            : entry.original;
                         return;
                     }
                     updated[entry.index] = this.applyAiFlavorRewrite(entry.original, retryRewrite);
@@ -1355,6 +1361,7 @@
             "14. 像‘胸口剧烈起伏’‘衣服随着呼吸上下起伏’‘手指用力抠住纸张边缘’这种句子，也不要只换个近义说法，要么删掉，要么改成真实动作结果。",
             "15. 不要把‘死死抓着’改成‘狠狠攥着’‘用力抓着’这种同类强度副词句。",
             "16. 不能把一种错误句改成另一种错误句。只要还落在任何坏句家族里，就算改写失败。",
+            "17. 不要把‘连眼皮都没抬’改成‘看都没看’‘头也不抬’‘眼皮都没掀一下’这种同一家族的冷淡摆拍句。",
             "",
             "真人感参考：",
             humanStyleGuide,
@@ -1388,6 +1395,59 @@
         return this.preserveSentenceEnding(original, trimmed);
     }
 
+    stripAiFlavorFragmentsFromSentence(sentence, reasons = []) {
+        let text = String(sentence || "");
+        if (!text) {
+            return "";
+        }
+
+        const shouldStrip = (pattern) => Array.isArray(reasons) && reasons.some((item) => pattern.test(String(item || "")));
+        if (shouldStrip(/冷淡摆拍模板/)) {
+            text = text.replace(/(?:，|,)?\s*((连)?眼皮都没抬|眼皮都没掀(?:一下)?|看都没看|头也不抬|连头都没抬|连眼都没抬|连个眼神都没给|连余光都没分过去|连眼风都没扫过去)/g, "");
+        }
+        if (shouldStrip(/呼吸起伏模板/)) {
+            text = text
+                .replace(/(?:，|,)?\s*(胸口|胸膛|胸脯)(?:剧烈|明显|轻轻|微微)?起伏/g, "")
+                .replace(/(衣襟|衣料|衣服|褂子|蓝布褂子|身上那件[^，。；！？\n]{0,12})(?:随着呼吸|随呼吸)(?:上下起伏|起伏)/g, "$1");
+        }
+        if (shouldStrip(/局部抠抓模板/)) {
+            text = text.replace(/(?:，|,)?\s*(手指|指尖|手)(?:用力|死死|狠狠)?(?:抠住|扣住|攥住|抓住|捏住)(?:纸张边缘|纸页边缘|边缘|衣角|袖口|桌角|门框|杯沿)/g, "");
+        }
+        if (shouldStrip(/用力痕迹模板/)) {
+            text = text
+                .replace(/(?:，|,)?\s*(手上|手里|掌心)[^，。；！？\n]{0,6}(用了死力气|使了死劲|下了狠劲)/g, "")
+                .replace(/(?:，|,)?\s*(指甲|指节|骨节|牙关|后槽牙|手背)[^，。；！？\n]{0,12}(掐进|陷进|嵌进|泛白|发白|绷紧|暴起|咬紧|发酸)(?:[^，。；！？\n]{0,10}(肉里|掌心|皮肉))?/g, "");
+        }
+        if (shouldStrip(/硬压强度词/)) {
+            text = text.replace(/(死死|狠狠|剧烈|用力|拼命|死命)(?=(抓着|抓住|攥着|攥住|按着|按住|盯着|瞪着|咬着|咬住|抠住|扣住|拽着|扯着|起伏|喘息|呼吸))/g, "");
+        }
+        if (shouldStrip(/围观停顿模板/)) {
+            text = text.replace(/(?:，|,)?\s*((台下|场下|人群|众人|周围|围观的人|围观者|旁边的人)[^，。；！？\n]{0,12}(安静下来|静下来|停了动作|停下动作|都停了动作|齐齐停住|全停了下来|都停下了手里的动作)|连[^，。；！？\n]{0,12}的人都停了动作)/g, "");
+        }
+
+        text = text
+            .replace(/[，,]{2,}/g, "，")
+            .replace(/^[，,\s]+|[，,\s]+$/g, "")
+            .replace(/，([。！？])/g, "$1")
+            .replace(/([。！？]){2,}/g, "$1")
+            .trim();
+
+        return text;
+    }
+
+    buildSafeAiFlavorRewriteFallback(original, rewritten, reasons = []) {
+        const candidates = [rewritten, original]
+            .map((item) => this.stripAiFlavorFragmentsFromSentence(item, reasons))
+            .filter(Boolean);
+
+        for (const candidate of candidates) {
+            if (!this.collectAiRewriteBlockingSignals(candidate).length) {
+                return candidate;
+            }
+        }
+        return "";
+    }
+
     isWeakAiFlavorRewrite(original, rewritten, reasons = []) {
         const originalText = String(original || "").trim();
         const rewrittenText = String(rewritten || "").trim();
@@ -1403,6 +1463,7 @@
         const breathMotionPattern = /((胸口|胸膛|胸脯)[^。！？\n]{0,8}(剧烈|明显|轻轻|微微)?[^。！？\n]{0,6}(起伏|上下起伏))|((衣襟|衣料|衣服|褂子|蓝布褂子|身上那件[^。！？\n]{0,12})[^。！？\n]{0,10}(随着呼吸|随呼吸)[^。！？\n]{0,6}(起伏|上下起伏))/;
         const fingerGripPattern = /((手指|指尖|手)[^。！？\n]{0,8}(用力|死死|狠狠)?[^。！？\n]{0,8}(抠住|扣住|攥住|抓住|捏住)[^。！？\n]{0,12}(纸张边缘|纸页边缘|边缘|衣角|袖口|桌角|门框|杯沿))/;
         const hardForceAdverbPattern = /(死死|狠狠|剧烈|用力|拼命|死命)[^。！？\n]{0,8}(抓着|抓住|攥着|攥住|按着|按住|盯着|瞪着|咬着|咬住|抠住|扣住|拽着|扯着|起伏|喘息|呼吸)/;
+        const dismissivePosePattern = /((连)?眼皮都没抬|眼皮都没掀(?:一下)?|看都没看|头也不抬|连头都没抬|连眼都没抬|连个眼神都没给|连余光都没分过去|连眼风都没扫过去)/;
         const atmospherePattern = /(安静|寂静|死寂|沉默|没人说话|没有人说话|鸦雀无声|落针可闻|空气|时间|四周|全场|仿佛|似乎)/;
         const literaryPattern = /(命运的齿轮|无形的(?:压迫|巨手)|空气里[^。！？\n]{0,12}(压迫|冷意|危险)|夜色[^。！？\n]{0,12}(吞没|漫过)|沉默[^。！？\n]{0,12}(漫开|席卷)|压迫感[^。！？\n]{0,12}(铺开|漫开)|平整如镜|月光下[^。！？\n]{0,12}反射出[^。！？\n]{0,6}(寒光|冷光))/;
         const casualActionPattern = /(姿势|动作)[^。！？\n]{0,8}(极其|格外|十分|异常|过分)?[^。！？\n]{0,8}(随意|漫不经心|轻飘飘)[^。！？\n]{0,18}(像是|像|到了极点|到了极致)/;
@@ -1428,6 +1489,9 @@
             return true;
         }
         if (reasons.some((item) => /硬压强度词/.test(String(item || ""))) && hardForceAdverbPattern.test(rewrittenText)) {
+            return true;
+        }
+        if (reasons.some((item) => /冷淡摆拍模板/.test(String(item || ""))) && dismissivePosePattern.test(rewrittenText)) {
             return true;
         }
         if (reasons.some((item) => /凝固停顿|空泛比喻|抽象情绪|镜头切换/.test(String(item || ""))) && atmospherePattern.test(rewrittenText)) {
@@ -1466,6 +1530,9 @@
         if (!text) {
             return false;
         }
+        if (Array.isArray(reasons) && reasons.some((item) => /冷淡摆拍模板/.test(String(item || "")))) {
+            return true;
+        }
         if (/[“”「」『』]/.test(text)) {
             return false;
         }
@@ -1492,6 +1559,7 @@
             "呼吸起伏模板",
             "局部抠抓模板",
             "硬压强度词",
+            "冷淡摆拍模板",
             "过度文学化",
             "摆拍比喻",
             "空动作总结",
@@ -1687,6 +1755,11 @@
                 pattern: /(死死|狠狠|剧烈|用力|拼命|死命)[^。！？\n]{0,8}(抓着|抓住|攥着|攥住|按着|按住|盯着|瞪着|咬着|咬住|抠住|扣住|拽着|扯着|起伏|喘息|呼吸)/
             },
             {
+                label: "冷淡摆拍模板",
+                score: 2,
+                pattern: /((连)?眼皮都没抬|眼皮都没掀(?:一下)?|看都没看|头也不抬|连头都没抬|连眼都没抬|连个眼神都没给|连余光都没分过去|连眼风都没扫过去)/
+            },
+            {
                 label: "情绪标签堆叠",
                 score: 1,
                 pattern: /(冷静|克制|复杂|危险|深邃|锐利|压迫感|意味不明|不容置疑|沉稳|阴冷|森然)[^。！？\n]{0,6}(冷静|克制|复杂|危险|深邃|锐利|压迫感|意味不明|不容置疑|沉稳|阴冷|森然)/
@@ -1764,7 +1837,7 @@
         if (!list.length) {
             return false;
         }
-        const strongPattern = /(微表情模板|假细节模板|用力痕迹模板|呼吸起伏模板|局部抠抓模板|硬压强度词|过度文学化|摆拍比喻|空动作总结|凝固停顿模板|围观停顿模板|情绪标签堆叠|标准冲突推进|重复渲染|段内重复解释)/;
+        const strongPattern = /(微表情模板|假细节模板|用力痕迹模板|呼吸起伏模板|局部抠抓模板|硬压强度词|冷淡摆拍模板|过度文学化|摆拍比喻|空动作总结|凝固停顿模板|围观停顿模板|情绪标签堆叠|标准冲突推进|重复渲染|段内重复解释)/;
         return !list.some((item) => strongPattern.test(String(item || "")));
     }
 
@@ -5539,6 +5612,7 @@
                 "相关人物设定只用于锁定身份、关系、口吻、目标和外观事实，不要把设定里的原句、标签词、描述短语直接抄进正文。",
                 "同一角色的标志性描述一章里最多点到一次，不要反复拿同一句当出场模板。",
                 "不要反复使用‘死死、狠狠、剧烈、用力’这类副词硬顶强度，也不要老写‘胸口起伏’‘衣料随呼吸起伏’‘手指抠住边缘’这类假身体反应句。",
+                "写人物冷淡、傲慢、敷衍时，不要老用‘连眼皮都没抬’‘看都没看’‘头也不抬’这种高频短句，要改用动作、停顿、回话方式来体现。",
                 "",
                 "銆愬墠鏂囦簲绔犮€?,
                 "鐢ㄩ€旓細鍙敤浜庣户鎵垮悕璇嶃€佺姸鎬併€佸彛鍚诲拰鍔ㄤ綔寤剁画锛屼笉瑕佹嬁瀹冨綋浣滄湰绔犲紑澶寸殑澶嶈堪妯℃澘銆?,
