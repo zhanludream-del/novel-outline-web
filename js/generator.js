@@ -4436,17 +4436,14 @@
         const outlineSlice = this.extractCurrentVolumeOutlineContext(project, volumeNumber);
         const currentVolume = project?.outline?.volumes?.[volumeNumber - 1] || {};
         const contextText = [concept || "", volumeSummary || "", existingSynopsis || "", outlineSlice.currentOutline || ""].filter(Boolean).join("\n");
-        const previousSynopsisItems = this.collectSynopsisHistoryItems(project, volumeNumber).slice(-8);
         return {
             lockedNamesTable: this.buildSynopsisLockedNameTable(project),
             currentVolumeTaskLabel: `${currentVolume.title || `第${volumeNumber}卷`}${volumeSummary ? ` - ${Utils.summarizeText(volumeSummary, 80)}` : ""}`,
             volumeSynopsisContext: String(volumeSummary || currentVolume.summary || "").trim(),
             currentVolumeOutlineContext: this.limitContext(String(outlineSlice.currentOutline || "").trim(), 2200),
             previousVolumeEnding: this.buildPreviousVolumeEnding(project, volumeNumber),
-            previousSynopsisContext: previousSynopsisItems.length
-                ? previousSynopsisItems.map((item) => item.line).join("\n")
-                : "",
-            existingSynopsis: this.limitContext(String(existingSynopsis || "").trim(), 1200),
+            previousSynopsisContext: this.buildFullPreviousChapterSynopsisContext(project, volumeNumber),
+            existingSynopsis: String(existingSynopsis || "").trim(),
             repeatGuard: this.limitContext(this.buildUsedPlotsSummary(project, volumeNumber), 1400),
             innovationPrompt: this.limitContext(this.buildSynopsisInnovationPrompt(project, volumeNumber, concept, volumeSummary), 1200),
             continuityGuard: this.limitContext(this.buildSynopsisHardFactHint(project, volumeNumber, contextText), 1000),
@@ -4458,6 +4455,24 @@
             boundaryGuard: this.limitContext(this.buildSynopsisVolumeBoundaryGuard(project, volumeNumber), 500),
             chapterCount
         };
+    }
+
+    buildFullPreviousChapterSynopsisContext(project, currentVolumeNumber) {
+        if (!project?.outline?.volumes?.length || currentVolumeNumber <= 1) {
+            return "";
+        }
+
+        return project.outline.volumes
+            .slice(0, currentVolumeNumber - 1)
+            .map((volume, index) => {
+                const synopsis = this.normalizeSynopsisReferenceText(
+                    project,
+                    volume.chapterSynopsis || volume.chapter_synopsis || ""
+                );
+                return synopsis ? `【第${index + 1}卷细纲】\n${synopsis}` : "";
+            })
+            .filter(Boolean)
+            .join("\n\n");
     }
 
     buildSimpleSynopsisSystemPrompt({ genreConstraint, chapterCount, lockedNamesTable }) {
@@ -4506,7 +4521,7 @@
             volumeSynopsisContext ? `当前卷概要：\n${volumeSynopsisContext}` : "",
             currentVolumeOutlineContext ? `当前卷详细大纲：\n${currentVolumeOutlineContext}` : "",
             previousVolumeEnding ? `上一卷结尾：\n${previousVolumeEnding}` : "",
-            previousSynopsisContext ? `前文最近细纲（只作衔接参考）：\n${previousSynopsisContext}` : "",
+            previousSynopsisContext ? `前文全部细纲（只作衔接参考）：\n${previousSynopsisContext}` : "",
             existingSynopsis ? `已有细纲参考：\n${existingSynopsis}` : "",
             worldbuilding ? `世界观补充：\n${this.limitContext(worldbuilding, 800)}` : "",
             continuityGuard ? `连续性护栏：\n${continuityGuard}` : "",
@@ -4547,7 +4562,7 @@
             volumeSynopsisContext ? `当前卷概要：\n${volumeSynopsisContext}` : "",
             currentVolumeOutlineContext ? `当前卷详细大纲：\n${currentVolumeOutlineContext}` : "",
             previousVolumeEnding ? `上一卷结尾：\n${previousVolumeEnding}` : "",
-            previousSynopsisContext ? `前文最近细纲：\n${previousSynopsisContext}` : "",
+            previousSynopsisContext ? `前文全部细纲：\n${previousSynopsisContext}` : "",
             existingSynopsis ? `已有细纲参考：\n${existingSynopsis}` : "",
             worldbuilding ? `世界观补充：\n${this.limitContext(worldbuilding, 600)}` : "",
             continuityGuard ? `连续性护栏：\n${continuityGuard}` : "",
