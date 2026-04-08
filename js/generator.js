@@ -203,42 +203,320 @@
     async generateVolumeSynopsis({ project, title, concept, genre, theme, worldbuilding, volumeCount, chaptersPerVolume, subgenre }) {
         const genreConstraint = this.buildGenreConstraint(genre, subgenre || genre);
         const innovationPrompt = this.buildVolumeInnovationPrompt(project, concept, worldbuilding);
+        const ideaContext = this.buildVolumeIdeaContext(project, concept);
+        const phaseBlueprint = this.getVolumePhaseBlueprint(volumeCount);
+
+        let skeleton = await this.generateVolumeSkeleton({
+            project,
+            title,
+            concept,
+            genre,
+            theme,
+            worldbuilding,
+            volumeCount,
+            chaptersPerVolume,
+            subgenre,
+            genreConstraint,
+            innovationPrompt,
+            ideaContext,
+            phaseBlueprint
+        });
+        skeleton = this.sanitizeVolumeSkeleton(skeleton, volumeCount, phaseBlueprint);
+        skeleton = this.enforceVolumeSkeletonProgression(skeleton, phaseBlueprint);
+
+        const skeletonIssues = this.collectVolumeSkeletonIssues(skeleton);
+        if (skeletonIssues.length && typeof Utils !== "undefined" && typeof Utils.log === "function") {
+            Utils.log(`卷纲骨架发现 ${skeletonIssues.length} 条风险，已按阶段规则做本地兜底：${skeletonIssues.slice(0, 4).join("；")}`, "warning");
+        }
+
+        let rendered = [];
+        try {
+            rendered = await this.renderVolumeSynopsisFromSkeleton({
+                title,
+                genre,
+                subgenre,
+                theme,
+                concept,
+                worldbuilding,
+                volumeCount,
+                chaptersPerVolume,
+                genreConstraint,
+                innovationPrompt,
+                ideaContext,
+                phaseBlueprint,
+                skeleton
+            });
+        } catch (error) {
+            if (typeof Utils !== "undefined" && typeof Utils.log === "function") {
+                Utils.log(`卷纲润色失败，已回退到骨架转写：${error.message}`, "warning");
+            }
+        }
+
+        const volumes = skeleton.map((item, index) => {
+            const renderedItem = rendered[index] || {};
+            const fallback = this.buildFallbackVolumeRender(item, index, volumeCount);
+            return {
+                volume_number: Number(item.volume_number || index + 1),
+                title: item.title || `第${index + 1}卷`,
+                summary: this.normalizeGeneratedVolumeText(renderedItem.summary || fallback.summary),
+                cliffhanger: this.normalizeGeneratedVolumeText(renderedItem.cliffhanger || fallback.cliffhanger)
+            };
+        });
+
+        return {
+            volumes,
+            volumePlan: skeleton
+        };
+    }
+
+    extractBracketSections(text) {
+        const source = String(text || "");
+        const sections = {};
+        const pattern = /【([^】]+)】\s*([\s\S]*?)(?=\n\s*【[^】]+】|$)/g;
+        let match = null;
+        while ((match = pattern.exec(source)) !== null) {
+            const key = String(match[1] || "").trim();
+            const value = String(match[2] || "").trim();
+            if (key && value && !sections[key]) {
+                sections[key] = value;
+            }
+        }
+        return sections;
+    }
+
+    isIdeaAlignedWithConcept(idea, concept) {
+        if (!idea || !concept) {
+            return true;
+        }
+        const conceptText = String(concept || "").trim();
+        if (!conceptText) {
+            return true;
+        }
+        const probes = [
+            idea.title,
+            idea.hook,
+            idea.seed_summary,
+            idea.conflict_engine
+        ]
+            .map((item) => String(item || "").trim())
+            .filter(Boolean)
+            .map((item) => item.slice(0, Math.min(item.length, 18)));
+        if (!probes.length) {
+            return true;
+        }
+        return probes.some((snippet) => conceptText.includes(snippet));
+    }
+
+    getSelectedStoryIdea(project, concept) {
+        const synopsisData = project?.synopsisData || project?.synopsis_data || {};
+        const stored = synopsisData.selected_story_idea || synopsisData.selectedStoryIdea;
+        if (stored && typeof stored === "object" && this.isIdeaAlignedWithConcept(stored, concept)) {
+            return stored;
+        }
+
+        const ideaLab = project?.idea_lab || {};
+        const selectedId = String(ideaLab.selected_id || "").trim();
+        if (!selectedId || !Array.isArray(ideaLab.results)) {
+            return null;
+        }
+        const selected = ideaLab.results.find((item) => item.id === selectedId) || null;
+        return selected && this.isIdeaAlignedWithConcept(selected, concept) ? selected : null;
+    }
+
+    buildVolumeIdeaContext(project, concept) {
+        const sections = this.extractBracketSections(concept);
+        const idea = this.getSelectedStoryIdea(project, concept);
+        const pick = (field, aliases = []) => {
+            const fromIdea = String(idea?.[field] || "").trim();
+            if (fromIdea) {
+                return fromIdea;
+            }
+            for (const alias of aliases) {
+                const section = String(sections[alias] || "").trim();
+                if (section) {
+                    return section;
+                }
+            }
+            return "";
+        };
+
+        return {
+            title: pick("title", ["方案标题", "标题", "书名"]),
+            positioning: pick("positioning", ["题材定位与读者方向"]),
+            hook: pick("hook", ["一句话故事钩子", "核心钩子"]),
+            core_setup: pick("core_setup", ["核心设定"]),
+            conflict_engine: pick("conflict_engine", ["核心冲突与剧情发动机"]),
+            selling_points: pick("selling_points", ["爽点/情绪点设计", "爽点情绪点设计"]),
+            world_highlights: pick("world_highlights", ["适配世界观与前30章名场面", "前30章名场面"]),
+            longline: pick("longline", ["长线展开与升级空间"]),
+            relationship_notes: pick("relationship_notes", ["人物关系与感情线建议"]),
+            seed_summary: pick("seed_summary", ["浓缩版故事方案", "可直接用于后续细化的摘要", "故事方案"])
+        };
+    }
+
+    buildVolumeIdeaContextText(ideaContext = {}) {
+        const lines = ["【故事骨架参考】"];
+        const push = (label, value, limit = 500) => {
+            const text = String(value || "").trim();
+            if (text) {
+                lines.push(`${label}：${this.limitContext(text, limit)}`);
+            }
+        };
+
+        push("方案标题", ideaContext.title, 120);
+        push("题材定位", ideaContext.positioning, 200);
+        push("一句话钩子", ideaContext.hook, 180);
+        push("核心设定", ideaContext.core_setup, 420);
+        push("冲突发动机", ideaContext.conflict_engine, 420);
+        push("爽点情绪", ideaContext.selling_points, 300);
+        push("前30章/前期名场面", ideaContext.world_highlights, 320);
+        push("长线展开", ideaContext.longline, 500);
+        push("人物关系与感情线", ideaContext.relationship_notes, 300);
+        push("浓缩故事方案", ideaContext.seed_summary, 420);
+
+        return lines.length > 1 ? lines.join("\n") : "";
+    }
+
+    getVolumePhaseBlueprint(volumeCount) {
+        const total = Math.max(1, Number(volumeCount || 1) || 1);
+        if (total === 1) {
+            return [{
+                volume_number: 1,
+                label: "完整闭环",
+                opening_hint: "核心设定当场落地，主冲突立即启动。",
+                goal_hint: "主角必须正面处理最大危机，并完成整条主线的闭环。",
+                pressure_hint: "主敌、规则代价和人物关系同时压上来，不能只打一条线。",
+                turn_hint: "中段必须发生一次真正改道的转折，不能平推到结局。",
+                relationship_hint: "关系线要有完整推进，但不能和主线脱节。",
+                default_forbidden: ["不要另开一条像下一部才会展开的新终极主线", "不要把开局、中段、结尾写成互不相干的三段戏"]
+            }];
+        }
+
+        return Array.from({ length: total }, (_, index) => {
+            if (index === 0) {
+                return {
+                    volume_number: index + 1,
+                    label: "开局立盘",
+                    opening_hint: "主角刚被推进新局面，核心设定第一次真正落地。",
+                    goal_hint: "先站稳脚跟，拿下第一阶段优势，同时埋下更大的隐患。",
+                    pressure_hint: "世界规则、旧账、试探型对手一起压上来，不能直接终局决战。",
+                    turn_hint: "第一轮交锋后，表面赢了，实际把更大的麻烦顶了出来。",
+                    relationship_hint: "关系线最多推进到敌意、试探、利益绑定或初次动心，不能直接满格。",
+                    default_forbidden: ["不要提前写终局复仇、终局登顶、终局表白", "不要让尚未出生、尚未入府、尚未入宫、尚未登场的人物提前上线"]
+                };
+            }
+
+            if (index === total - 1) {
+                return {
+                    volume_number: index + 1,
+                    label: "总爆发与收束",
+                    opening_hint: "前几卷累积的代价、秘密和阵营冲突在这一卷全面回收。",
+                    goal_hint: "主角必须解决整条主线，不再只是阶段性获胜。",
+                    pressure_hint: "最核心的敌人、最难承受的代价和最终选择同时压到眼前。",
+                    turn_hint: "真相或底牌彻底翻开，逼主角交出最后答案。",
+                    relationship_hint: "关系线在这一卷完成最终落点，但必须建立在前面推进过的基础上。",
+                    default_forbidden: ["不要收束完主线后又硬开一个更大的新主线", "不要把最终卷写成只有善后，没有真正决战"]
+                };
+            }
+
+            const progress = (index + 1) / total;
+            if (progress <= 0.45) {
+                return {
+                    volume_number: index + 1,
+                    label: "扩大战线",
+                    opening_hint: "上一卷留下的问题发酵，主角被迫把战线从局部推向更大范围。",
+                    goal_hint: "从守势转成主动出招，抢资源、抢位置或抢先机。",
+                    pressure_hint: "新对手、新规矩、新筹码一起出现，不能还在重复第一卷的试探局。",
+                    turn_hint: "中后段要出现一次局面反噬，逼主角换打法。",
+                    relationship_hint: "关系线可以从试探推进到合作、对立加深或暧昧松动，但不能直接终局。",
+                    default_forbidden: ["不要把所有终局真相提前揭完", "不要把这一卷写成换个场景重复第一卷冲突"]
+                };
+            }
+
+            if (progress <= 0.78) {
+                return {
+                    volume_number: index + 1,
+                    label: "中盘反噬",
+                    opening_hint: "此前积累的错误判断、代价或关系裂痕开始反咬主角。",
+                    goal_hint: "主角必须改计划、换盟友、换身份或换战场，不能原地硬撑。",
+                    pressure_hint: "敌人升级、自己失手、内部裂痕三者至少占两项。",
+                    turn_hint: "必须发生一次真正的失控点或真相翻面，把故事推入新阶段。",
+                    relationship_hint: "关系线允许进入更深绑定或更深决裂，但必须有代价。",
+                    default_forbidden: ["不要在中盘就把最终大仇、最终夺位、最终婚配全部写完", "不要让角色前面恨之入骨，后面无桥接直接爱上"]
+                };
+            }
+
+            return {
+                volume_number: index + 1,
+                label: "决战前夜",
+                opening_hint: "主角已经摸到终局门槛，但旧账和新债同时追上来。",
+                goal_hint: "完成决战前的关键布置，同时承受最大一轮反扑。",
+                pressure_hint: "主要敌人、关键真相和最难承受的损失开始同框。",
+                turn_hint: "卷末必须把最终决战或最终清算彻底顶出来。",
+                relationship_hint: "关系线可以进入摊牌、并肩或反目阶段，但不能凭空跳结果。",
+                default_forbidden: ["不要把最终卷该收的所有答案提前收完", "不要只做过渡铺垫，不给这一卷自己的爆点"]
+            };
+        });
+    }
+
+    buildVolumePhaseBlueprint(volumeCount, phaseBlueprint = null) {
+        const blueprint = Array.isArray(phaseBlueprint) ? phaseBlueprint : this.getVolumePhaseBlueprint(volumeCount);
+        return blueprint.map((item) => [
+            `第${item.volume_number}卷阶段：${item.label}`,
+            `职责：${item.goal_hint}`,
+            `局势要求：${item.pressure_hint}`,
+            `禁止提前发生：${(item.default_forbidden || []).join("；") || "无"}`
+        ].join(" | ")).join("\n");
+    }
+
+    async generateVolumeSkeleton({
+        title,
+        concept,
+        genre,
+        theme,
+        worldbuilding,
+        volumeCount,
+        chaptersPerVolume,
+        subgenre,
+        genreConstraint,
+        innovationPrompt,
+        ideaContext,
+        phaseBlueprint
+    }) {
+        const phaseBlueprintText = this.buildVolumePhaseBlueprint(volumeCount, phaseBlueprint);
+        const ideaContextText = this.buildVolumeIdeaContextText(ideaContext);
         const systemPrompt = [
             genreConstraint,
-            `你是世界书构建专家“默默”，一位资深网文策划编辑，擅长构建宏大且富有创意的故事架构。`,
-            `请根据用户提供的世界观元素和故事概念，规划一部${volumeCount}卷的网络小说的卷概要。`,
+            "你现在是卷纲逻辑架构师，只负责先搭好卷与卷之间的硬逻辑骨架，不负责写华丽文案。",
+            `请先规划一部 ${volumeCount} 卷网络小说的全局阶段推进，再拆成逐卷骨架。`,
             "",
-            "【内容风格铁律】",
-            "你的所有输出都必须简单易懂、直白、口语化。要像一个优秀的故事员对朋友讲故事一样，而不是一个学者在写论文。绝对禁止使用任何晦涩、抽象、拗口或“高概念”的词汇和句子。",
-            "",
-            "【创意设计原则】",
-            "1. 使用分支节点思维：每卷都是一个关键的“故事节点”，代表故事中的重要转折点",
-            "2. 设置明确的角色目标和动机：无论剧情如何发展，主角都有清晰的长期目标",
-            "3. 利用世界设定作为故事框架：重要地点、事件和潜在冲突要贯穿始终",
-            "4. 设计被动响应而非主导叙事：让读者感觉他们在跟随故事，同时故事自然引导",
-            "",
-            "【多分支剧情设计】",
-            "- 每卷必须包含主线剧情和至少一条潜在支线",
-            "- 主线是推动故事前进的核心事件",
-            "- 支线是丰富世界观、深化人物的辅助剧情",
-            "- 各卷之间要有“钩子”——前一卷埋下的伏笔在后续卷中揭晓",
-            "",
-            "【每卷结局指令（必须严格执行）】",
-            `1. 非最终卷（第1卷到第${Math.max(1, volumeCount - 1)}卷）：每卷结尾必须设置强悬念钩子，引出下一卷的新冲突`,
-            "- 卷末必须出现：新的敌人/新的秘密/新的目标/新的地点/新的人物",
-            "- 禁止普通结尾，禁止“故事告一段落”的感觉",
-            "- 必须让读者强烈期待下一卷的内容",
-            `2. 最终卷（第${volumeCount}卷）：必须是真正的大结局`,
-            "- 解决所有主要悬念和伏笔",
-            "- 主角完成最终目标或获得最终成长",
-            "- 给予读者满足感和完整感，可以有开放式余韵，但不能是“待续”",
+            "【总原则】",
+            "1. 先服从因果、时间线、人物关系和阶段顺序，再考虑爽点。",
+            "2. 任何“前期/中期/后期”“入府/入宫/登基”“尚未出生/尚未登场”等顺序信号都必须严格保留。",
+            "3. 非最终卷绝不能偷跑最终答案、终局身份、终局感情、终局仇恨清算。",
+            "4. 每卷都必须换一个新的压力点、新的信息增量或新的关系变化，不能重复同构冲突。",
+            "5. 第 N 卷 end_state 必须自然变成第 N+1 卷 opening_situation。",
+            "6. 如果是同人、历史衍生、重生改线，必须先沿用当前时间点；只有上下文明确写出蝴蝶效应已经发生，才允许改动原时间线。",
+            "7. 如果男女主之间存在杀父之仇、夺子之仇、灭门之仇、宿敌关系，关系线必须渐进推进，禁止无桥接直接恋爱。",
             "",
             "【输出要求】",
-            "1. 输出必须是 JSON 数组，不要输出任何额外说明或 markdown 标记",
-            "2. 每卷必须体现目标、困难、转折、高潮和卷末钩子",
-            "3. 各卷之间要有明确的剧情递进关系，体现“铺垫-冲突-高潮-缓和-新冲突”的节奏",
-            "4. 绝对不能有重复的剧情元素",
-            "5. 不能出现逻辑漏洞（如角色死而复生、能力忽高忽低、时间线混乱等）"
+            "1. 只输出 JSON 数组，不要解释。",
+            "2. 每卷对象必须包含这些字段：",
+            'volume_number: 卷序号',
+            'title: 卷名',
+            'phase_label: 该卷所处阶段名',
+            'time_anchor: 当前卷必须遵守的时间锚点/阶段锚点',
+            'opening_situation: 开卷局面',
+            'core_goal: 本卷主角显性目标',
+            'main_pressure: 本卷最大阻力或压力源',
+            'key_turn: 本卷关键转折或失控点',
+            'relationship_step: 本卷关系线最多推进到哪里',
+            'end_state: 本卷结束时的局面',
+            'next_hook: 卷末把下一卷顶出来的钩子',
+            'must_include: 2到4条本卷必须发生的节点数组',
+            'must_not_include: 2到4条本卷绝不能提前发生的节点数组',
+            "3. 字段内容必须具体，禁止空泛词，例如“关系升级”“局势变化”“继续调查”。",
+            "4. 各卷的 core_goal、main_pressure、key_turn、end_state 不能重复。"
         ].filter(Boolean).join("\n");
 
         const userPrompt = [
@@ -249,28 +527,272 @@
             `计划卷数：${volumeCount}`,
             `每卷计划章节数：${chaptersPerVolume}`,
             `世界观：${worldbuilding || "暂无"}`,
-            innovationPrompt ? `【反套路与创新建议】\n${innovationPrompt}` : "",
+            ideaContextText,
+            `【全局阶段蓝图】\n${phaseBlueprintText}`,
+            innovationPrompt ? `【反套路提醒】\n${innovationPrompt}` : "",
             "",
-            "请输出 JSON 数组，每个对象包含：",
-            "volume_number: 卷序号",
-            "title: 卷名",
-            "summary: 本卷 150-250 字剧情概要，务必包含主线和至少一条支线，并说明主角目标、困难、关键转折、成长或新信息",
-            "cliffhanger: 卷末钩子，一句话",
-            "",
-            "不要输出 JSON 之外的说明。"
-        ].join("\n");
+            "请严格按上面的阶段顺序拆卷。",
+            "如果长线里写了“前期在王府，中期入宫，后期登基后清算”，就必须按这个顺序分配到不同卷里，不能提前串卷。",
+            "如果上下文里有“前30章名场面”，优先把它们落在前1到2卷，而不是后期卷。",
+            "如果存在强对抗关系，relationship_step 只能写本卷能走到的阶段，不能直接跳到终局关系。"
+        ].filter(Boolean).join("\n");
 
-        const parsed = await this.requestJSONArray(systemPrompt, userPrompt, {
-            temperature: 0.72,
-            maxTokens: this.getConfiguredMaxTokens(6000)
+        return this.requestJSONArray(systemPrompt, userPrompt, {
+            temperature: 0.45,
+            maxTokens: this.getConfiguredMaxTokens(7000),
+            timeout: this.getTaskTimeoutMs(300000)
         });
+    }
 
-        return parsed.map((item, index) => ({
-            volume_number: Number(item.volume_number || index + 1),
-            title: item.title || `第${index + 1}卷`,
-            summary: item.summary || "",
-            cliffhanger: item.cliffhanger || ""
-        }));
+    normalizeVolumeStringArray(value, maxItems = 4) {
+        const source = Array.isArray(value)
+            ? value
+            : String(value || "").split(/[；;\n]/g);
+        const seen = new Set();
+        return source
+            .map((item) => String(item || "").trim())
+            .filter(Boolean)
+            .filter((item) => {
+                const key = item.replace(/\s+/g, "");
+                if (!key || seen.has(key)) {
+                    return false;
+                }
+                seen.add(key);
+                return true;
+            })
+            .slice(0, maxItems);
+    }
+
+    sanitizeVolumeSkeleton(items, volumeCount, phaseBlueprint = null) {
+        const blueprint = Array.isArray(phaseBlueprint) ? phaseBlueprint : this.getVolumePhaseBlueprint(volumeCount);
+        const normalized = [];
+        const total = Math.max(1, Number(volumeCount || 1) || 1);
+
+        for (let index = 0; index < total; index += 1) {
+            const stage = blueprint[index] || blueprint[blueprint.length - 1] || {};
+            const previous = normalized[index - 1] || null;
+            const raw = Array.isArray(items) ? (items[index] || {}) : {};
+
+            const item = {
+                volume_number: index + 1,
+                title: String(raw.title || `第${index + 1}卷`).trim() || `第${index + 1}卷`,
+                phase_label: String(raw.phase_label || stage.label || "").trim() || stage.label || "",
+                time_anchor: String(raw.time_anchor || "").trim(),
+                opening_situation: String(raw.opening_situation || "").trim(),
+                core_goal: String(raw.core_goal || "").trim(),
+                main_pressure: String(raw.main_pressure || "").trim(),
+                key_turn: String(raw.key_turn || "").trim(),
+                relationship_step: String(raw.relationship_step || "").trim(),
+                end_state: String(raw.end_state || "").trim(),
+                next_hook: String(raw.next_hook || "").trim(),
+                must_include: this.normalizeVolumeStringArray(raw.must_include),
+                must_not_include: this.normalizeVolumeStringArray(raw.must_not_include)
+            };
+
+            if (!item.time_anchor) {
+                item.time_anchor = index === 0
+                    ? stage.opening_hint || "故事仍处于前期起势阶段。"
+                    : `承接第${index}卷卷末局势，不能脱离上一卷结果。`;
+            }
+            if (!item.opening_situation) {
+                item.opening_situation = previous?.end_state || stage.opening_hint || "新的局面被推到台前。";
+            }
+            if (!item.core_goal) {
+                item.core_goal = stage.goal_hint || "主角必须在这一卷拿下新的阶段性成果。";
+            }
+            if (!item.main_pressure) {
+                item.main_pressure = stage.pressure_hint || "新的阻力和旧问题同时压上来。";
+            }
+            if (!item.key_turn) {
+                item.key_turn = stage.turn_hint || "局势在中后段发生明显改道。";
+            }
+            if (!item.relationship_step) {
+                item.relationship_step = stage.relationship_hint || "关系线只能推进到与当前阶段相符的位置。";
+            }
+            if (!item.end_state) {
+                item.end_state = index === total - 1
+                    ? "主线矛盾被正式收束，人物落到最终结局。"
+                    : `主角带着新的代价或新的筹码，把故事推进到第${index + 2}卷阶段。`;
+            }
+            if (!item.must_include.length) {
+                item.must_include = [item.core_goal, item.key_turn].filter(Boolean).slice(0, 3);
+            }
+            if (!item.must_not_include.length) {
+                item.must_not_include = this.normalizeVolumeStringArray(stage.default_forbidden || []);
+            }
+
+            normalized.push(item);
+        }
+
+        for (let index = 0; index < normalized.length; index += 1) {
+            const current = normalized[index];
+            const next = normalized[index + 1];
+            if (!current.next_hook) {
+                current.next_hook = next
+                    ? `${next.opening_situation || next.core_goal || `第${index + 2}卷的新局面`}被当前卷卷末硬顶出来。`
+                    : "最终主线在这一卷完成收束。";
+            }
+        }
+
+        return normalized;
+    }
+
+    enforceVolumeSkeletonProgression(skeleton, phaseBlueprint = null) {
+        const blueprint = Array.isArray(phaseBlueprint) ? phaseBlueprint : this.getVolumePhaseBlueprint((skeleton || []).length);
+        const seenFingerprints = new Set();
+        return (skeleton || []).reduce((result, item, index, list) => {
+            const current = {
+                ...item,
+                must_include: this.normalizeVolumeStringArray(item.must_include),
+                must_not_include: this.normalizeVolumeStringArray(item.must_not_include)
+            };
+            const stage = blueprint[index] || blueprint[blueprint.length - 1] || {};
+            const previous = result[index - 1] || null;
+            const fingerprint = [current.core_goal, current.main_pressure, current.key_turn]
+                .map((part) => String(part || "").replace(/\s+/g, ""))
+                .filter(Boolean)
+                .join("|")
+                .slice(0, 120);
+
+            if (fingerprint && seenFingerprints.has(fingerprint)) {
+                current.core_goal = stage.goal_hint || current.core_goal;
+                current.main_pressure = stage.pressure_hint || current.main_pressure;
+                current.key_turn = stage.turn_hint || current.key_turn;
+                current.relationship_step = stage.relationship_hint || current.relationship_step;
+                current.end_state = index === list.length - 1
+                    ? "主线矛盾在这一卷被彻底推向最终收束。"
+                    : `主角被迫带着新的代价迈入第${index + 2}卷阶段。`;
+                current.must_include = [current.core_goal, current.key_turn].filter(Boolean).slice(0, 3);
+                current.must_not_include = this.normalizeVolumeStringArray(
+                    current.must_not_include.length ? current.must_not_include : stage.default_forbidden || []
+                );
+            }
+
+            if (previous && String(current.opening_situation || "").trim() === String(previous.opening_situation || "").trim()) {
+                current.opening_situation = previous.end_state || stage.opening_hint || current.opening_situation;
+            }
+
+            seenFingerprints.add(
+                [current.core_goal, current.main_pressure, current.key_turn]
+                    .map((part) => String(part || "").replace(/\s+/g, ""))
+                    .filter(Boolean)
+                    .join("|")
+                    .slice(0, 120)
+            );
+            result.push(current);
+            return result;
+        }, []);
+    }
+
+    collectVolumeSkeletonIssues(skeleton) {
+        const issues = [];
+        const seenFingerprints = new Map();
+        (skeleton || []).forEach((item, index) => {
+            const fingerprint = [item.core_goal, item.main_pressure, item.key_turn]
+                .map((part) => String(part || "").replace(/\s+/g, ""))
+                .filter(Boolean)
+                .join("|")
+                .slice(0, 120);
+            if (fingerprint && seenFingerprints.has(fingerprint)) {
+                issues.push(`第${seenFingerprints.get(fingerprint)}卷和第${index + 1}卷主冲突骨架过于相似`);
+            } else if (fingerprint) {
+                seenFingerprints.set(fingerprint, index + 1);
+            }
+
+            if (index > 0) {
+                const previous = skeleton[index - 1];
+                if (String(item.opening_situation || "").trim() === String(previous.opening_situation || "").trim()) {
+                    issues.push(`第${index}卷和第${index + 1}卷开局局面重复`);
+                }
+            }
+        });
+        return issues;
+    }
+
+    async renderVolumeSynopsisFromSkeleton({
+        title,
+        genre,
+        subgenre,
+        theme,
+        concept,
+        worldbuilding,
+        volumeCount,
+        chaptersPerVolume,
+        genreConstraint,
+        innovationPrompt,
+        ideaContext,
+        phaseBlueprint,
+        skeleton
+    }) {
+        const ideaContextText = this.buildVolumeIdeaContextText(ideaContext);
+        const phaseBlueprintText = this.buildVolumePhaseBlueprint(volumeCount, phaseBlueprint);
+        const systemPrompt = [
+            genreConstraint,
+            "你是网络小说卷纲润色师，现在只负责把已经校准过的卷纲骨架写成有故事感的卷摘要。",
+            "必须严格服从骨架，不准新增未来卷事件，不准改动人物关系推进顺序，不准偷跑终局内容。",
+            "",
+            "【写法要求】",
+            "1. 每卷 summary 都要像一个完整的小故事，读起来有开局推动、中段升级、关键转折和卷末落点。",
+            "2. 不要写成流水账记录，不要一连串“先、然后、接着、随后、最后”。",
+            "3. 不要写成策划汇报，不要出现“本卷主要讲述”“主线是”“支线是”“目标是”“困难在于”。",
+            "4. 每卷只抓最关键的 2 到 4 个事件来写，既要完整，又不能把细纲式碎步骤全摊开。",
+            "5. 语言要像番茄简介、脑洞方案里的浓缩剧情，顺着讲一个会让人想点开的故事。",
+            "6. 非最终卷结尾必须把下一卷冲突顶出来；最终卷要真正收束。",
+            "",
+            "【输出要求】",
+            "1. 只输出 JSON 数组，不要解释。",
+            "2. 每个对象必须包含：volume_number, summary, cliffhanger。",
+            "3. summary 控制在 150 到 230 字，单段输出。"
+        ].filter(Boolean).join("\n");
+
+        const userPrompt = [
+            `小说标题：《${title || "未命名小说"}》`,
+            `题材：${subgenre || genre || "未指定"}`,
+            `核心主题：${theme || "未指定"}`,
+            `故事概念：${concept || "暂无"}`,
+            `计划卷数：${volumeCount}`,
+            `每卷计划章节数：${chaptersPerVolume}`,
+            `世界观：${worldbuilding || "暂无"}`,
+            ideaContextText,
+            `【全局阶段蓝图】\n${phaseBlueprintText}`,
+            innovationPrompt ? `【反套路提醒】\n${innovationPrompt}` : "",
+            "【严格服从的卷纲骨架】",
+            JSON.stringify(skeleton, null, 2),
+            "",
+            "请基于以上骨架输出最终卷摘要。",
+            "summary 要像在直接讲这一卷发生了什么，不要写成记录表。",
+            "cliffhanger 可以在骨架 next_hook 的基础上润色，但不能新增越阶段内容。"
+        ].filter(Boolean).join("\n\n");
+
+        return this.requestJSONArray(systemPrompt, userPrompt, {
+            temperature: 0.62,
+            maxTokens: this.getConfiguredMaxTokens(7000),
+            timeout: this.getTaskTimeoutMs(300000)
+        });
+    }
+
+    buildFallbackVolumeRender(item, index, volumeCount) {
+        const total = Math.max(1, Number(volumeCount || 1) || 1);
+        const summary = [
+            String(item.opening_situation || "").trim(),
+            `这一卷里，主角必须${String(item.core_goal || "").trim() || "拿下新的阶段成果"}，却被${String(item.main_pressure || "").trim() || "更强的压力"}逼得不断换招。`,
+            String(item.key_turn || "").trim() ? `直到${String(item.key_turn || "").trim()}，局势才被硬生生拧向新的方向。` : "",
+            index === total - 1
+                ? `最终，故事落到${String(item.end_state || "").trim() || "主线真正收束"}。`
+                : `卷末，局势落到${String(item.end_state || "").trim() || "新的危险边缘"}，把下一卷的风暴直接顶了出来。`
+        ].filter(Boolean).join("");
+
+        return {
+            summary,
+            cliffhanger: String(item.next_hook || "").trim() || (index === total - 1 ? "最终主线在这一卷完成收束。" : "新的冲突已经压到眼前。")
+        };
+    }
+
+    normalizeGeneratedVolumeText(text) {
+        return String(text || "")
+            .replace(/\s+/g, " ")
+            .replace(/\s*([，。！？；：])/g, "$1")
+            .trim();
     }
 
     async generateChapterSynopsis({
@@ -6324,16 +6846,9 @@
     }
 
     buildVolumeInnovationPrompt(project, concept, worldbuilding) {
-        const history = (project?.outline?.volumes || [])
-            .map((volume, index) => ({ index, summary: volume.summary || "" }))
-            .filter((item) => item.summary.trim())
-            .map((item) => `第${item.index + 1}卷：${item.summary}`)
-            .slice(-4);
-
         return [
             "优先规避套路化卷纲：重复打脸、机械升级、同构副本、只靠反转硬拽剧情。",
             "每卷最好有新的目标、新的压力源、新的信息增量和新的卷末钩子。",
-            history.length ? `已有卷纲参考：\n${history.join("\n")}` : "",
             concept ? `故事概念提醒：${this.limitContext(concept, 500)}` : "",
             worldbuilding ? `世界观提醒：${this.limitContext(worldbuilding, 500)}` : ""
         ].filter(Boolean).join("\n");

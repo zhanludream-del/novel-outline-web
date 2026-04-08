@@ -285,6 +285,22 @@ class StorageManager {
         normalized.volumeSynopsis = normalized.volumeSynopsis || normalized.volume_synopsis || "";
         normalized.synopsis_output = normalized.synopsis_output || normalized.synopsisOutput || "";
         normalized.synopsisOutput = normalized.synopsisOutput || normalized.synopsis_output || "";
+        normalized.selected_story_idea = normalized.selected_story_idea && typeof normalized.selected_story_idea === "object"
+            ? normalized.selected_story_idea
+            : (normalized.selectedStoryIdea && typeof normalized.selectedStoryIdea === "object"
+                ? normalized.selectedStoryIdea
+                : null);
+        normalized.selectedStoryIdea = normalized.selectedStoryIdea && typeof normalized.selectedStoryIdea === "object"
+            ? normalized.selectedStoryIdea
+            : (normalized.selected_story_idea
+                ? JSON.parse(JSON.stringify(normalized.selected_story_idea))
+                : null);
+        normalized.volume_plan = Array.isArray(normalized.volume_plan)
+            ? normalized.volume_plan
+            : (Array.isArray(normalized.volumePlan) ? normalized.volumePlan : []);
+        normalized.volumePlan = Array.isArray(normalized.volumePlan)
+            ? normalized.volumePlan
+            : normalized.volume_plan.slice();
         normalized.ai_filter_enabled = normalized.ai_filter_enabled !== false;
         normalized.ai_filter_whitelist = Array.isArray(normalized.ai_filter_whitelist)
             ? normalized.ai_filter_whitelist

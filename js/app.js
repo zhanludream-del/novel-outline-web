@@ -1017,6 +1017,10 @@ ${(detailedOutline || concept || "未填写").slice(0, 2200)}`;
     syncFormFromData() {
         const outline = this.novelData.outline;
         const synopsis = this.novelData.synopsisData || this.novelData.synopsis_data || {};
+        const outlineVolumeCount = Array.isArray(outline.volumes) ? outline.volumes.length : 0;
+        const preferredVolumeCount = outlineVolumeCount > 0
+            ? outlineVolumeCount
+            : Math.max(1, Number(synopsis.volumeCount || synopsis.vol_count || 5) || 5);
 
         this.elements.projectTitle.value = outline.title || "";
         this.elements.projectTheme.value = outline.theme || "";
@@ -1024,7 +1028,7 @@ ${(detailedOutline || concept || "未填写").slice(0, 2200)}`;
         this.populateSubgenreOptions(outline.genre || this.novelData.genre || "");
         this.elements.projectSubgenre.value = outline.subgenre || this.novelData.subgenre || "";
         this.renderGenreGuide();
-        this.elements.projectVolumeCount.value = synopsis.volumeCount || synopsis.vol_count || 5;
+        this.elements.projectVolumeCount.value = String(preferredVolumeCount);
         this.elements.projectChaptersPerVolume.value = synopsis.chaptersPerVolume || synopsis.chap_count || 20;
         this.elements.projectConcept.value = outline.storyConcept || synopsis.story_concept || "";
         if (this.elements.ideaKeywordInput) {
@@ -3538,9 +3542,13 @@ ${(detailedOutline || concept || "未填写").slice(0, 2200)}`;
         synopsis.volume_synopsis = synopsis.volume_synopsis || synopsis.volumeSynopsis || "";
         synopsis.synopsis_output = synopsis.synopsis_output || synopsis.synopsisOutput || "";
         synopsis.worldbuilding = synopsis.worldbuilding || outline.worldbuilding || "";
-        synopsis.vol_count = String(synopsis.volumeCount || synopsis.vol_count || 5);
+        const outlineVolumeCount = Array.isArray(outline.volumes) ? outline.volumes.length : 0;
+        const preferredVolumeCount = outlineVolumeCount > 0
+            ? outlineVolumeCount
+            : Math.max(1, Number(synopsis.volumeCount || synopsis.vol_count || 5) || 5);
+        synopsis.vol_count = String(preferredVolumeCount);
         synopsis.chap_count = String(synopsis.chaptersPerVolume || synopsis.chap_count || 20);
-        synopsis.volumeCount = Number(synopsis.volumeCount || synopsis.vol_count || 5);
+        synopsis.volumeCount = preferredVolumeCount;
         synopsis.chaptersPerVolume = Number(synopsis.chaptersPerVolume || synopsis.chap_count || 20);
         outline.total_chapters = Number(outline.total_chapters || (synopsis.volumeCount * synopsis.chaptersPerVolume) || 100);
         this.novelData.synopsisData = synopsis;
@@ -4288,20 +4296,36 @@ ${(detailedOutline || concept || "未填写").slice(0, 2200)}`;
             return;
         }
 
+        const preservedVolumeCount = volumeCount > 0
+            ? volumeCount
+            : Math.max(
+                1,
+                Number(
+                    this.novelData.synopsisData.volumeCount
+                    || this.novelData.synopsisData.vol_count
+                    || this.elements.projectVolumeCount?.value
+                    || 5
+                ) || 5
+            );
+
         this.novelData.outline.volumes = [];
         this.novelData.synopsisData.volumeSynopsis = "";
         this.novelData.synopsisData.volume_synopsis = "";
+        this.novelData.synopsisData.volume_plan = [];
+        this.novelData.synopsisData.volumePlan = [];
         this.novelData.synopsisData.synopsis_volumes = {};
-        this.novelData.synopsisData.volumeCount = 1;
+        this.novelData.synopsisData.volumeCount = preservedVolumeCount;
+        this.novelData.synopsisData.vol_count = String(preservedVolumeCount);
         if (this.elements.projectVolumeCount) {
-            this.elements.projectVolumeCount.value = 1;
+            this.elements.projectVolumeCount.value = String(preservedVolumeCount);
         }
         if (this.elements.volumeSynopsisText) {
             this.elements.volumeSynopsisText.value = "";
         }
         this.state.selectedChapterId = null;
         this.clearChapterEditor();
-        this.ensureVolumeCount(1, false);
+        this.ensureVolumeCount(preservedVolumeCount, false);
+        this.novelData.synopsis_data = JSON.parse(JSON.stringify(this.novelData.synopsisData));
         this.persist(true);
         this.renderAll();
         Utils.showMessage("卷纲已清空。", "success");
@@ -4482,10 +4506,14 @@ ${(detailedOutline || concept || "未填写").slice(0, 2200)}`;
         const payload = this.validateProjectBase();
         this.ensureWorkflowReady("volumeSynopsis");
         await this.runWithLoading("正在生成卷纲...", async () => {
-            const volumes = await this.generator.generateVolumeSynopsis({
+            const result = await this.generator.generateVolumeSynopsis({
                 project: this.novelData,
                 ...payload
             });
+            const volumes = Array.isArray(result)
+                ? result
+                : (Array.isArray(result?.volumes) ? result.volumes : []);
+            const volumePlan = Array.isArray(result?.volumePlan) ? result.volumePlan : [];
             const oldVolumes = this.novelData.outline.volumes.slice();
 
             this.novelData.outline.volumes = volumes.map((item, index) => {
@@ -4507,13 +4535,17 @@ ${(detailedOutline || concept || "未填写").slice(0, 2200)}`;
             this.novelData.outline.worldbuilding = this.elements.worldbuildingText.value.trim();
             this.novelData.synopsisData.volumeCount = this.novelData.outline.volumes.length;
             this.elements.projectVolumeCount.value = this.novelData.synopsisData.volumeCount;
+            this.novelData.synopsisData.volume_plan = JSON.parse(JSON.stringify(volumePlan));
+            this.novelData.synopsisData.volumePlan = JSON.parse(JSON.stringify(volumePlan));
 
             const formatted = this.novelData.outline.volumes.map((volume, index) =>
                 `【第${index + 1}卷】${volume.title}\n${volume.summary}\n卷尾钩子：${volume.cliffhanger || "暂无"}`
             ).join("\n\n");
 
             this.novelData.synopsisData.volumeSynopsis = formatted;
+            this.novelData.synopsisData.volume_synopsis = formatted;
             this.elements.volumeSynopsisText.value = formatted;
+            this.novelData.synopsis_data = JSON.parse(JSON.stringify(this.novelData.synopsisData));
             this.persist(true);
             this.renderAll();
             Utils.showMessage("卷纲已生成。", "success");
@@ -5025,6 +5057,8 @@ ${(detailedOutline || concept || "未填写").slice(0, 2200)}`;
         this.novelData.outline.storyConcept = summary;
         this.novelData.synopsisData.story_concept = summary;
         this.novelData.synopsisData.storyConcept = summary;
+        this.novelData.synopsisData.selected_story_idea = JSON.parse(JSON.stringify(selected));
+        this.novelData.synopsisData.selectedStoryIdea = JSON.parse(JSON.stringify(selected));
         this.novelData.synopsis_data = JSON.parse(JSON.stringify(this.novelData.synopsisData));
         if (this.elements.projectConcept) {
             this.elements.projectConcept.value = summary;
