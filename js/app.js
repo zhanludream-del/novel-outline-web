@@ -3316,7 +3316,7 @@ ${(detailedOutline || concept || "未填写").slice(0, 2200)}`;
         }
 
         if (action === "clear-synopsis") {
-            const shouldClearSynopsis = window.confirm(`确定清空第${volumeIndex + 1}卷及后续卷的细纲和卷缓存吗？`);
+            const shouldClearSynopsis = window.confirm(`确定清空第${volumeIndex + 1}卷及后续卷的细纲吗？卷纲会保留。`);
             if (!shouldClearSynopsis) {
                 return;
             }
@@ -3324,7 +3324,7 @@ ${(detailedOutline || concept || "未填写").slice(0, 2200)}`;
             this.persist(true);
             this.renderVolumeCards();
             this.renderDashboard();
-            Utils.showMessage(`已清空第${volumeIndex + 1}卷及后续卷的细纲与相关缓存。`, "success");
+            Utils.showMessage(`已清空第${volumeIndex + 1}卷及后续卷的细纲，卷纲已保留。`, "success");
             return;
         }
 
@@ -3726,8 +3726,6 @@ ${(detailedOutline || concept || "未填写").slice(0, 2200)}`;
             if (!volume || typeof volume !== "object") {
                 continue;
             }
-            volume.summary = "";
-            volume.cliffhanger = "";
             volume.chapterSynopsis = "";
             volume.chapter_synopsis = "";
         }
@@ -4675,7 +4673,7 @@ ${(detailedOutline || concept || "未填写").slice(0, 2200)}`;
             return;
         }
 
-        const shouldClearSynopsis = window.confirm(`确定清空第${volumeNumber}卷及后续卷的细纲和卷缓存吗？`);
+        const shouldClearSynopsis = window.confirm(`确定清空第${volumeNumber}卷及后续卷的细纲吗？卷纲会保留。`);
         if (!shouldClearSynopsis) {
             return;
         }
@@ -4685,7 +4683,7 @@ ${(detailedOutline || concept || "未填写").slice(0, 2200)}`;
         this.persist(true);
         this.renderVolumeCards();
         this.renderDashboard();
-        Utils.showMessage(`已清空第${volumeNumber}卷及后续卷的细纲与相关缓存。`, "success");
+        Utils.showMessage(`已清空第${volumeNumber}卷及后续卷的细纲，卷纲已保留。`, "success");
         return;
     }
 
