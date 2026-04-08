@@ -928,6 +928,20 @@
                     reason: `第${index + 1}卷润色摘要过短或缺失`
                 };
             }
+            if (!this.hasCurrentVolumeAnchorAlignment(item.summary, skeleton[index], index, expectedCount)) {
+                return {
+                    valid: false,
+                    items: [],
+                    reason: `第${index + 1}卷摘要没有贴住当前卷骨架`
+                };
+            }
+            if (this.containsLateStageVolumeMarker(item.summary, skeleton[index], index, expectedCount)) {
+                return {
+                    valid: false,
+                    items: [],
+                    reason: `第${index + 1}卷摘要提前出现终局信号`
+                };
+            }
             if (this.containsFutureVolumeLeakage(item.summary, skeleton, index)) {
                 return {
                     valid: false,
@@ -944,9 +958,158 @@
         };
     }
 
+    isGenericVolumeSignalTerm(term) {
+        const value = String(term || "").trim();
+        if (!value || value.length < 2 || value.length > 16) {
+            return true;
+        }
+        if (/^[0-9一二三四五六七八九十百千万两]+$/.test(value)) {
+            return true;
+        }
+        return new Set([
+            "主角", "反派", "对手", "敌人", "故事", "剧情", "阶段", "开局", "中段", "后段", "前期", "中期", "后期",
+            "主线", "副线", "支线", "冲突", "危机", "压力", "阻力", "局势", "局面", "关系", "关系线", "转折", "真相",
+            "代价", "选择", "目标", "计划", "阴谋", "布局", "博弈", "秘密", "风暴", "危险", "问题", "变化", "推进",
+            "升级", "收束", "收官", "终局", "结局", "尾声", "高潮", "较量", "麻烦", "答案", "结果", "入口", "落点",
+            "下一卷", "本卷", "当前卷", "卷末", "新局面", "阶段成果", "阶段胜利", "最大危机", "最大阻力", "关键转折"
+        ]).has(value);
+    }
+
+    extractVolumeTermPieces(text, maxTerms = 24) {
+        const source = String(text || "")
+            .replace(/[【】[\]{}<>]/g, " ")
+            .replace(/\s+/g, " ")
+            .trim();
+        if (!source) {
+            return [];
+        }
+
+        const terms = new Set();
+        const push = (value) => {
+            const clean = String(value || "")
+                .replace(/[^\u4e00-\u9fa5A-Za-z0-9]/g, "")
+                .trim();
+            if (!clean || this.isGenericVolumeSignalTerm(clean)) {
+                return;
+            }
+            terms.add(clean);
+        };
+
+        source.split(/[，,。；;：:、“”"'‘’（）()\s]+/g).forEach((segment) => {
+            const cleanSegment = String(segment || "").trim();
+            if (!cleanSegment) {
+                return;
+            }
+            push(cleanSegment);
+            cleanSegment
+                .split(/(?:和|与|及|并|将|把|被|在|从|向|给|令|让|使|却|又|再|还|便|就|但|而|的|之|里|中|上|下|前|后)/g)
+                .forEach(push);
+        });
+
+        return Array.from(terms).slice(0, maxTerms);
+    }
+
+    buildVolumeAnchorMap(item) {
+        const weights = new Map();
+        const add = (text, weight) => {
+            this.extractVolumeTermPieces(text).forEach((term) => {
+                weights.set(term, Math.max(weights.get(term) || 0, weight));
+            });
+        };
+
+        add(item?.title, 4);
+        add(item?.time_anchor, 2);
+        add(item?.opening_situation, 3);
+        add(item?.core_goal, 4);
+        add(item?.main_pressure, 2);
+        add(item?.key_turn, 4);
+        add(item?.relationship_step, 1);
+        add(item?.end_state, 3);
+        (Array.isArray(item?.must_include) ? item.must_include : []).forEach((text) => add(text, 4));
+
+        return weights;
+    }
+
+    hasCurrentVolumeAnchorAlignment(summary, item, currentIndex = 0, totalCount = 1) {
+        const content = String(summary || "").replace(/\s+/g, "");
+        if (!content) {
+            return false;
+        }
+
+        const anchors = Array.from(this.buildVolumeAnchorMap(item).entries());
+        if (!anchors.length) {
+            return true;
+        }
+
+        let score = 0;
+        let strongMatches = 0;
+        let matchedCount = 0;
+
+        anchors.forEach(([term, weight]) => {
+            if (!term || !content.includes(term)) {
+                return;
+            }
+            score += weight;
+            matchedCount += 1;
+            if (weight >= 4) {
+                strongMatches += 1;
+            }
+        });
+
+        if (strongMatches >= 1 && score >= 4) {
+            return true;
+        }
+        if (score >= 6) {
+            return true;
+        }
+        if (matchedCount >= (totalCount === 1 || currentIndex === totalCount - 1 ? 3 : 4)) {
+            return true;
+        }
+
+        return false;
+    }
+
+    containsLateStageVolumeMarker(summary, currentItem, currentIndex, totalCount) {
+        if (currentIndex >= totalCount - 1) {
+            return false;
+        }
+
+        const content = String(summary || "").replace(/\s+/g, "");
+        if (!content) {
+            return false;
+        }
+
+        const currentSignals = [
+            currentItem?.title,
+            currentItem?.time_anchor,
+            currentItem?.opening_situation,
+            currentItem?.core_goal,
+            currentItem?.key_turn,
+            currentItem?.end_state,
+            ...(Array.isArray(currentItem?.must_include) ? currentItem.must_include : [])
+        ].join("");
+
+        return [
+            "天下一统",
+            "万国来朝",
+            "海晏河清",
+            "日不落帝国",
+            "大结局",
+            "主线圆满",
+            "尘埃落定",
+            "最后一名皇嗣",
+            "最终皇嗣",
+            "最终皇夫"
+        ].some((marker) => content.includes(marker) && !currentSignals.includes(marker));
+    }
+
     extractVolumeSignalTerms(item) {
         const texts = [
             item?.title,
+            item?.time_anchor,
+            item?.opening_situation,
+            item?.core_goal,
+            item?.key_turn,
             item?.next_hook,
             item?.end_state,
             ...(Array.isArray(item?.must_include) ? item.must_include : [])
@@ -956,14 +1119,10 @@
         const terms = new Set();
 
         texts.forEach((text) => {
-            text
-                .split(/[，,。；;：:、“”"'‘’（）()\s]+/g)
-                .map((part) => String(part || "").trim())
-                .filter((part) => part.length >= 3 && part.length <= 12)
-                .forEach((part) => terms.add(part));
+            this.extractVolumeTermPieces(text, 10).forEach((part) => terms.add(part));
         });
 
-        return Array.from(terms).slice(0, 18);
+        return Array.from(terms).slice(0, 24);
     }
 
     containsFutureVolumeLeakage(summary, skeleton, currentIndex) {
@@ -986,21 +1145,31 @@
 
     buildFallbackVolumeRender(item, index, volumeCount) {
         const total = Math.max(1, Number(volumeCount || 1) || 1);
-        const summary = [
+        const storyBeats = [
             String(item.opening_situation || "").trim(),
-            String(item.core_goal || "").trim()
-                ? `主角刚想${String(item.core_goal || "").trim()}，就被${String(item.main_pressure || "").trim() || "新的重压"}迎头压住。`
-                : (String(item.main_pressure || "").trim() ? `新的重压很快落到主角头上：${String(item.main_pressure || "").trim()}。` : ""),
-            String(item.key_turn || "").trim() ? `等到${String(item.key_turn || "").trim()}，局面才终于从被动硬生生扳了回来。` : "",
-            index === total - 1
-                ? `最后，${String(item.end_state || "").trim() || "主线真正收束"}。`
-                : `这一卷收尾时，${String(item.end_state || "").trim() || "新的危险边缘已经显形"}，也把下一卷的风暴顺势顶到了台前。`
-        ].filter(Boolean).join("");
+            [String(item.core_goal || "").trim(), String(item.main_pressure || "").trim()].filter(Boolean).join("，"),
+            String(item.key_turn || "").trim(),
+            String(item.end_state || "").trim() || (index === total - 1 ? "主线真正收束。" : "新的危险已经被推到台前。")
+        ].filter(Boolean);
+        const summary = storyBeats
+            .map((text) => this.finishVolumeSentence(text))
+            .filter(Boolean)
+            .join("");
 
         return {
             summary,
-            cliffhanger: String(item.next_hook || "").trim() || (index === total - 1 ? "最终主线在这一卷完成收束。" : "新的冲突已经压到眼前。")
+            cliffhanger: this.finishVolumeSentence(
+                String(item.next_hook || "").trim() || (index === total - 1 ? "最终主线在这一卷完成收束。" : "新的冲突已经压到眼前。")
+            )
         };
+    }
+
+    finishVolumeSentence(text) {
+        const value = this.normalizeGeneratedVolumeText(text).replace(/[。！？!?；;]+$/g, "").trim();
+        if (!value) {
+            return "";
+        }
+        return /[。！？!?]$/.test(value) ? value : `${value}。`;
     }
 
     normalizeGeneratedVolumeText(text) {

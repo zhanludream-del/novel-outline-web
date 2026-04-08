@@ -4251,11 +4251,25 @@ ${(detailedOutline || concept || "未填写").slice(0, 2200)}`;
             return;
         }
         this.novelData.outline.volumes = [];
+        this.novelData.outline.user_context = "";
         this.novelData.synopsisData.volumeCount = 1;
+        this.novelData.synopsisData.volumeSynopsis = "";
+        this.novelData.synopsisData.volume_synopsis = "";
+        this.novelData.synopsisData.volume_plan = [];
+        this.novelData.synopsisData.volumePlan = [];
+        this.novelData.synopsisData.synopsisOutput = "";
+        this.novelData.synopsisData.synopsis_output = "";
+        this.novelData.synopsisData.synopsis_volumes = {};
+        this.novelData.generated_context = this.novelData.generated_context && typeof this.novelData.generated_context === "object"
+            ? this.novelData.generated_context
+            : {};
+        this.novelData.generated_context.volume_synopsis = "";
+        this.novelData.generated_context.chapter_synopsis = "";
         this.elements.projectVolumeCount.value = 1;
         this.state.selectedChapterId = null;
         this.clearChapterEditor();
         this.ensureVolumeCount(1, false);
+        this.syncGeneratedContexts();
         this.persist(true);
         this.renderAll();
         Utils.showMessage("卷结构已清空。", "success");
@@ -4309,13 +4323,21 @@ ${(detailedOutline || concept || "未填写").slice(0, 2200)}`;
             );
 
         this.novelData.outline.volumes = [];
+        this.novelData.outline.user_context = "";
         this.novelData.synopsisData.volumeSynopsis = "";
         this.novelData.synopsisData.volume_synopsis = "";
         this.novelData.synopsisData.volume_plan = [];
         this.novelData.synopsisData.volumePlan = [];
+        this.novelData.synopsisData.synopsisOutput = "";
+        this.novelData.synopsisData.synopsis_output = "";
         this.novelData.synopsisData.synopsis_volumes = {};
         this.novelData.synopsisData.volumeCount = preservedVolumeCount;
         this.novelData.synopsisData.vol_count = String(preservedVolumeCount);
+        this.novelData.generated_context = this.novelData.generated_context && typeof this.novelData.generated_context === "object"
+            ? this.novelData.generated_context
+            : {};
+        this.novelData.generated_context.volume_synopsis = "";
+        this.novelData.generated_context.chapter_synopsis = "";
         if (this.elements.projectVolumeCount) {
             this.elements.projectVolumeCount.value = String(preservedVolumeCount);
         }
@@ -4325,6 +4347,7 @@ ${(detailedOutline || concept || "未填写").slice(0, 2200)}`;
         this.state.selectedChapterId = null;
         this.clearChapterEditor();
         this.ensureVolumeCount(preservedVolumeCount, false);
+        this.syncGeneratedContexts();
         this.novelData.synopsis_data = JSON.parse(JSON.stringify(this.novelData.synopsisData));
         this.persist(true);
         this.renderAll();
