@@ -230,6 +230,7 @@
         }
 
         let rendered = [];
+        let batchError = null;
         try {
             const bulkRendered = await this.renderVolumeSynopsisFromSkeleton({
                 title,
@@ -252,9 +253,7 @@
             }
             rendered = normalizedBulk.items;
         } catch (error) {
-            if (typeof Utils !== "undefined" && typeof Utils.log === "function") {
-                Utils.log(`卷纲批量润色失败，尝试逐卷重写：${error.message}`, "warning");
-            }
+            batchError = error;
             try {
                 rendered = await this.renderVolumeSynopsisOneByOne({
                     title,
@@ -273,7 +272,12 @@
                 });
             } catch (retryError) {
                 if (typeof Utils !== "undefined" && typeof Utils.log === "function") {
-                    Utils.log(`卷纲逐卷润色也失败，已回退到骨架转写：${retryError.message}`, "warning");
+                    const batchReason = batchError?.message ? `批量润色失败：${batchError.message}` : "";
+                    const retryReason = retryError?.message ? `逐卷重写失败：${retryError.message}` : "";
+                    Utils.log(
+                        `卷纲润色未拿到可用结果，已回退到骨架转写。${[batchReason, retryReason].filter(Boolean).join("；")}`,
+                        "warning"
+                    );
                 }
             }
         }
@@ -888,6 +892,7 @@
             };
         }
 
+        items = this.expandWrappedVolumeResults(items, expectedCount);
         if (items.length !== expectedCount) {
             return {
                 valid: false,
@@ -956,6 +961,78 @@
             items: normalized,
             reason: ""
         };
+    }
+
+    expandWrappedVolumeResults(items, expectedCount) {
+        if (!Array.isArray(items) || items.length !== 1 || expectedCount <= 1) {
+            return Array.isArray(items) ? items : [];
+        }
+
+        const queue = [items[0]];
+        const seenObjects = new WeakSet();
+        const seenStrings = new Set();
+        let steps = 0;
+
+        while (queue.length && steps < 60) {
+            steps += 1;
+            const current = queue.shift();
+            if (!current) {
+                continue;
+            }
+
+            if (Array.isArray(current)) {
+                if (current.length === expectedCount) {
+                    return current;
+                }
+                if (current.length === 1) {
+                    queue.push(current[0]);
+                    continue;
+                }
+                current.forEach((item) => queue.push(item));
+                continue;
+            }
+
+            if (typeof current === "string") {
+                const clean = String(current || "").trim();
+                if (!clean || seenStrings.has(clean)) {
+                    continue;
+                }
+                seenStrings.add(clean);
+                const parsed = Utils.coerceJSONArray(Utils.parseJsonResponse(clean) ?? clean);
+                if (Array.isArray(parsed)) {
+                    if (parsed.length === expectedCount) {
+                        return parsed;
+                    }
+                    if (parsed.length === 1 && parsed[0] !== current) {
+                        queue.push(parsed[0]);
+                    }
+                }
+                continue;
+            }
+
+            if (typeof current !== "object") {
+                continue;
+            }
+
+            if (seenObjects.has(current)) {
+                continue;
+            }
+            seenObjects.add(current);
+
+            const direct = Utils.coerceJSONArray(current);
+            if (Array.isArray(direct)) {
+                if (direct.length === expectedCount) {
+                    return direct;
+                }
+                if (direct.length === 1 && direct[0] !== current) {
+                    queue.push(direct[0]);
+                }
+            }
+
+            Object.values(current).forEach((value) => queue.push(value));
+        }
+
+        return items;
     }
 
     isGenericVolumeSignalTerm(term) {
