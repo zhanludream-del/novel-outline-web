@@ -268,6 +268,12 @@ class Utils {
 
     static coerceJSONArray(value) {
         if (Array.isArray(value)) {
+            if (value.length === 1) {
+                const nested = this.coerceJSONArray(value[0]);
+                if (Array.isArray(nested)) {
+                    return nested;
+                }
+            }
             return value;
         }
 
