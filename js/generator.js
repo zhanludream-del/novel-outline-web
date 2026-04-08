@@ -4452,9 +4452,73 @@
                 chapterCount,
                 hasDetailedOutline: Boolean(String(outlineSlice.currentOutline || "").trim())
             }), 800),
+            currentVolumePriorityGuard: this.limitContext(
+                this.buildCurrentVolumePriorityGuard(project, volumeNumber, {
+                    concept,
+                    volumeSummary,
+                    currentVolumeOutline: String(outlineSlice.currentOutline || "").trim()
+                }),
+                1200
+            ),
             boundaryGuard: this.limitContext(this.buildSynopsisVolumeBoundaryGuard(project, volumeNumber), 500),
             chapterCount
         };
+    }
+
+    buildCurrentVolumePriorityGuard(project, volumeNumber, { concept = "", volumeSummary = "", currentVolumeOutline = "" } = {}) {
+        const volumes = project?.outline?.volumes || [];
+        const currentVolume = volumes[volumeNumber - 1] || {};
+        const futureText = volumes
+            .slice(volumeNumber)
+            .map((volume, index) => [volume?.title || `第${volumeNumber + index + 1}卷`, volume?.summary || ""].filter(Boolean).join("："))
+            .filter(Boolean)
+            .join("\n");
+        const currentText = [currentVolume?.title || "", volumeSummary || currentVolume?.summary || "", currentVolumeOutline || ""]
+            .filter(Boolean)
+            .join("\n");
+
+        const lines = [
+            "【当前卷最高优先级】",
+            "当前卷概要和当前卷详细大纲优先级最高，故事概念、长线规划、题材惯性都只能辅助，不能覆盖当前卷。",
+            "如果当前卷明明还在前一阶段，就绝不能提前写成后一阶段。"
+        ];
+
+        const milestoneGroups = [
+            {
+                label: "宫廷阶段",
+                currentPattern: /夺嫡|潜邸|王府|阿哥|贝勒|雍亲王|四阿哥|侧福晋|福晋/,
+                futurePattern: /登基|称帝|皇帝|后宫|选秀|入宫|封妃|华妃|皇后|太后/,
+                warning: "当前卷仍是潜邸/夺嫡阶段时，人物身份应停留在阿哥、王爷、福晋、侧福晋等阶段，禁止直接跳成登基后的皇帝、皇后、妃嫔、太后线。"
+            },
+            {
+                label: "婚恋阶段",
+                currentPattern: /未婚|订婚|相识|暧昧|试探/,
+                futurePattern: /成婚|大婚|洞房|怀孕|生子/,
+                warning: "当前卷还在相识或试探阶段时，不能直接跳到大婚、怀孕、生子等后续节点。"
+            },
+            {
+                label: "修炼阶段",
+                currentPattern: /炼气|筑基|金丹前|外门|新手村/,
+                futurePattern: /元婴|化神|飞升|登仙/,
+                warning: "当前卷如果还处在前期修炼阶段，不能直接跳到高阶境界、飞升或终局层面的剧情。"
+            }
+        ];
+
+        milestoneGroups.forEach((group) => {
+            if (group.currentPattern.test(currentText) && group.futurePattern.test(futureText)) {
+                lines.push(group.warning);
+            }
+        });
+
+        const futureMilestones = [
+            "登基", "称帝", "后宫", "选秀", "入宫", "封妃", "皇后", "太后",
+            "大婚", "怀孕", "生子", "飞升", "元婴", "化神", "真相大白", "复仇完成"
+        ].filter((keyword) => futureText.includes(keyword) && !currentText.includes(keyword));
+        if (futureMilestones.length) {
+            lines.push(`后续卷才会展开的阶段性节点有：${Array.from(new Set(futureMilestones)).join("、")}。当前卷最多只能埋钩子，不能提前正式展开。`);
+        }
+
+        return lines.join("\n");
     }
 
     buildFullPreviousChapterSynopsisContext(project, currentVolumeNumber) {
@@ -4491,7 +4555,8 @@
             "6. 不要把上一章已经发生的事换句话再写一遍，也不要在本批细纲里重复同一种桥段。",
             "7. 同一批细纲里，人物身份、关系、位份、时间线一旦写定，后文必须保持一致。",
             "8. 可以参考常见爽点和套路，但不能机械复读，必须做出新的推进、新的信息或新的结果。",
-            "9. 直接输出章节列表，不要解释，不要前言，不要 markdown。"
+            "9. 如果故事概念、长线规划、题材惯性与当前卷概要或当前卷详细大纲冲突，必须无条件服从当前卷概要和当前卷详细大纲。",
+            "10. 直接输出章节列表，不要解释，不要前言，不要 markdown。"
         ].filter(Boolean).join("\n");
     }
 
@@ -4511,18 +4576,20 @@
         innovationPrompt,
         continuityGuard,
         clarityGuard,
+        currentVolumePriorityGuard,
         boundaryGuard
     }) {
         return [
             `小说标题：《${title || "未命名小说"}》`,
             `当前任务：为【${currentVolumeTaskLabel || `第${volumeNumber}卷`}】生成${chapterCount}章细纲。`,
             "",
-            concept ? `故事概念：\n${concept}` : "",
             volumeSynopsisContext ? `当前卷概要：\n${volumeSynopsisContext}` : "",
             currentVolumeOutlineContext ? `当前卷详细大纲：\n${currentVolumeOutlineContext}` : "",
+            currentVolumePriorityGuard ? `当前卷最高优先级规则：\n${currentVolumePriorityGuard}` : "",
             previousVolumeEnding ? `上一卷结尾：\n${previousVolumeEnding}` : "",
             previousSynopsisContext ? `前文全部细纲（只作衔接参考）：\n${previousSynopsisContext}` : "",
             existingSynopsis ? `已有细纲参考：\n${existingSynopsis}` : "",
+            concept ? `故事概念（仅作总背景，若与当前卷冲突必须让位于卷纲）：\n${concept}` : "",
             worldbuilding ? `世界观补充：\n${this.limitContext(worldbuilding, 800)}` : "",
             continuityGuard ? `连续性护栏：\n${continuityGuard}` : "",
             clarityGuard ? `节奏与执行护栏：\n${clarityGuard}` : "",
@@ -4550,6 +4617,7 @@
         innovationPrompt,
         continuityGuard,
         clarityGuard,
+        currentVolumePriorityGuard,
         boundaryGuard,
         knownLines,
         missingNumbers
@@ -4558,12 +4626,13 @@
             `小说标题：《${title || "未命名小说"}》`,
             `当前任务：继续补齐【${currentVolumeTaskLabel || `第${volumeNumber}卷`}】缺失的章节。`,
             "",
-            concept ? `故事概念：\n${concept}` : "",
             volumeSynopsisContext ? `当前卷概要：\n${volumeSynopsisContext}` : "",
             currentVolumeOutlineContext ? `当前卷详细大纲：\n${currentVolumeOutlineContext}` : "",
+            currentVolumePriorityGuard ? `当前卷最高优先级规则：\n${currentVolumePriorityGuard}` : "",
             previousVolumeEnding ? `上一卷结尾：\n${previousVolumeEnding}` : "",
             previousSynopsisContext ? `前文全部细纲：\n${previousSynopsisContext}` : "",
             existingSynopsis ? `已有细纲参考：\n${existingSynopsis}` : "",
+            concept ? `故事概念（仅作总背景，若与当前卷冲突必须让位于卷纲）：\n${concept}` : "",
             worldbuilding ? `世界观补充：\n${this.limitContext(worldbuilding, 600)}` : "",
             continuityGuard ? `连续性护栏：\n${continuityGuard}` : "",
             clarityGuard ? `节奏与执行护栏：\n${clarityGuard}` : "",
