@@ -231,7 +231,7 @@
 
         let rendered = [];
         try {
-            rendered = await this.renderVolumeSynopsisFromSkeleton({
+            const bulkRendered = await this.renderVolumeSynopsisFromSkeleton({
                 title,
                 genre,
                 subgenre,
@@ -246,14 +246,43 @@
                 phaseBlueprint,
                 skeleton
             });
+            const normalizedBulk = this.validateRenderedVolumeResults(bulkRendered, skeleton);
+            if (!normalizedBulk.valid) {
+                throw new Error(normalizedBulk.reason || "批量润色结果未通过校验");
+            }
+            rendered = normalizedBulk.items;
         } catch (error) {
             if (typeof Utils !== "undefined" && typeof Utils.log === "function") {
-                Utils.log(`卷纲润色失败，已回退到骨架转写：${error.message}`, "warning");
+                Utils.log(`卷纲批量润色失败，尝试逐卷重写：${error.message}`, "warning");
+            }
+            try {
+                rendered = await this.renderVolumeSynopsisOneByOne({
+                    title,
+                    genre,
+                    subgenre,
+                    theme,
+                    concept,
+                    worldbuilding,
+                    volumeCount,
+                    chaptersPerVolume,
+                    genreConstraint,
+                    innovationPrompt,
+                    ideaContext,
+                    phaseBlueprint,
+                    skeleton
+                });
+            } catch (retryError) {
+                if (typeof Utils !== "undefined" && typeof Utils.log === "function") {
+                    Utils.log(`卷纲逐卷润色也失败，已回退到骨架转写：${retryError.message}`, "warning");
+                }
             }
         }
 
+        const renderedMap = new Map(
+            (rendered || []).map((item) => [Number(item.volume_number || 0), item])
+        );
         const volumes = skeleton.map((item, index) => {
-            const renderedItem = rendered[index] || {};
+            const renderedItem = renderedMap.get(index + 1) || {};
             const fallback = this.buildFallbackVolumeRender(item, index, volumeCount);
             return {
                 volume_number: Number(item.volume_number || index + 1),
@@ -771,15 +800,201 @@
         });
     }
 
+    async renderVolumeSynopsisOneByOne({
+        title,
+        genre,
+        subgenre,
+        theme,
+        concept,
+        worldbuilding,
+        genreConstraint,
+        ideaContext,
+        skeleton
+    }) {
+        const ideaContextText = this.buildVolumeIdeaContextText(ideaContext);
+        const results = [];
+
+        for (let index = 0; index < (skeleton || []).length; index += 1) {
+            const current = skeleton[index];
+            const previous = skeleton[index - 1] || null;
+            const next = skeleton[index + 1] || null;
+            const systemPrompt = [
+                genreConstraint,
+                "你是网络小说卷纲润色师，只负责把当前这一卷的骨架写成有故事感的完整卷摘要。",
+                "必须严格服从本卷骨架，不准偷写后面卷的事件，不准把整本书结局塞进当前卷。",
+                "",
+                "【写法要求】",
+                "1. 只写这一卷，像完整故事，不像记录表。",
+                "2. 不要出现“这一卷里”“主角必须”“却被”“逼得不断换招”“直到……局势才”这类骨架提示腔。",
+                "3. 要写出开局局面、主要对抗、关键转折、卷末落点，但只抓最关键的几步。",
+                "4. 非最终卷结尾要把下一卷顶出来；最终卷要真正收束。",
+                "",
+                "【输出要求】",
+                "只输出 JSON 数组，数组里只有一个对象，字段为 volume_number, summary, cliffhanger。"
+            ].filter(Boolean).join("\n");
+
+            const userPrompt = [
+                `小说标题：《${title || "未命名小说"}》`,
+                `题材：${subgenre || genre || "未指定"}`,
+                `核心主题：${theme || "未指定"}`,
+                `故事概念：${concept || "暂无"}`,
+                `世界观：${worldbuilding || "暂无"}`,
+                ideaContextText,
+                previous ? `【上一卷收尾】\n${previous.end_state || previous.next_hook || ""}` : "",
+                `【当前卷骨架】\n${JSON.stringify(current, null, 2)}`,
+                next ? `【下一卷入口】\n${next.opening_situation || next.core_goal || ""}` : "",
+                "",
+                "请只写当前这一卷，不要替后面卷抢戏。"
+            ].filter(Boolean).join("\n\n");
+
+            const parsed = await this.requestJSONArray(systemPrompt, userPrompt, {
+                temperature: 0.58,
+                maxTokens: this.getConfiguredMaxTokens(2200),
+                timeout: this.getTaskTimeoutMs(180000)
+            });
+            const normalized = this.validateRenderedVolumeResults(parsed, [current]);
+            if (!normalized.valid || !normalized.items.length) {
+                throw new Error(`第${index + 1}卷逐卷润色未通过校验：${normalized.reason || "空结果"}`);
+            }
+            results.push({
+                ...normalized.items[0],
+                volume_number: index + 1
+            });
+        }
+
+        const normalizedResults = this.validateRenderedVolumeResults(results, skeleton);
+        if (!normalizedResults.valid) {
+            throw new Error(normalizedResults.reason || "逐卷润色结果未通过整体校验");
+        }
+
+        return normalizedResults.items;
+    }
+
+    validateRenderedVolumeResults(items, skeleton) {
+        if (!Array.isArray(items)) {
+            return {
+                valid: false,
+                items: [],
+                reason: "润色结果不是数组"
+            };
+        }
+
+        const expectedCount = Array.isArray(skeleton) ? skeleton.length : 0;
+        if (!expectedCount) {
+            return {
+                valid: false,
+                items: [],
+                reason: "缺少卷骨架"
+            };
+        }
+
+        if (items.length !== expectedCount) {
+            return {
+                valid: false,
+                items: [],
+                reason: `润色结果卷数不对，期望 ${expectedCount} 卷，实际 ${items.length} 卷`
+            };
+        }
+
+        const normalized = new Array(expectedCount);
+        const usedNumbers = new Set();
+        for (let index = 0; index < items.length; index += 1) {
+            const raw = items[index] || {};
+            const explicitVolumeNumber = Number(raw.volume_number || 0);
+            const volumeNumber = explicitVolumeNumber >= 1 && explicitVolumeNumber <= expectedCount
+                ? explicitVolumeNumber
+                : (expectedCount === 1 ? 1 : index + 1);
+            if (usedNumbers.has(volumeNumber)) {
+                return {
+                    valid: false,
+                    items: [],
+                    reason: `润色结果出现重复卷序号：第${volumeNumber}卷`
+                };
+            }
+            usedNumbers.add(volumeNumber);
+            normalized[volumeNumber - 1] = {
+                volume_number: volumeNumber,
+                summary: this.normalizeGeneratedVolumeText(raw.summary || ""),
+                cliffhanger: this.normalizeGeneratedVolumeText(raw.cliffhanger || "")
+            };
+        }
+
+        for (let index = 0; index < expectedCount; index += 1) {
+            const item = normalized[index];
+            if (!item || item.summary.length < 60) {
+                return {
+                    valid: false,
+                    items: [],
+                    reason: `第${index + 1}卷润色摘要过短或缺失`
+                };
+            }
+            if (this.containsFutureVolumeLeakage(item.summary, skeleton, index)) {
+                return {
+                    valid: false,
+                    items: [],
+                    reason: `第${index + 1}卷摘要混入后续卷关键信号`
+                };
+            }
+        }
+
+        return {
+            valid: true,
+            items: normalized,
+            reason: ""
+        };
+    }
+
+    extractVolumeSignalTerms(item) {
+        const texts = [
+            item?.title,
+            item?.next_hook,
+            item?.end_state,
+            ...(Array.isArray(item?.must_include) ? item.must_include : [])
+        ]
+            .map((text) => String(text || "").trim())
+            .filter(Boolean);
+        const terms = new Set();
+
+        texts.forEach((text) => {
+            text
+                .split(/[，,。；;：:、“”"'‘’（）()\s]+/g)
+                .map((part) => String(part || "").trim())
+                .filter((part) => part.length >= 3 && part.length <= 12)
+                .forEach((part) => terms.add(part));
+        });
+
+        return Array.from(terms).slice(0, 18);
+    }
+
+    containsFutureVolumeLeakage(summary, skeleton, currentIndex) {
+        const content = String(summary || "").trim();
+        if (!content || !Array.isArray(skeleton) || currentIndex >= skeleton.length - 1) {
+            return false;
+        }
+
+        const matched = new Set();
+        skeleton.slice(currentIndex + 1).forEach((futureItem) => {
+            this.extractVolumeSignalTerms(futureItem).forEach((term) => {
+                if (term && content.includes(term)) {
+                    matched.add(term);
+                }
+            });
+        });
+
+        return matched.size >= 2;
+    }
+
     buildFallbackVolumeRender(item, index, volumeCount) {
         const total = Math.max(1, Number(volumeCount || 1) || 1);
         const summary = [
             String(item.opening_situation || "").trim(),
-            `这一卷里，主角必须${String(item.core_goal || "").trim() || "拿下新的阶段成果"}，却被${String(item.main_pressure || "").trim() || "更强的压力"}逼得不断换招。`,
-            String(item.key_turn || "").trim() ? `直到${String(item.key_turn || "").trim()}，局势才被硬生生拧向新的方向。` : "",
+            String(item.core_goal || "").trim()
+                ? `主角刚想${String(item.core_goal || "").trim()}，就被${String(item.main_pressure || "").trim() || "新的重压"}迎头压住。`
+                : (String(item.main_pressure || "").trim() ? `新的重压很快落到主角头上：${String(item.main_pressure || "").trim()}。` : ""),
+            String(item.key_turn || "").trim() ? `等到${String(item.key_turn || "").trim()}，局面才终于从被动硬生生扳了回来。` : "",
             index === total - 1
-                ? `最终，故事落到${String(item.end_state || "").trim() || "主线真正收束"}。`
-                : `卷末，局势落到${String(item.end_state || "").trim() || "新的危险边缘"}，把下一卷的风暴直接顶了出来。`
+                ? `最后，${String(item.end_state || "").trim() || "主线真正收束"}。`
+                : `这一卷收尾时，${String(item.end_state || "").trim() || "新的危险边缘已经显形"}，也把下一卷的风暴顺势顶到了台前。`
         ].filter(Boolean).join("");
 
         return {
