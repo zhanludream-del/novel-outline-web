@@ -3312,38 +3312,15 @@ ${(detailedOutline || concept || "未填写").slice(0, 2200)}`;
         }
 
         if (action === "clear-synopsis") {
-            const ok = window.confirm(`确定清空第 ${volumeIndex + 1} 卷细纲吗？`);
-            if (!ok) {
+            const shouldClearSynopsis = window.confirm(`确定清空第${volumeIndex + 1}卷及后续卷的细纲和卷缓存吗？`);
+            if (!shouldClearSynopsis) {
                 return;
             }
-            this.novelData.synopsisData = this.novelData.synopsisData || this.novelData.synopsis_data || {};
-            const volume = this.novelData.outline.volumes[volumeIndex];
-            const clearedSynopsisText = [volume.chapterSynopsis || "", volume.chapter_synopsis || ""]
-                .filter(Boolean)
-                .join("\n");
-            volume.chapterSynopsis = "";
-            volume.chapter_synopsis = "";
-            this.novelData.synopsisData.synopsis_volumes = this.novelData.synopsisData.synopsis_volumes || {};
-            this.novelData.synopsisData.synopsis_volumes[String(volumeIndex + 1)] = "";
-            if (Number(this.elements.synopsisCurrentVolume?.value || 0) === volumeIndex + 1) {
-                this.novelData.synopsisData.synopsisOutput = "";
-                this.novelData.synopsisData.synopsis_output = "";
-                this.elements.synopsisOutput.value = "";
-            }
-            const cleanupCandidates = new Set([
-                ...Object.keys(this.novelData.synopsisData.locked_character_names || {}),
-                ...Object.values(this.novelData.synopsisData.vague_to_name_mapping || {}),
-                ...((this.generator?.collectFrequentNamesFromText?.(clearedSynopsisText)) || [])
-            ].map((name) => String(name || "").trim()).filter(Boolean));
-            if (cleanupCandidates.size) {
-                this.cleanupOrphanedCharacterArtifacts({
-                    candidateNames: cleanupCandidates
-                });
-            }
+            this.clearSynopsisFromVolume(volumeIndex + 1);
             this.persist(true);
             this.renderVolumeCards();
             this.renderDashboard();
-            Utils.showMessage(`第 ${volumeIndex + 1} 卷细纲已清空。`, "success");
+            Utils.showMessage(`已清空第${volumeIndex + 1}卷及后续卷的细纲与相关缓存。`, "success");
             return;
         }
 
@@ -3665,19 +3642,104 @@ ${(detailedOutline || concept || "未填写").slice(0, 2200)}`;
         const volumeSynopsisText = this.buildCombinedVolumeSynopsisText();
         const chapterSynopsisText = this.buildCombinedChapterSynopsisText();
         const outline = this.novelData.outline;
-        const synopsis = this.novelData.synopsisData;
+        const synopsis = this.ensureSynopsisStores();
 
         this.novelData.generated_context.worldbuilding = outline.worldbuilding || "";
 
-        if (volumeSynopsisText) {
-            synopsis.volumeSynopsis = volumeSynopsisText;
-            synopsis.volume_synopsis = volumeSynopsisText;
-            this.novelData.generated_context.volume_synopsis = volumeSynopsisText;
+        synopsis.volumeSynopsis = volumeSynopsisText;
+        synopsis.volume_synopsis = volumeSynopsisText;
+        this.novelData.generated_context.volume_synopsis = volumeSynopsisText;
+
+        outline.user_context = chapterSynopsisText;
+        this.novelData.generated_context.chapter_synopsis = chapterSynopsisText;
+    }
+
+    ensureSynopsisStores() {
+        this.novelData.synopsisData = this.novelData.synopsisData && typeof this.novelData.synopsisData === "object"
+            ? this.novelData.synopsisData
+            : {};
+        this.novelData.generated_context = this.novelData.generated_context && typeof this.novelData.generated_context === "object"
+            ? this.novelData.generated_context
+            : {};
+
+        const synopsis = this.novelData.synopsisData;
+        synopsis.synopsis_volumes = synopsis.synopsis_volumes && typeof synopsis.synopsis_volumes === "object"
+            ? synopsis.synopsis_volumes
+            : {};
+        synopsis.main_characters = synopsis.main_characters && typeof synopsis.main_characters === "object"
+            ? synopsis.main_characters
+            : {};
+        synopsis.locked_character_names = synopsis.locked_character_names && typeof synopsis.locked_character_names === "object"
+            ? synopsis.locked_character_names
+            : {};
+        synopsis.vague_to_name_mapping = synopsis.vague_to_name_mapping && typeof synopsis.vague_to_name_mapping === "object"
+            ? synopsis.vague_to_name_mapping
+            : {};
+        synopsis.vague_supporting_roles = synopsis.vague_supporting_roles && typeof synopsis.vague_supporting_roles === "object"
+            ? synopsis.vague_supporting_roles
+            : {};
+        return synopsis;
+    }
+
+    rebuildSynopsisVolumeStore() {
+        const synopsis = this.ensureSynopsisStores();
+        const nextSynopsisVolumes = {};
+
+        (this.novelData.outline?.volumes || []).forEach((volume, index) => {
+            const text = String(volume?.chapterSynopsis || volume?.chapter_synopsis || "").trim();
+            if (text) {
+                nextSynopsisVolumes[String(index + 1)] = text;
+            }
+        });
+
+        synopsis.synopsis_volumes = nextSynopsisVolumes;
+        return nextSynopsisVolumes;
+    }
+
+    pruneSynopsisCharacterCaches() {
+        const synopsis = this.ensureSynopsisStores();
+        synopsis.main_characters = {};
+        synopsis.locked_character_names = {};
+        synopsis.vague_to_name_mapping = {};
+        synopsis.vague_supporting_roles = {};
+    }
+
+    clearSynopsisFromVolume(startVolumeNumber) {
+        const synopsis = this.ensureSynopsisStores();
+        const volumes = this.novelData.outline?.volumes || [];
+        const maxVolumeNumber = Math.max(1, volumes.length);
+        const volumeNumber = Math.min(
+            Math.max(1, Number(startVolumeNumber) || 1),
+            maxVolumeNumber
+        );
+
+        for (let index = volumeNumber - 1; index < volumes.length; index += 1) {
+            const volume = volumes[index];
+            if (!volume || typeof volume !== "object") {
+                continue;
+            }
+            volume.summary = "";
+            volume.cliffhanger = "";
+            volume.chapterSynopsis = "";
+            volume.chapter_synopsis = "";
         }
 
-        if (chapterSynopsisText) {
-            outline.user_context = chapterSynopsisText;
-            this.novelData.generated_context.chapter_synopsis = chapterSynopsisText;
+        this.rebuildSynopsisVolumeStore();
+        this.syncGeneratedContexts();
+        this.pruneSynopsisCharacterCaches();
+
+        const currentVolumeNumber = Math.max(1, Number(synopsis.currentVolume || this.elements?.synopsisCurrentVolume?.value || 1) || 1);
+        const currentVolume = volumes[currentVolumeNumber - 1];
+        const currentSynopsisText = String(currentVolume?.chapterSynopsis || currentVolume?.chapter_synopsis || "").trim();
+
+        synopsis.synopsisOutput = currentSynopsisText;
+        synopsis.synopsis_output = currentSynopsisText;
+
+        if (this.elements.volumeSynopsisText) {
+            this.elements.volumeSynopsisText.value = synopsis.volumeSynopsis || synopsis.volume_synopsis || "";
+        }
+        if (this.elements.synopsisOutput) {
+            this.elements.synopsisOutput.value = currentSynopsisText;
         }
     }
 
@@ -4558,25 +4620,18 @@ ${(detailedOutline || concept || "未填写").slice(0, 2200)}`;
             return;
         }
 
-        const ok = window.confirm(`确定清空第 ${volumeNumber} 卷细纲吗？`);
-        if (!ok) {
+        const shouldClearSynopsis = window.confirm(`确定清空第${volumeNumber}卷及后续卷的细纲和卷缓存吗？`);
+        if (!shouldClearSynopsis) {
             return;
         }
 
-        volume.chapterSynopsis = "";
-        volume.chapter_synopsis = "";
-        this.novelData.synopsisData.synopsis_volumes = this.novelData.synopsisData.synopsis_volumes || {};
-        this.novelData.synopsisData.synopsis_volumes[String(volumeNumber)] = "";
-        if (this.novelData.synopsisData.currentVolume === volumeNumber) {
-            this.novelData.synopsisData.synopsisOutput = "";
-            this.novelData.synopsisData.synopsis_output = "";
-            this.elements.synopsisOutput.value = "";
-        }
+        this.clearSynopsisFromVolume(volumeNumber);
 
         this.persist(true);
         this.renderVolumeCards();
         this.renderDashboard();
-        Utils.showMessage(`第 ${volumeNumber} 卷细纲已清空。`, "success");
+        Utils.showMessage(`已清空第${volumeNumber}卷及后续卷的细纲与相关缓存。`, "success");
+        return;
     }
 
     importSynopsisToOutline() {
