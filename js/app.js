@@ -3316,7 +3316,11 @@ ${(detailedOutline || concept || "未填写").slice(0, 2200)}`;
             if (!ok) {
                 return;
             }
+            this.novelData.synopsisData = this.novelData.synopsisData || this.novelData.synopsis_data || {};
             const volume = this.novelData.outline.volumes[volumeIndex];
+            const clearedSynopsisText = [volume.chapterSynopsis || "", volume.chapter_synopsis || ""]
+                .filter(Boolean)
+                .join("\n");
             volume.chapterSynopsis = "";
             volume.chapter_synopsis = "";
             this.novelData.synopsisData.synopsis_volumes = this.novelData.synopsisData.synopsis_volumes || {};
@@ -3325,6 +3329,16 @@ ${(detailedOutline || concept || "未填写").slice(0, 2200)}`;
                 this.novelData.synopsisData.synopsisOutput = "";
                 this.novelData.synopsisData.synopsis_output = "";
                 this.elements.synopsisOutput.value = "";
+            }
+            const cleanupCandidates = new Set([
+                ...Object.keys(this.novelData.synopsisData.locked_character_names || {}),
+                ...Object.values(this.novelData.synopsisData.vague_to_name_mapping || {}),
+                ...((this.generator?.collectFrequentNamesFromText?.(clearedSynopsisText)) || [])
+            ].map((name) => String(name || "").trim()).filter(Boolean));
+            if (cleanupCandidates.size) {
+                this.cleanupOrphanedCharacterArtifacts({
+                    candidateNames: cleanupCandidates
+                });
             }
             this.persist(true);
             this.renderVolumeCards();

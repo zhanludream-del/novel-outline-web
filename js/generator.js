@@ -327,7 +327,9 @@
 
         const parsed = await this.stabilizeGeneratedSynopsisNames(
             project,
-            this.parseChapterSynopsisLines(raw, chapterCount),
+            this.parseChapterSynopsisLines(raw, chapterCount, {
+                preserveRoleArtifacts: true
+            }),
             volumeNumber,
             {
                 concept,
@@ -351,7 +353,7 @@
         });
     }
 
-    parseChapterSynopsisLines(rawText, chapterCount = 0) {
+    parseChapterSynopsisLines(rawText, chapterCount = 0, options = {}) {
         const lines = String(rawText || "")
             .split(/\r?\n/)
             .map((line) => line.trim())
@@ -400,8 +402,10 @@
         }
 
         const targetCount = Math.max(0, Number(chapterCount || 0));
-        const normalizedSynopsisItems = parsed.map((item, index) => this.buildNormalizedSynopsisItem(item, Number(item.chapter_number || index + 1)));
-        return this.normalizeChapterSynopsisSequence(normalizedSynopsisItems, targetCount);
+        const normalizedSynopsisItems = parsed.map((item, index) =>
+            this.buildNormalizedSynopsisItem(item, Number(item.chapter_number || index + 1), options)
+        );
+        return this.normalizeChapterSynopsisSequence(normalizedSynopsisItems, targetCount, options);
         return (targetCount ? parsed.slice(0, targetCount) : parsed).map((item, index) => ({
             ...item,
             chapter_number: Number(item.chapter_number || index + 1),
@@ -412,13 +416,15 @@
         }));
     }
 
-    buildNormalizedSynopsisItem(item, chapterNumber) {
+    buildNormalizedSynopsisItem(item, chapterNumber, options = {}) {
         const normalizedChapterNumber = Number(chapterNumber || item?.chapter_number || 1);
         const title = this.sanitizeSynopsisGeneratedText(
-            String(item?.title || `第${normalizedChapterNumber}章`).trim()
+            String(item?.title || `第${normalizedChapterNumber}章`).trim(),
+            options
         ) || `第${normalizedChapterNumber}章`;
         const synopsis = this.sanitizeSynopsisGeneratedText(
-            String(item?.synopsis || item?.key_event || "").trim()
+            String(item?.synopsis || item?.key_event || "").trim(),
+            options
         );
         return {
             ...item,
@@ -430,7 +436,7 @@
         };
     }
 
-    sanitizeSynopsisGeneratedText(text) {
+    sanitizeSynopsisGeneratedText(text, options = {}) {
         let output = String(text || "").trim();
         if (!output) {
             return "";
@@ -438,7 +444,7 @@
 
         const roleTerms = [
             "教习姑姑", "教习嬷嬷", "管事太监", "暗卫首领",
-            "说书人", "小太监", "侍女", "宫女", "丫鬟", "嬷嬷", "太医",
+            "说书人", "小太监", "太监", "侍女", "宫女", "丫鬟", "嬷嬷", "太医",
             "暗卫", "护卫", "侍卫", "厨娘", "稳婆", "裁缝", "乐师", "舞姬",
             "戏子", "道姑", "萨满", "小厮", "幕僚", "护院", "掌门", "长老",
             "师兄", "师姐", "师弟", "师妹", "师父", "师母", "同门", "阿哥"
@@ -449,7 +455,9 @@
             "做法", "斥责", "看守", "登记", "传信", "劝阻", "进言", "截获",
             "封锁", "送来", "送去", "守着", "唤来", "稳住", "指出", "探望",
             "探病", "请安", "设宴", "禀报", "呼救", "哭诉", "解释", "服侍",
-            "站在", "跪地", "跪下", "冷眼", "当众", "在", "将", "被", "受"
+            "站在", "跪地", "跪下", "冷眼", "当众", "快步", "匆匆", "急忙",
+            "开口", "进门", "入内", "走进", "走来", "迎亲", "回禀", "回报",
+            "在", "将", "被", "受"
         ];
         const escapeRegex = (value) => String(value || "").replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
         const rolePattern = roleTerms
@@ -467,14 +475,23 @@
             const artifactPattern = new RegExp(`((?:${rolePattern}))([\\u4e00-\\u9fa5]{2,4})(?=(?:${actionPattern}|[，。！？；、\\s]|$))`, "g");
             output = output.replace(artifactPattern, (full, role, candidate) => {
                 const cleanCandidate = this.normalizeOutlineCharacterLabel(candidate);
-                const looksBroken = cleanCandidate
-                    && !this.isLikelySynopsisPersonName(cleanCandidate)
-                    && (
-                        this.containsSynopsisNameNoise(cleanCandidate)
-                        || this.isLikelyActionLikeCharacterCandidate(cleanCandidate)
-                        || /^(?:而|并|又|还|就|便|把|被|将|其|这|那|原|真|成|互|阿|份|只|个)/.test(cleanCandidate)
-                    );
-                return looksBroken ? role : full;
+                const looksBroken = this.isBrokenSynopsisRoleNameCandidate(cleanCandidate);
+                if (!looksBroken) {
+                    return full;
+                }
+                if (options?.preserveRoleArtifacts) {
+                    return full;
+                }
+                const repairedName = options?.project
+                    ? this.repairBrokenSynopsisRoleName({
+                        project: options.project,
+                        volumeNumber: options.volumeNumber,
+                        role,
+                        candidate: cleanCandidate,
+                        repairState: options.nameRepairState
+                    })
+                    : "";
+                return repairedName ? `${role}${repairedName}` : role;
             });
         }
 
@@ -484,14 +501,118 @@
             .trim();
     }
 
-    normalizeChapterSynopsisSequence(items, chapterCount = 0) {
+    createSynopsisNameRepairState(project) {
+        const synopsisData = this.restoreSynopsisMainCharacters(project);
+        const usedNames = new Set([
+            ...Object.values(synopsisData.main_characters || {}),
+            ...Object.keys(synopsisData.locked_character_names || {}),
+            ...(project?.outline?.characters || []).map((character) => String(character?.name || "").trim())
+        ].map((name) => String(name || "").trim()).filter(Boolean));
+        return {
+            usedNames,
+            roleArtifactMap: new Map()
+        };
+    }
+
+    isBrokenSynopsisRoleNameCandidate(name) {
+        const cleanName = this.normalizeOutlineCharacterLabel(name);
+        if (!cleanName) {
+            return true;
+        }
+        if (!this.isLikelySynopsisPersonName(cleanName)) {
+            return true;
+        }
+        if (this.isLikelyActionLikeCharacterCandidate(cleanName)) {
+            return true;
+        }
+        if (/^(?:而|并|又|还|就|便|把|被|将|其|这|那|原|真|成|互|阿|份|只|个)/.test(cleanName)) {
+            return true;
+        }
+        return /(?:温柔|冷笑|轻笑|浅笑|微笑|柔声|冷声|轻声|低声|贺喜|喜声|赏赐|归于|于尽|严加|情绪|身体|皮囊|光环|报复|完美|真正|所有|互换|带来|健康)/.test(cleanName);
+    }
+
+    getSynopsisRoleFallbackNamePool(role = "") {
+        const femalePool = [
+            "沈青禾", "苏知夏", "顾云枝", "林月棠", "柳书兰", "周白芷",
+            "陆听雨", "许映雪", "宋清荷", "秦晚秋", "谢春桃", "裴念安"
+        ];
+        const malePool = [
+            "周承安", "赵长青", "林景明", "顾远山", "许文清", "陆怀川",
+            "韩守成", "宋子衡", "陈少安", "谢明修", "苏景行", "魏青山"
+        ];
+        const neutralPool = [
+            "沈知言", "顾清和", "陆景行", "林明修", "周砚秋", "谢怀瑾",
+            "苏望舒", "许清辞", "秦书衡", "宋闻舟", "柳成安", "裴文昭"
+        ];
+        if (/(?:丫鬟|侍女|宫女|嬷嬷|教习姑姑|教习嬷嬷|厨娘|稳婆|舞姬|师姐|师妹|师母)/.test(role)) {
+            return femalePool;
+        }
+        if (/(?:太监|小太监|管事太监|侍卫|护卫|暗卫|护院|小厮|师兄|师弟|阿哥)/.test(role)) {
+            return malePool;
+        }
+        if (/(?:太医|幕僚|说书人|乐师|道姑|萨满|掌门|长老|师父|同门)/.test(role)) {
+            return neutralPool;
+        }
+        return [...malePool, ...femalePool, ...neutralPool];
+    }
+
+    buildGeneratedSynopsisFallbackName(role = "", seedIndex = 0) {
+        const femaleGivenNames = ["青禾", "知夏", "云枝", "月棠", "书兰", "白芷", "听雨", "映雪", "清荷", "念安", "晚秋", "春桃"];
+        const maleGivenNames = ["承安", "长青", "景明", "远山", "文清", "怀川", "守成", "子衡", "少安", "明修", "景行", "青山"];
+        const neutralGivenNames = ["知言", "清和", "景行", "明修", "砚秋", "怀瑾", "望舒", "清辞", "书衡", "闻舟", "成安", "文昭"];
+        const surnames = ["沈", "苏", "顾", "林", "柳", "周", "陆", "许", "宋", "秦", "谢", "裴", "韩", "陈", "赵", "魏"];
+        const isFemaleRole = /(?:丫鬟|侍女|宫女|嬷嬷|教习姑姑|教习嬷嬷|厨娘|稳婆|舞姬|师姐|师妹|师母)/.test(role);
+        const isMaleRole = /(?:太监|小太监|管事太监|侍卫|护卫|暗卫|护院|小厮|师兄|师弟|阿哥)/.test(role);
+        const givenNames = isFemaleRole ? femaleGivenNames : (isMaleRole ? maleGivenNames : neutralGivenNames);
+        const surname = surnames[seedIndex % surnames.length];
+        const given = givenNames[Math.floor(seedIndex / surnames.length) % givenNames.length];
+        return `${surname}${given}`;
+    }
+
+    repairBrokenSynopsisRoleName({ project, volumeNumber, role, candidate, repairState }) {
+        const cleanRole = String(role || "").trim();
+        const cleanCandidate = String(candidate || "").trim();
+        if (!project || !cleanRole) {
+            return "";
+        }
+        const state = repairState || this.createSynopsisNameRepairState(project);
+        const cacheKey = `${cleanRole}|${cleanCandidate}`;
+        if (state.roleArtifactMap.has(cacheKey)) {
+            return state.roleArtifactMap.get(cacheKey) || "";
+        }
+
+        const usedNames = state.usedNames instanceof Set ? state.usedNames : new Set();
+        const candidates = this.getSynopsisRoleFallbackNamePool(cleanRole);
+        let repairedName = candidates.find((name) => !usedNames.has(name)) || "";
+        if (!repairedName) {
+            for (let index = 0; index < 256; index += 1) {
+                const fallbackName = this.buildGeneratedSynopsisFallbackName(cleanRole, index);
+                if (fallbackName && !usedNames.has(fallbackName)) {
+                    repairedName = fallbackName;
+                    break;
+                }
+            }
+        }
+        if (!repairedName) {
+            return "";
+        }
+
+        usedNames.add(repairedName);
+        state.roleArtifactMap.set(cacheKey, repairedName);
+        this.lockSynopsisCharacterName(project, repairedName, "配角", cleanRole, Number(volumeNumber || 1) || 1);
+        return repairedName;
+    }
+
+    normalizeChapterSynopsisSequence(items, chapterCount = 0, options = {}) {
         const targetCount = Math.max(0, Number(chapterCount || 0));
         if (!targetCount) {
-            return (items || []).map((item, index) => this.buildNormalizedSynopsisItem(item, Number(item.chapter_number || index + 1)));
+            return (items || []).map((item, index) =>
+                this.buildNormalizedSynopsisItem(item, Number(item.chapter_number || index + 1), options)
+            );
         }
 
         const normalizedItems = (items || []).map((item, index) =>
-            this.buildNormalizedSynopsisItem(item, Number(item.chapter_number || index + 1))
+            this.buildNormalizedSynopsisItem(item, Number(item.chapter_number || index + 1), options)
         );
         const assigned = new Map();
         const leftovers = [];
@@ -507,14 +628,14 @@
 
         for (let chapterNumber = 1; chapterNumber <= targetCount && leftovers.length; chapterNumber += 1) {
             if (!assigned.has(chapterNumber)) {
-                assigned.set(chapterNumber, this.buildNormalizedSynopsisItem(leftovers.shift(), chapterNumber));
+                assigned.set(chapterNumber, this.buildNormalizedSynopsisItem(leftovers.shift(), chapterNumber, options));
             }
         }
 
         const result = [];
         for (let chapterNumber = 1; chapterNumber <= targetCount; chapterNumber += 1) {
             if (assigned.has(chapterNumber)) {
-                result.push(this.buildNormalizedSynopsisItem(assigned.get(chapterNumber), chapterNumber));
+                result.push(this.buildNormalizedSynopsisItem(assigned.get(chapterNumber), chapterNumber, options));
             }
         }
         return result;
@@ -599,7 +720,9 @@
 
             const repairedParsed = await this.stabilizeGeneratedSynopsisNames(
                 project,
-                this.parseChapterSynopsisLines(repairedRaw, missingNumbers.length),
+                this.parseChapterSynopsisLines(repairedRaw, missingNumbers.length, {
+                    preserveRoleArtifacts: true
+                }),
                 volumeNumber,
                 {
                     concept,
@@ -3940,18 +4063,18 @@
         const relationships = new Map();
 
         Object.values(synopsisData.main_characters || {}).forEach((name) => {
-            if (name) {
+            if (name && this.isLikelySynopsisPersonName(name)) {
                 names.add(name);
             }
         });
         Object.keys(synopsisData.locked_character_names || {}).forEach((name) => {
-            if (name) {
+            if (name && this.isLikelySynopsisPersonName(name)) {
                 names.add(name);
             }
         });
         (project?.outline?.characters || []).forEach((character) => {
             const name = String(character?.name || "").trim();
-            if (name) {
+            if (name && this.isLikelySynopsisPersonName(name)) {
                 names.add(name);
             }
         });
@@ -3965,8 +4088,8 @@
             ];
             namePatterns.forEach((pattern) => {
                 Array.from(historyText.matchAll(pattern)).forEach((match) => {
-                    const name = String(match?.[1] || match?.[0] || "").trim();
-                    if (name) {
+                    const name = this.normalizeOutlineCharacterLabel(match?.[1] || match?.[0] || "");
+                    if (name && this.isLikelySynopsisPersonName(name)) {
                         names.add(name);
                     }
                 });
@@ -3981,20 +4104,20 @@
                 Array.from(historyText.matchAll(pattern)).forEach((match) => {
                     if (index === 0) {
                         const [, left, right, relation] = match;
-                        if (left && right && relation) {
+                        if (left && right && relation && this.isLikelySynopsisPersonName(left) && this.isLikelySynopsisPersonName(right)) {
                             relationships.set(`${left}-${right}`, `${left} ↔ ${right}：${relation}`);
                         }
                         return;
                     }
                     if (index === 1) {
                         const [, left, relation, right] = match;
-                        if (left && right && relation) {
+                        if (left && right && relation && this.isLikelySynopsisPersonName(left) && this.isLikelySynopsisPersonName(right)) {
                             relationships.set(`${left}-${right}`, `${left} ↔ ${right}：${relation}`);
                         }
                         return;
                     }
                     const [, left, right, relation] = match;
-                    if (left && right && relation) {
+                    if (left && right && relation && this.isLikelySynopsisPersonName(left) && this.isLikelySynopsisPersonName(right)) {
                         relationships.set(`${left}-${right}`, `${left} ↔ ${right}：${String(relation || "").trim()}`);
                     }
                 });
@@ -4012,7 +4135,7 @@
         ]);
         const filteredNames = Array.from(names)
             .map((name) => String(name || "").trim())
-            .filter((name) => /^[\u4e00-\u9fa5]{2,4}$/.test(name) && !excludeWords.has(name));
+            .filter((name) => /^[\u4e00-\u9fa5]{2,4}$/.test(name) && !excludeWords.has(name) && this.isLikelySynopsisPersonName(name));
 
         return {
             names: Array.from(new Set(filteredNames)).sort((left, right) => left.localeCompare(right, "zh-Hans-CN")),
@@ -4179,6 +4302,7 @@
         if (!Array.isArray(chapters) || !chapters.length) {
             return Array.isArray(chapters) ? chapters : [];
         }
+        const nameRepairState = this.createSynopsisNameRepairState(project);
 
         const generatedText = chapters
             .map((chapter) => chapter.line || `第${chapter.chapter_number || chapter.number || "?"}章：${chapter.title || ""} - ${chapter.synopsis || chapter.key_event || ""}`)
@@ -4203,7 +4327,11 @@
                 title: normalizedTitle,
                 synopsis: normalizedSynopsis,
                 key_event: normalizedSynopsis
-            }, chapterNumber);
+            }, chapterNumber, {
+                project,
+                volumeNumber,
+                nameRepairState
+            });
         });
     }
 
@@ -4617,7 +4745,7 @@
             `1. 一次性输出恰好${chapterCount}章，从第1章到第${chapterCount}章。`,
             "2. 格式固定：第X章：章节标题 - 核心内容。",
             "3. 已经锁定的人名必须沿用，不能改名。",
-            "4. 新角色如果确实需要出现，可以自然起一个正常中文名，不要用模糊称呼、职务词、状态词、动作词当名字。",
+            "4. 新角色如果确实需要出现，哪怕只是侍女、侍卫、太监、嬷嬷、太医、幕僚、路人，也要直接起一个正常中文名再出场，不要用模糊称呼、职务词、状态词、动作词、情绪词硬拼成名字，例如“丫鬟温柔”“侍卫归于尽”“太监贺喜声”都不行。",
             "5. 同一批细纲里，新角色一旦起名，后面必须一直沿用同一个名字。",
             "6. 不要把上一章已经发生的事换句话再写一遍，也不要在本批细纲里重复同一种桥段。",
             "7. 同一批细纲里，人物身份、关系、位份、时间线一旦写定，后文必须保持一致。",
@@ -5169,7 +5297,9 @@
             "原本", "对面", "其中", "当众", "一旁", "故事", "章节", "细纲",
             "卷纲", "正文", "剧情", "内容", "设定", "目标", "核心", "事件",
             "关系", "背景", "能力", "动机", "系统", "提示", "奖励", "面板",
-            "记录", "总表", "状态表", "世界", "摘要", "东施效颦"
+            "记录", "总表", "状态表", "世界", "摘要", "东施效颦",
+            "温柔", "冷笑", "轻笑", "浅笑", "微笑", "柔声", "冷声", "轻声", "低声",
+            "贺喜声", "赏赐", "归于尽", "严加被", "健康身体", "方情绪", "贺喜", "喜声"
         ]);
         if (exactNoise.has(cleanName)) {
             return true;
@@ -5181,7 +5311,9 @@
             "原本", "剧情", "内容", "设定", "目标", "核心", "事件", "关系",
             "背景", "能力", "动机", "系统", "提示", "奖励", "面板", "记录",
             "总表", "状态表", "摘要", "健康身体", "纯元光环", "纯元皮囊",
-            "东施效颦"
+            "东施效颦", "温柔", "冷笑", "轻笑", "浅笑", "微笑", "柔声",
+            "冷声", "轻声", "低声", "贺喜", "喜声", "赏赐", "归于", "于尽",
+            "严加", "情绪", "身体", "皮囊", "光环"
         ];
         if (fragmentNoise.some((fragment) => cleanName.includes(fragment))) {
             return true;
