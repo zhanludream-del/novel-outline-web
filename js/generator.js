@@ -203,6 +203,12 @@
     async generateVolumeSynopsis({ project, title, concept, genre, theme, worldbuilding, volumeCount, chaptersPerVolume, subgenre }) {
         const genreConstraint = this.buildGenreConstraint(genre, subgenre || genre);
         const innovationPrompt = this.buildVolumeInnovationPrompt(project, concept, worldbuilding);
+        const fullConcept = [
+            subgenre || genre ? `题材：${subgenre || genre}` : "",
+            theme ? `核心主题：${theme}` : "",
+            concept || "",
+            worldbuilding ? `【世界观设定】\n${worldbuilding}` : ""
+        ].filter(Boolean).join("\n\n");
         const systemPrompt = [
             genreConstraint,
             "你是世界书构建专家“默默”，一位资深网文策划编辑，擅长构建宏大且富有创意的故事架构。",
@@ -210,9 +216,6 @@
             "",
             "【内容风格铁律】",
             "你的所有输出都必须简单易懂、直白、口语化。要像一个优秀的故事员对朋友讲故事一样，而不是一个学者在写论文。绝对禁止使用任何晦涩、抽象、拗口或“高概念”的词汇和句子。",
-            "summary 必须像真正的剧情简介，不要像填空答案，也不要像策划案汇报。",
-            "不要写出“主角刚想……却被……”“后来……一出，局面被打乱”“到这一卷收尾”这种机械句式。",
-            "不要堆砌并列短句，不要一句话里硬塞三四层信息，句子之间要顺着时间和因果自然往下走。",
             "",
             "【创意设计原则】",
             "1. 使用分支节点思维：每卷都是一个关键的“故事节点”，代表故事中的重要转折点",
@@ -220,64 +223,69 @@
             "3. 利用世界设定作为故事框架：重要地点、事件和潜在冲突要贯穿始终",
             "4. 设计被动响应而非主导叙事：让读者感觉他们在跟随故事，同时故事自然引导",
             "",
-            "【逻辑底线】",
-            "1. 必须严格服从时间顺序、身份顺序、登场顺序和关系推进顺序。",
-            "2. 如果概念里写了前期/中期/后期、入府/入宫/登基、尚未出生/尚未登场等阶段信号，必须照着来，不能提前串卷。",
-            "3. 非最终卷绝不能偷跑终局内容，不能提前写天下一统、万国来朝、终局清算、最终感情落点。",
-            "4. 同一个人物的身份、立场、关系推进必须前后一致，不能上一卷还在敌对，这一卷无桥接就突然掏心掏肺。",
-            "",
             "【多分支剧情设计】",
             "- 每卷必须包含主线剧情和至少一条潜在支线",
             "- 主线是推动故事前进的核心事件",
             "- 支线是丰富世界观、深化人物的辅助剧情",
             "- 各卷之间要有“钩子”——前一卷埋下的伏笔在后续卷中揭晓",
             "",
-            "【每卷结局指令（必须严格执行）】",
-            `1. 非最终卷（第1卷到第${Math.max(1, volumeCount - 1)}卷）：每卷结尾必须设置强悬念钩子，引出下一卷的新冲突`,
+            "【★★★ 每卷结局指令（必须严格执行）★★★】",
+            `1. 【非最终卷】第1卷到第${Math.max(1, volumeCount - 1)}卷：每卷结尾必须设置强悬念钩子，引出下一卷的新冲突`,
             "- 卷末必须出现：新的敌人/新的秘密/新的目标/新的地点/新的人物",
             "- 禁止普通结尾，禁止“故事告一段落”的感觉",
             "- 必须让读者强烈期待下一卷的内容",
-            `2. 最终卷（第${volumeCount}卷）：必须是真正的大结局`,
+            "- 示例：卷末突然出现神秘人物、发现隐藏真相、面临更大危机等",
+            "",
+            `2. 【最终卷】第${volumeCount}卷：必须是真正的大结局`,
             "- 解决所有主要悬念和伏笔",
             "- 主角完成最终目标或获得最终成长",
-            "- 给予读者满足感和完整感，可以有开放式余韵，但不能是“待续”",
+            "- 给予读者满足感和完整感",
+            "- 可以有开放式结尾（如主角踏上新旅程），但必须是“故事完成”的感觉，而非“待续”",
             "",
             "【输出要求】",
-            "1. 输出必须是 JSON 数组，不要输出任何额外说明或 markdown 标记",
-            "2. 每卷必须体现目标、困难、转折、高潮和卷末钩子，但这些信息要融在剧情里，不要逐项罗列",
+            "1. 每卷用段落描述，格式为：第X卷：卷名 - 详细剧情概要（150-250字，务必包含主线和至少一条支线）",
+            "2. 详细说明：主角在本卷的目标、面临的困难、重要的转折点以及获得的新信息或成长",
             "3. 各卷之间要有明确的剧情递进关系，体现“铺垫-冲突-高潮-缓和-新冲突”的节奏",
             "4. 绝对不能有重复的剧情元素",
             "5. 不能出现逻辑漏洞（如角色死而复生、能力忽高忽低、时间线混乱等）",
-            "6. summary 必须是完整的一段话，信息齐但阅读顺，不要写成骨架拼接文本"
+            "6. 要有起承转合，高潮迭起，每卷结尾要有悬念（除最终卷外）",
+            "7. 直接输出内容，不要任何额外说明或markdown标记",
+            "",
+            "【中文网文风格参考】",
+            "你的创作灵感应优先参考广受欢迎的中文网络小说风格，如：",
+            "- 升级流：主角不断变强，打脸装逼",
+            "- 逆袭流：从底层崛起，复仇翻身",
+            "- 探索流：揭开世界秘密，发现惊天阴谋",
+            "- 情感流：多线感情发展，虐恋情深",
+            "",
+            "【示例格式】",
+            "第1卷：蛰伏 - 主角遭人陷害，沦为阶下囚。在狱中遭遇神秘老者传授秘密功法，主角才明白自己的身世并非那么简单。通过苦修和计谋，主角逐渐在狱中建立起自己的势力。卷末，老者被神秘杀手刺杀，临死前留下一个谜团，指向主角失散多年的家族。（支线：狱中的女医生暗恋主角，为主角偷来珍贵的医药资源）",
+            "",
+            "第2卷：破茧 - 主角假死出狱，以新身份进入仇家势力范围。他一面隐忍低调，一面调查身世之谜，发现自己竟是没落贵族之后。在调查过程中，主角邂逅女主，两人产生误会和纠葛。卷末，主角终于联系上失散多年的族人余脉，为复仇之路做足准备。（支线：探发仇人内部的权力争斗，为日后的反击埋下伏笔）"
         ].filter(Boolean).join("\n");
 
         const userPrompt = [
             `小说标题：《${title || "未命名小说"}》`,
-            `题材：${subgenre || genre || "未指定"}`,
-            `核心主题：${theme || "未指定"}`,
-            `故事概念：${concept || "暂无"}`,
-            `计划卷数：${volumeCount}`,
-            `每卷计划章节数：${chaptersPerVolume}`,
-            `世界观：${worldbuilding || "暂无"}`,
-            innovationPrompt ? `【反套路与创新建议】\n${innovationPrompt}` : "",
             "",
-            "请输出 JSON 数组，每个对象包含：",
-            "volume_number: 卷序号",
-            "title: 卷名",
-            "summary: 本卷 150-250 字剧情概要，务必包含主线和至少一条支线，并把主角目标、困难、关键转折、成长或新信息自然融进一段完整叙述里",
-            "cliffhanger: 卷末钩子，一句话",
+            fullConcept || "暂无故事概念",
             "",
-            "不要把 summary 写成套路句拼接，不要写成“先发生A，再发生B，最后发生C”的流水账。",
-            "不要照搬用户原话，要把信息整理成更顺、更像故事简介的一段。",
+            innovationPrompt || "",
             "",
-            "不要输出 JSON 之外的说明。"
+            `请根据以上世界观元素和故事概念，为这部小说规划${volumeCount}卷的内容概要。`
         ].join("\n");
 
-        const parsed = await this.requestJSONArray(systemPrompt, userPrompt, {
+        const raw = await this.api.callLLM(userPrompt, systemPrompt, {
             temperature: 0.72,
-            maxTokens: this.getConfiguredMaxTokens(6000),
+            maxTokens: this.getConfiguredMaxTokens(4000),
             timeout: this.getTaskTimeoutMs(300000)
         });
+        let parsed = this.parseCollapsedBatchVolumeText(raw, volumeCount);
+        if (parsed.length !== volumeCount) {
+            const arrayCandidate = Utils.coerceJSONArray(Utils.parseJsonResponse(raw) ?? raw);
+            if (Array.isArray(arrayCandidate)) {
+                parsed = arrayCandidate;
+            }
+        }
         const volumes = this.normalizeDirectVolumeResults(parsed, volumeCount);
 
         return {
@@ -319,6 +327,11 @@
                     summary = this.normalizeGeneratedVolumeText(split[1] || "");
                     cliffhanger = this.normalizeGeneratedVolumeText(split[2] || "");
                 }
+            }
+            if (!cliffhanger && summary) {
+                const inferred = this.splitVolumeSummaryAndCliffhanger(summary, volumeNumber === expectedCount);
+                summary = inferred.summary;
+                cliffhanger = inferred.cliffhanger;
             }
 
             normalized[volumeNumber - 1] = {
@@ -1137,7 +1150,7 @@
             return [];
         }
 
-        const pattern = /(?:^|\n)\s*(?:【\s*)?第\s*(\d+)\s*卷([^\n】]*)?(?:】)?\s*/g;
+        const pattern = /^\s*(?:【\s*)?第\s*(\d+)\s*卷(?:】)?\s*(.*)$/gm;
         const matches = [];
         let match = null;
         while ((match = pattern.exec(source)) !== null) {
@@ -1180,12 +1193,15 @@
                 lines.splice(hookIndex);
             }
 
+            const cleanedLines = lines
+                .map((line) => line.replace(/^(?:本卷剧情简介|详细剧情概要|剧情简介|剧情概要|本卷概要|概要|剧情|Summary)[:：]\s*/i, "").trim())
+                .filter(Boolean);
             const summary = this.normalizeGeneratedVolumeText(
-                [headingNarrative, ...lines].filter(Boolean).join(" ").trim()
+                [headingNarrative, ...cleanedLines].filter(Boolean).join(" ").trim()
             );
             results.push({
                 volume_number: current.volumeNumber,
-                title: heading.replace(/^【?\s*第\s*\d+\s*卷/, "").replace(/】$/, "").trim(),
+                title: this.cleanVolumeTitleFromHeading(heading),
                 summary,
                 cliffhanger: this.normalizeGeneratedVolumeText(cliffhanger)
             });
@@ -1201,6 +1217,54 @@
         return Array.from(unique.values())
             .sort((left, right) => Number(left.volume_number || 0) - Number(right.volume_number || 0))
             .slice(0, expectedCount);
+    }
+
+    cleanVolumeTitleFromHeading(heading) {
+        const tail = String(heading || "")
+            .replace(/^【?\s*第\s*\d+\s*卷\s*】?\s*/, "")
+            .replace(/^[：:—–-]\s*/, "")
+            .trim();
+        if (!tail) {
+            return "";
+        }
+
+        const separatorMatch = tail.match(/^(.*?)(?:\s*[-—–]\s*)(.+)$/);
+        if (separatorMatch) {
+            const possibleTitle = String(separatorMatch[1] || "").trim();
+            const possibleNarrative = String(separatorMatch[2] || "").trim();
+            if (possibleTitle && possibleNarrative.length >= 10) {
+                return possibleTitle;
+            }
+        }
+
+        return tail;
+    }
+
+    splitVolumeSummaryAndCliffhanger(summary, isFinalVolume = false) {
+        const normalized = this.normalizeGeneratedVolumeText(summary);
+        if (!normalized || isFinalVolume) {
+            return {
+                summary: normalized,
+                cliffhanger: ""
+            };
+        }
+
+        const explicitMatch = normalized.match(/^(.*?)(?:\s*(?:卷末|结尾|末尾)[，,:：]\s*)(.+)$/);
+        if (explicitMatch) {
+            const main = this.normalizeGeneratedVolumeText(explicitMatch[1] || "");
+            const hook = this.normalizeGeneratedVolumeText(explicitMatch[2] || "");
+            if (main.length >= 40 && hook.length >= 10) {
+                return {
+                    summary: main,
+                    cliffhanger: hook
+                };
+            }
+        }
+
+        return {
+            summary: normalized,
+            cliffhanger: ""
+        };
     }
 
     extractNarrativeFromVolumeHeading(heading) {

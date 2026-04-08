@@ -1,6 +1,6 @@
 const APP_CONFIG = {
     name: "晨曦微露小说大纲生成器 Web",
-    version: "2.0.0",
+    version: "2.0.1",
     storageKey: "novel_outline_data_v2",
     settingsKey: "novel_outline_api_config_v2"
 };
