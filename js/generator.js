@@ -4441,6 +4441,7 @@
             currentVolumeTaskLabel: `${currentVolume.title || `第${volumeNumber}卷`}${volumeSummary ? ` - ${Utils.summarizeText(volumeSummary, 80)}` : ""}`,
             volumeSynopsisContext: String(volumeSummary || currentVolume.summary || "").trim(),
             currentVolumeOutlineContext: this.limitContext(String(outlineSlice.currentOutline || "").trim(), 2200),
+            futureVolumeSynopsisContext: this.buildFutureVolumeSynopsisContext(project, volumeNumber),
             previousVolumeEnding: this.buildPreviousVolumeEnding(project, volumeNumber),
             previousSynopsisContext: this.buildFullPreviousChapterSynopsisContext(project, volumeNumber),
             existingSynopsis: String(existingSynopsis || "").trim(),
@@ -4463,6 +4464,36 @@
             boundaryGuard: this.limitContext(this.buildSynopsisVolumeBoundaryGuard(project, volumeNumber), 500),
             chapterCount
         };
+    }
+
+    buildFutureVolumeSynopsisContext(project, currentVolumeNumber) {
+        if (!project?.outline?.volumes?.length) {
+            return "";
+        }
+
+        return project.outline.volumes
+            .slice(Math.max(0, currentVolumeNumber))
+            .map((volume, index) => {
+                const title = volume?.title || `第${currentVolumeNumber + index + 1}卷`;
+                const summary = this.normalizeSynopsisReferenceText(
+                    project,
+                    volume?.summary || ""
+                );
+                const cliffhanger = this.normalizeSynopsisReferenceText(
+                    project,
+                    volume?.cliffhanger || ""
+                );
+                if (!summary && !cliffhanger) {
+                    return "";
+                }
+                return [
+                    `【第${currentVolumeNumber + index + 1}卷】${title}`,
+                    summary ? `卷纲：${Utils.summarizeText(summary, 220)}` : "",
+                    cliffhanger ? `卷末钩子：${Utils.summarizeText(cliffhanger, 100)}` : ""
+                ].filter(Boolean).join("\n");
+            })
+            .filter(Boolean)
+            .join("\n\n");
     }
 
     buildCurrentVolumePriorityGuard(project, volumeNumber, { concept = "", volumeSummary = "", currentVolumeOutline = "" } = {}) {
@@ -4568,6 +4599,7 @@
         concept,
         volumeSynopsisContext,
         currentVolumeOutlineContext,
+        futureVolumeSynopsisContext,
         previousVolumeEnding,
         previousSynopsisContext,
         existingSynopsis,
@@ -4585,6 +4617,7 @@
             "",
             volumeSynopsisContext ? `当前卷概要：\n${volumeSynopsisContext}` : "",
             currentVolumeOutlineContext ? `当前卷详细大纲：\n${currentVolumeOutlineContext}` : "",
+            futureVolumeSynopsisContext ? `后续卷卷纲（仅用于判断阶段边界，严禁提前展开）：\n${futureVolumeSynopsisContext}` : "",
             currentVolumePriorityGuard ? `当前卷最高优先级规则：\n${currentVolumePriorityGuard}` : "",
             previousVolumeEnding ? `上一卷结尾：\n${previousVolumeEnding}` : "",
             previousSynopsisContext ? `前文全部细纲（只作衔接参考）：\n${previousSynopsisContext}` : "",
@@ -4610,6 +4643,7 @@
         currentVolumeTaskLabel,
         volumeSynopsisContext,
         currentVolumeOutlineContext,
+        futureVolumeSynopsisContext,
         previousVolumeEnding,
         previousSynopsisContext,
         existingSynopsis,
@@ -4628,6 +4662,7 @@
             "",
             volumeSynopsisContext ? `当前卷概要：\n${volumeSynopsisContext}` : "",
             currentVolumeOutlineContext ? `当前卷详细大纲：\n${currentVolumeOutlineContext}` : "",
+            futureVolumeSynopsisContext ? `后续卷卷纲（仅用于判断阶段边界，严禁提前展开）：\n${futureVolumeSynopsisContext}` : "",
             currentVolumePriorityGuard ? `当前卷最高优先级规则：\n${currentVolumePriorityGuard}` : "",
             previousVolumeEnding ? `上一卷结尾：\n${previousVolumeEnding}` : "",
             previousSynopsisContext ? `前文全部细纲：\n${previousSynopsisContext}` : "",
