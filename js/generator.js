@@ -4447,7 +4447,7 @@
             existingSynopsis: String(existingSynopsis || "").trim(),
             repeatGuard: this.limitContext(this.buildUsedPlotsSummary(project, volumeNumber), 1400),
             innovationPrompt: this.limitContext(this.buildSynopsisInnovationPrompt(project, volumeNumber, concept, volumeSummary), 1200),
-            continuityGuard: this.limitContext(this.buildSynopsisHardFactHint(project, volumeNumber, contextText), 1000),
+            continuityGuard: this.limitContext(this.buildSimpleSynopsisHardFactHint(project, volumeNumber, contextText), 1000),
             clarityGuard: this.limitContext(this.buildSynopsisClarityGuard({
                 volumeNumber,
                 chapterCount,
@@ -4464,6 +4464,42 @@
             boundaryGuard: this.limitContext(this.buildSynopsisVolumeBoundaryGuard(project, volumeNumber), 500),
             chapterCount
         };
+    }
+
+    buildSimpleSynopsisHardFactHint(project, volumeNumber, contextText = "") {
+        const synopsisData = this.restoreSynopsisMainCharacters(project);
+        const lockedLines = Object.entries(synopsisData.main_characters || {})
+            .filter(([, name]) => String(name || "").trim())
+            .map(([role, name]) => `- ${name}：${role}`);
+        const relevantCharacters = this.collectRelevantCharacters(project, contextText, []);
+        const factLines = [...lockedLines];
+
+        relevantCharacters.slice(0, 10).forEach((character) => {
+            const name = String(character?.name || "").trim();
+            const identity = String(character?.identity || character?.["身份"] || "").trim();
+            if (!name || !identity) {
+                return;
+            }
+            const line = `- ${name}：${identity}`;
+            if (!factLines.includes(line)) {
+                factLines.push(line);
+            }
+        });
+
+        if (!factLines.length) {
+            return [
+                "【同批细纲硬事实锁定】",
+                "同一批次里，角色的身份、位份、辈分、亲属关系、婚配、师徒、官职、阵营一旦首次明确，后文必须原样沿用，禁止改口。",
+                "例如已经写成“太后的儿子是皇帝”，后文就不能改成“小皇子”；已经写成“太子妃”，后文也不能降回“秀女”。"
+            ].join("\n");
+        }
+
+        return [
+            "【同批细纲硬事实锁定】",
+            "以下已知身份与位份必须沿用，后文不能改口：",
+            factLines.join("\n"),
+            "前文已经明确的身份、位份、辈分、婚配、阵营与时间阶段，后文必须保持一致。"
+        ].join("\n");
     }
 
     buildFutureVolumeSynopsisContext(project, currentVolumeNumber) {
