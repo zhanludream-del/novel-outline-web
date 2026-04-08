@@ -230,7 +230,6 @@
         }
 
         let rendered = [];
-        let batchError = null;
         try {
             const bulkRendered = await this.renderVolumeSynopsisFromSkeleton({
                 title,
@@ -253,32 +252,8 @@
             }
             rendered = normalizedBulk.items;
         } catch (error) {
-            batchError = error;
-            try {
-                rendered = await this.renderVolumeSynopsisOneByOne({
-                    title,
-                    genre,
-                    subgenre,
-                    theme,
-                    concept,
-                    worldbuilding,
-                    volumeCount,
-                    chaptersPerVolume,
-                    genreConstraint,
-                    innovationPrompt,
-                    ideaContext,
-                    phaseBlueprint,
-                    skeleton
-                });
-            } catch (retryError) {
-                if (typeof Utils !== "undefined" && typeof Utils.log === "function") {
-                    const batchReason = batchError?.message ? `批量润色失败：${batchError.message}` : "";
-                    const retryReason = retryError?.message ? `逐卷重写失败：${retryError.message}` : "";
-                    Utils.log(
-                        `卷纲润色未拿到可用结果，已回退到骨架转写。${[batchReason, retryReason].filter(Boolean).join("；")}`,
-                        "warning"
-                    );
-                }
+            if (typeof Utils !== "undefined" && typeof Utils.log === "function") {
+                Utils.log(`卷纲批量润色未通过，已直接回退到骨架转写：${error.message}`, "warning");
             }
         }
 
@@ -964,6 +939,11 @@
     }
 
     expandWrappedVolumeResults(items, expectedCount) {
+        const splitFromCollapsedText = this.extractCollapsedBatchVolumeResults(items, expectedCount);
+        if (splitFromCollapsedText.length === expectedCount) {
+            return splitFromCollapsedText;
+        }
+
         if (!Array.isArray(items) || items.length !== 1 || expectedCount <= 1) {
             return Array.isArray(items) ? items : [];
         }
@@ -981,6 +961,10 @@
             }
 
             if (Array.isArray(current)) {
+                const splitArrayText = this.extractCollapsedBatchVolumeResults(current, expectedCount);
+                if (splitArrayText.length === expectedCount) {
+                    return splitArrayText;
+                }
                 if (current.length === expectedCount) {
                     return current;
                 }
@@ -1000,6 +984,10 @@
                 seenStrings.add(clean);
                 const parsed = Utils.coerceJSONArray(Utils.parseJsonResponse(clean) ?? clean);
                 if (Array.isArray(parsed)) {
+                    const splitParsedText = this.extractCollapsedBatchVolumeResults(parsed, expectedCount);
+                    if (splitParsedText.length === expectedCount) {
+                        return splitParsedText;
+                    }
                     if (parsed.length === expectedCount) {
                         return parsed;
                     }
@@ -1021,6 +1009,10 @@
 
             const direct = Utils.coerceJSONArray(current);
             if (Array.isArray(direct)) {
+                const splitDirectText = this.extractCollapsedBatchVolumeResults(direct, expectedCount);
+                if (splitDirectText.length === expectedCount) {
+                    return splitDirectText;
+                }
                 if (direct.length === expectedCount) {
                     return direct;
                 }
@@ -1033,6 +1025,113 @@
         }
 
         return items;
+    }
+
+    extractCollapsedBatchVolumeResults(items, expectedCount) {
+        if (!Array.isArray(items) || expectedCount <= 1) {
+            return [];
+        }
+
+        const candidates = [];
+        const pushText = (value) => {
+            const text = String(value || "").trim();
+            if (text && text.length >= 120) {
+                candidates.push(text);
+            }
+        };
+
+        items.forEach((item) => {
+            if (!item) {
+                return;
+            }
+            if (typeof item === "string") {
+                pushText(item);
+                return;
+            }
+            if (typeof item !== "object") {
+                return;
+            }
+            pushText(item.summary);
+            pushText(item.content);
+            pushText(item.text);
+            pushText(item.result);
+            pushText(item.response);
+            pushText(item.output_text);
+        });
+
+        for (const text of candidates) {
+            const parsed = this.parseCollapsedBatchVolumeText(text, expectedCount);
+            if (parsed.length === expectedCount) {
+                return parsed;
+            }
+        }
+
+        return [];
+    }
+
+    parseCollapsedBatchVolumeText(text, expectedCount) {
+        const source = String(text || "").replace(/\r/g, "").trim();
+        if (!source) {
+            return [];
+        }
+
+        const pattern = /(?:^|\n)\s*(?:【\s*)?第\s*(\d+)\s*卷([^\n】]*)?(?:】)?\s*/g;
+        const matches = [];
+        let match = null;
+        while ((match = pattern.exec(source)) !== null) {
+            matches.push({
+                volumeNumber: Number(match[1] || 0),
+                titleSuffix: String(match[2] || "").trim(),
+                start: match.index
+            });
+        }
+
+        if (matches.length < expectedCount) {
+            return [];
+        }
+
+        const results = [];
+        for (let index = 0; index < matches.length; index += 1) {
+            const current = matches[index];
+            const next = matches[index + 1];
+            const end = next ? next.start : source.length;
+            const block = source.slice(current.start, end).trim();
+            if (!current.volumeNumber || !block) {
+                continue;
+            }
+
+            const lines = block
+                .split(/\n+/)
+                .map((line) => line.trim())
+                .filter(Boolean);
+
+            const heading = lines.shift() || "";
+            let cliffhanger = "";
+            const hookIndex = lines.findIndex((line) => /^卷尾钩子[:：]/.test(line));
+            if (hookIndex >= 0) {
+                cliffhanger = lines.slice(hookIndex).join(" ").replace(/^卷尾钩子[:：]\s*/, "").trim();
+                lines.splice(hookIndex);
+            }
+
+            const summary = this.normalizeGeneratedVolumeText(lines.join(" ").trim());
+            results.push({
+                volume_number: current.volumeNumber,
+                title: heading.replace(/^【?\s*第\s*\d+\s*卷/, "").replace(/】$/, "").trim(),
+                summary,
+                cliffhanger: this.normalizeGeneratedVolumeText(cliffhanger)
+            });
+        }
+
+        const unique = new Map();
+        results.forEach((item) => {
+            if (item.volume_number && !unique.has(item.volume_number) && item.summary.length >= 40) {
+                unique.set(item.volume_number, item);
+            }
+        });
+
+        return Array.from(unique.values())
+            .sort((left, right) => Number(left.volume_number || 0) - Number(right.volume_number || 0))
+            .slice(0, expectedCount);
     }
 
     isGenericVolumeSignalTerm(term) {
