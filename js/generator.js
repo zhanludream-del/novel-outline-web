@@ -203,78 +203,140 @@
     async generateVolumeSynopsis({ project, title, concept, genre, theme, worldbuilding, volumeCount, chaptersPerVolume, subgenre }) {
         const genreConstraint = this.buildGenreConstraint(genre, subgenre || genre);
         const innovationPrompt = this.buildVolumeInnovationPrompt(project, concept, worldbuilding);
-        const ideaContext = this.buildVolumeIdeaContext(project, concept);
-        const phaseBlueprint = this.getVolumePhaseBlueprint(volumeCount);
-
-        let skeleton = await this.generateVolumeSkeleton({
-            project,
-            title,
-            concept,
-            genre,
-            theme,
-            worldbuilding,
-            volumeCount,
-            chaptersPerVolume,
-            subgenre,
+        const systemPrompt = [
             genreConstraint,
-            innovationPrompt,
-            ideaContext,
-            phaseBlueprint
+            "你是世界书构建专家“默默”，一位资深网文策划编辑，擅长构建宏大且富有创意的故事架构。",
+            `请根据用户提供的世界观元素和故事概念，规划一部${volumeCount}卷的网络小说的卷概要。`,
+            "",
+            "【内容风格铁律】",
+            "你的所有输出都必须简单易懂、直白、口语化。要像一个优秀的故事员对朋友讲故事一样，而不是一个学者在写论文。绝对禁止使用任何晦涩、抽象、拗口或“高概念”的词汇和句子。",
+            "summary 必须像真正的剧情简介，不要像填空答案，也不要像策划案汇报。",
+            "不要写出“主角刚想……却被……”“后来……一出，局面被打乱”“到这一卷收尾”这种机械句式。",
+            "不要堆砌并列短句，不要一句话里硬塞三四层信息，句子之间要顺着时间和因果自然往下走。",
+            "",
+            "【创意设计原则】",
+            "1. 使用分支节点思维：每卷都是一个关键的“故事节点”，代表故事中的重要转折点",
+            "2. 设置明确的角色目标和动机：无论剧情如何发展，主角都有清晰的长期目标",
+            "3. 利用世界设定作为故事框架：重要地点、事件和潜在冲突要贯穿始终",
+            "4. 设计被动响应而非主导叙事：让读者感觉他们在跟随故事，同时故事自然引导",
+            "",
+            "【逻辑底线】",
+            "1. 必须严格服从时间顺序、身份顺序、登场顺序和关系推进顺序。",
+            "2. 如果概念里写了前期/中期/后期、入府/入宫/登基、尚未出生/尚未登场等阶段信号，必须照着来，不能提前串卷。",
+            "3. 非最终卷绝不能偷跑终局内容，不能提前写天下一统、万国来朝、终局清算、最终感情落点。",
+            "4. 同一个人物的身份、立场、关系推进必须前后一致，不能上一卷还在敌对，这一卷无桥接就突然掏心掏肺。",
+            "",
+            "【多分支剧情设计】",
+            "- 每卷必须包含主线剧情和至少一条潜在支线",
+            "- 主线是推动故事前进的核心事件",
+            "- 支线是丰富世界观、深化人物的辅助剧情",
+            "- 各卷之间要有“钩子”——前一卷埋下的伏笔在后续卷中揭晓",
+            "",
+            "【每卷结局指令（必须严格执行）】",
+            `1. 非最终卷（第1卷到第${Math.max(1, volumeCount - 1)}卷）：每卷结尾必须设置强悬念钩子，引出下一卷的新冲突`,
+            "- 卷末必须出现：新的敌人/新的秘密/新的目标/新的地点/新的人物",
+            "- 禁止普通结尾，禁止“故事告一段落”的感觉",
+            "- 必须让读者强烈期待下一卷的内容",
+            `2. 最终卷（第${volumeCount}卷）：必须是真正的大结局`,
+            "- 解决所有主要悬念和伏笔",
+            "- 主角完成最终目标或获得最终成长",
+            "- 给予读者满足感和完整感，可以有开放式余韵，但不能是“待续”",
+            "",
+            "【输出要求】",
+            "1. 输出必须是 JSON 数组，不要输出任何额外说明或 markdown 标记",
+            "2. 每卷必须体现目标、困难、转折、高潮和卷末钩子，但这些信息要融在剧情里，不要逐项罗列",
+            "3. 各卷之间要有明确的剧情递进关系，体现“铺垫-冲突-高潮-缓和-新冲突”的节奏",
+            "4. 绝对不能有重复的剧情元素",
+            "5. 不能出现逻辑漏洞（如角色死而复生、能力忽高忽低、时间线混乱等）",
+            "6. summary 必须是完整的一段话，信息齐但阅读顺，不要写成骨架拼接文本"
+        ].filter(Boolean).join("\n");
+
+        const userPrompt = [
+            `小说标题：《${title || "未命名小说"}》`,
+            `题材：${subgenre || genre || "未指定"}`,
+            `核心主题：${theme || "未指定"}`,
+            `故事概念：${concept || "暂无"}`,
+            `计划卷数：${volumeCount}`,
+            `每卷计划章节数：${chaptersPerVolume}`,
+            `世界观：${worldbuilding || "暂无"}`,
+            innovationPrompt ? `【反套路与创新建议】\n${innovationPrompt}` : "",
+            "",
+            "请输出 JSON 数组，每个对象包含：",
+            "volume_number: 卷序号",
+            "title: 卷名",
+            "summary: 本卷 150-250 字剧情概要，务必包含主线和至少一条支线，并把主角目标、困难、关键转折、成长或新信息自然融进一段完整叙述里",
+            "cliffhanger: 卷末钩子，一句话",
+            "",
+            "不要把 summary 写成套路句拼接，不要写成“先发生A，再发生B，最后发生C”的流水账。",
+            "不要照搬用户原话，要把信息整理成更顺、更像故事简介的一段。",
+            "",
+            "不要输出 JSON 之外的说明。"
+        ].join("\n");
+
+        const parsed = await this.requestJSONArray(systemPrompt, userPrompt, {
+            temperature: 0.72,
+            maxTokens: this.getConfiguredMaxTokens(6000),
+            timeout: this.getTaskTimeoutMs(300000)
         });
-        skeleton = this.sanitizeVolumeSkeleton(skeleton, volumeCount, phaseBlueprint);
-        skeleton = this.enforceVolumeSkeletonProgression(skeleton, phaseBlueprint);
-
-        const skeletonIssues = this.collectVolumeSkeletonIssues(skeleton);
-        if (skeletonIssues.length && typeof Utils !== "undefined" && typeof Utils.log === "function") {
-            Utils.log(`卷纲骨架发现 ${skeletonIssues.length} 条风险，已按阶段规则做本地兜底：${skeletonIssues.slice(0, 4).join("；")}`, "warning");
-        }
-
-        let rendered = [];
-        try {
-            const bulkRendered = await this.renderVolumeSynopsisFromSkeleton({
-                title,
-                genre,
-                subgenre,
-                theme,
-                concept,
-                worldbuilding,
-                volumeCount,
-                chaptersPerVolume,
-                genreConstraint,
-                innovationPrompt,
-                ideaContext,
-                phaseBlueprint,
-                skeleton
-            });
-            const normalizedBulk = this.validateRenderedVolumeResults(bulkRendered, skeleton);
-            if (!normalizedBulk.valid) {
-                throw new Error(normalizedBulk.reason || "批量润色结果未通过校验");
-            }
-            rendered = normalizedBulk.items;
-        } catch (error) {
-            if (typeof Utils !== "undefined" && typeof Utils.log === "function") {
-                Utils.log(`卷纲批量润色未通过，已直接回退到骨架转写：${error.message}`, "warning");
-            }
-        }
-
-        const renderedMap = new Map(
-            (rendered || []).map((item) => [Number(item.volume_number || 0), item])
-        );
-        const volumes = skeleton.map((item, index) => {
-            const renderedItem = renderedMap.get(index + 1) || {};
-            const fallback = this.buildFallbackVolumeRender(item, index, volumeCount);
-            return {
-                volume_number: Number(item.volume_number || index + 1),
-                title: item.title || `第${index + 1}卷`,
-                summary: this.normalizeGeneratedVolumeText(renderedItem.summary || fallback.summary),
-                cliffhanger: this.normalizeGeneratedVolumeText(renderedItem.cliffhanger || fallback.cliffhanger)
-            };
-        });
+        const volumes = this.normalizeDirectVolumeResults(parsed, volumeCount);
 
         return {
             volumes,
-            volumePlan: skeleton
+            volumePlan: []
         };
+    }
+
+    normalizeDirectVolumeResults(items, expectedCount) {
+        const expanded = this.expandWrappedVolumeResults(Array.isArray(items) ? items : [items], expectedCount);
+        if (!Array.isArray(expanded) || expanded.length !== expectedCount) {
+            throw new Error(`卷纲结果卷数不对，期望 ${expectedCount} 卷，实际 ${Array.isArray(expanded) ? expanded.length : 0} 卷`);
+        }
+
+        const normalized = new Array(expectedCount);
+        const usedNumbers = new Set();
+
+        expanded.forEach((raw, index) => {
+            const source = raw && typeof raw === "object" ? raw : {};
+            const explicitNumber = Number(source.volume_number || source.volume || 0);
+            const volumeNumber = explicitNumber >= 1 && explicitNumber <= expectedCount
+                ? explicitNumber
+                : index + 1;
+            if (usedNumbers.has(volumeNumber)) {
+                throw new Error(`卷纲结果出现重复卷序号：第${volumeNumber}卷`);
+            }
+            usedNumbers.add(volumeNumber);
+
+            let summary = this.normalizeGeneratedVolumeText(
+                source.summary || source.synopsis || source.content || source.text || source.result || ""
+            );
+            let cliffhanger = this.normalizeGeneratedVolumeText(
+                source.cliffhanger || source.hook || source.next_hook || source.nextHook || ""
+            );
+
+            if (!cliffhanger && summary) {
+                const split = summary.match(/^(.*?)(?:\s*(?:卷尾钩子|卷末钩子|下一卷钩子|钩子)[:：]\s*)(.+)$/);
+                if (split) {
+                    summary = this.normalizeGeneratedVolumeText(split[1] || "");
+                    cliffhanger = this.normalizeGeneratedVolumeText(split[2] || "");
+                }
+            }
+
+            normalized[volumeNumber - 1] = {
+                volume_number: volumeNumber,
+                title: String(source.title || source.name || `第${volumeNumber}卷`).trim() || `第${volumeNumber}卷`,
+                summary,
+                cliffhanger
+            };
+        });
+
+        for (let index = 0; index < expectedCount; index += 1) {
+            const item = normalized[index];
+            if (!item || item.summary.length < 80) {
+                throw new Error(`第${index + 1}卷摘要过短或缺失`);
+            }
+        }
+
+        return normalized;
     }
 
     extractBracketSections(text) {
