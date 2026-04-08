@@ -1106,14 +1106,21 @@
                 .filter(Boolean);
 
             const heading = lines.shift() || "";
+            const headingNarrative = this.extractNarrativeFromVolumeHeading(heading);
             let cliffhanger = "";
-            const hookIndex = lines.findIndex((line) => /^卷尾钩子[:：]/.test(line));
+            const hookIndex = lines.findIndex((line) => /^(?:卷尾钩子|卷末钩子|下一卷钩子|钩子)[:：]/.test(line));
             if (hookIndex >= 0) {
-                cliffhanger = lines.slice(hookIndex).join(" ").replace(/^卷尾钩子[:：]\s*/, "").trim();
+                cliffhanger = lines
+                    .slice(hookIndex)
+                    .join(" ")
+                    .replace(/^(?:卷尾钩子|卷末钩子|下一卷钩子|钩子)[:：]\s*/, "")
+                    .trim();
                 lines.splice(hookIndex);
             }
 
-            const summary = this.normalizeGeneratedVolumeText(lines.join(" ").trim());
+            const summary = this.normalizeGeneratedVolumeText(
+                [headingNarrative, ...lines].filter(Boolean).join(" ").trim()
+            );
             results.push({
                 volume_number: current.volumeNumber,
                 title: heading.replace(/^【?\s*第\s*\d+\s*卷/, "").replace(/】$/, "").trim(),
@@ -1132,6 +1139,29 @@
         return Array.from(unique.values())
             .sort((left, right) => Number(left.volume_number || 0) - Number(right.volume_number || 0))
             .slice(0, expectedCount);
+    }
+
+    extractNarrativeFromVolumeHeading(heading) {
+        const tail = String(heading || "")
+            .replace(/^【?\s*第\s*\d+\s*卷\s*】?\s*/, "")
+            .trim();
+        if (!tail) {
+            return "";
+        }
+
+        if (/[。！？；]/.test(tail)) {
+            return tail;
+        }
+
+        const separatorMatch = tail.match(/^(.*?)(?:\s*[-—–:：]\s*)(.+)$/);
+        if (separatorMatch) {
+            const possibleNarrative = String(separatorMatch[2] || "").trim();
+            if (possibleNarrative.length >= 10) {
+                return possibleNarrative;
+            }
+        }
+
+        return "";
     }
 
     isGenericVolumeSignalTerm(term) {
@@ -1321,16 +1351,11 @@
 
     buildFallbackVolumeRender(item, index, volumeCount) {
         const total = Math.max(1, Number(volumeCount || 1) || 1);
-        const storyBeats = [
-            String(item.opening_situation || "").trim(),
-            [String(item.core_goal || "").trim(), String(item.main_pressure || "").trim()].filter(Boolean).join("，"),
-            String(item.key_turn || "").trim(),
-            String(item.end_state || "").trim() || (index === total - 1 ? "主线真正收束。" : "新的危险已经被推到台前。")
-        ].filter(Boolean);
-        const summary = storyBeats
-            .map((text) => this.finishVolumeSentence(text))
-            .filter(Boolean)
-            .join("");
+        const opening = this.finishVolumeSentence(String(item.opening_situation || "").trim());
+        const conflict = this.buildFallbackConflictSentence(item);
+        const turn = this.buildFallbackTurnSentence(item);
+        const ending = this.buildFallbackEndingSentence(item, index, total);
+        const summary = [opening, conflict, turn, ending].filter(Boolean).join("");
 
         return {
             summary,
@@ -1338,6 +1363,40 @@
                 String(item.next_hook || "").trim() || (index === total - 1 ? "最终主线在这一卷完成收束。" : "新的冲突已经压到眼前。")
             )
         };
+    }
+
+    buildFallbackConflictSentence(item) {
+        const goal = String(item?.core_goal || "").trim();
+        const pressure = String(item?.main_pressure || "").trim();
+        if (goal && pressure) {
+            return this.finishVolumeSentence(`主角刚想${goal}，${pressure}就先一步压到了眼前`);
+        }
+        if (goal) {
+            return this.finishVolumeSentence(`这一次，主角最先要啃下的就是${goal}`);
+        }
+        if (pressure) {
+            return this.finishVolumeSentence(`${pressure}很快把局面顶得更紧了`);
+        }
+        return "";
+    }
+
+    buildFallbackTurnSentence(item) {
+        const turn = String(item?.key_turn || "").trim();
+        if (!turn) {
+            return "";
+        }
+        return this.finishVolumeSentence(`后来${turn}一出，原本僵着的局面被彻底打乱`);
+    }
+
+    buildFallbackEndingSentence(item, index, total) {
+        const endState = String(item?.end_state || "").trim();
+        if (index === total - 1) {
+            return this.finishVolumeSentence(endState || "主线真正收束");
+        }
+        if (endState) {
+            return this.finishVolumeSentence(`到这一卷收尾，${endState}`);
+        }
+        return this.finishVolumeSentence("到这一卷收尾，新的危险已经被推到了台前");
     }
 
     finishVolumeSentence(text) {
