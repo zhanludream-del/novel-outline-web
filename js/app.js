@@ -9396,6 +9396,7 @@ ${(detailedOutline || concept || "未填写").slice(0, 2200)}`;
     }
 
     detectAiCliche(content) {
+        const text = String(content || "");
         const phrases = [
             "嘴角微扬", "不由得", "下一刻", "与此同时", "仿佛", "只见", "这一刻", "顿时",
             "摩挲", "死死", "异变陡生", "油然而生", "如梦初醒", "目光如炬", "居高临下",
@@ -9404,7 +9405,22 @@ ${(detailedOutline || concept || "未填写").slice(0, 2200)}`;
             "这一声惊醒了众人", "看似", "实则", "全场寂静", "众人默不作声", "空气凝滞",
             "屈辱感在胸腔里", "屈辱感啃噬着", "屈辱，愤怒，杀意", "这些情绪在他心底生根发芽"
         ];
-        return phrases.filter((phrase) => String(content || "").includes(phrase));
+        const regexRules = [
+            { label: "空泛氛围句", pattern: /(空气|气氛|四周|周围|空间|寝宫内|殿内|殿外)[^。！？\n]{0,18}?(紧绷|凝滞|压抑|死寂|寂静|冷得|升高|令人窒息|背德感)/u },
+            { label: "群像氛围句", pattern: /(所有人|众人|满朝文武|群臣)[^。！？\n]{0,18}?(愣住了|吓到了|默不作声|屏住了呼吸|不敢出声|不敢动)/u },
+            { label: "爽文盖章句", pattern: /这哪里是什么[^。！？\n]{0,40}?这分明是/u },
+            { label: "概念情绪句", pattern: /(屈辱感|愤怒|杀意|恨意|怒火|恐惧|羞耻感|绝望)[^。！？\n]{0,20}?(翻涌|啃噬|蔓延|席卷|吞没|炸开|疯长)/u },
+            { label: "情绪并列句", pattern: /(屈辱|愤怒|杀意|恨意|怒火|恐惧|羞耻)(、|，)(屈辱|愤怒|杀意|恨意|怒火|恐惧|羞耻)/u },
+            { label: "情绪生根句", pattern: /这些情绪[^。！？\n]{0,20}?(生根发芽|疯长|翻涌|盘踞)/u },
+            { label: "模板推进句", pattern: /(太快了|就是现在|就在这时|下一刻|紧接着|然而|顺势|猛地|毫不犹豫|瞬间|彻底|剧烈|没有再给[^。！？\n]{0,8}机会)/u }
+        ];
+        const hits = phrases.filter((phrase) => text.includes(phrase));
+        regexRules.forEach((rule) => {
+            if (rule.pattern.test(text) && !hits.includes(rule.label)) {
+                hits.push(rule.label);
+            }
+        });
+        return hits;
     }
 
     detectNextChapterLeakage(content, nextChapter) {

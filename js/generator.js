@@ -2699,6 +2699,7 @@
         const segments = this.splitSentencesForAiFilter(sourceText);
         const taintedIndices = [];
         const hitWords = new Set();
+        const narrativeSignals = this.detectAiNarrativeSignals(segments);
 
         segments.forEach((segment, index) => {
             const sentence = String(segment || "");
@@ -2729,6 +2730,11 @@
 
             if (!flagged) {
                 flagged = suspiciousPatterns.some((pattern) => new RegExp(pattern).test(sentence));
+            }
+
+            if (!flagged && narrativeSignals.has(index)) {
+                flagged = true;
+                narrativeSignals.get(index).forEach((item) => hitWords.add(item));
             }
 
             if (flagged) {
@@ -2978,6 +2984,92 @@
             "这些情绪[^。！？\\n]{0,20}?生根发芽",
             "死死[^。！？\\n]{0,10}?(盯着|咬着|攥紧|扣住|按住)"
         ];
+    }
+
+    getAiNarrativePatternRules() {
+        return [
+            { category: "氛围句", label: "空泛氛围句", pattern: "(空气|气氛|四周|周围|空间|寝宫内|殿内|殿外)[^。！？\\n]{0,18}?(紧绷|凝滞|压抑|死寂|寂静|冷得|升高|令人窒息|背德感)" },
+            { category: "氛围句", label: "群像氛围句", pattern: "(所有人|众人|满朝文武|群臣)[^。！？\\n]{0,18}?(愣住了|吓到了|默不作声|屏住了呼吸|不敢出声|不敢动)" },
+            { category: "模板句", label: "爽文盖章句", pattern: "这哪里是什么[^。！？\\n]{0,40}?这分明是" },
+            { category: "模板句", label: "作者盖章句", pattern: "(所有人都知道|没有任何人敢|没有人敢|这一刻[^。！？\\n]{0,20}?(终于明白|终于意识到))" },
+            { category: "模板句", label: "身份拔高句", pattern: "(掌控生杀大权|铁血帝王|修罗场里走出的|骇人的杀气|危险得多)" },
+            { category: "情绪句", label: "概念情绪句", pattern: "(屈辱感|愤怒|杀意|恨意|怒火|恐惧|羞耻感|绝望)[^。！？\\n]{0,20}?(翻涌|啃噬|蔓延|席卷|吞没|炸开|疯长)" },
+            { category: "情绪句", label: "情绪并列句", pattern: "(屈辱|愤怒|杀意|恨意|怒火|恐惧|羞耻)(、|，)(屈辱|愤怒|杀意|恨意|怒火|恐惧|羞耻)" },
+            { category: "情绪句", label: "情绪生根句", pattern: "这些情绪[^。！？\\n]{0,20}?(生根发芽|疯长|翻涌|盘踞)" },
+            { category: "高频词", label: "死死句", pattern: "死死[^。！？\\n]{0,10}?(盯着|咬着|攥紧|扣住|按住|掐着)" },
+            { category: "高频词", label: "AI高频动作词", pattern: "(摩挲|异变陡生|油然而生|如梦初醒|目光如炬|居高临下|如鬼魅般|如狼似虎|雷霆手段)" }
+        ];
+    }
+
+    detectAiNarrativeSignals(segments = []) {
+        const map = new Map();
+        const push = (index, label) => {
+            if (!map.has(index)) {
+                map.set(index, []);
+            }
+            const list = map.get(index);
+            if (!list.includes(label)) {
+                list.push(label);
+            }
+        };
+
+        const rules = this.getAiNarrativePatternRules();
+        segments.forEach((segment, index) => {
+            const sentence = String(segment || "").trim();
+            if (!sentence) {
+                return;
+            }
+            rules.forEach((rule) => {
+                if (new RegExp(rule.pattern, "u").test(sentence)) {
+                    push(index, `${rule.category}:${rule.label}`);
+                }
+            });
+        });
+
+        this.detectTemplateBeatRuns(segments).forEach((index) => {
+            push(index, "模板推进:节拍过整齐");
+        });
+
+        return map;
+    }
+
+    detectTemplateBeatRuns(segments = []) {
+        const markerIndices = [];
+        const beatPattern = /(太快了|就是现在|就在这时|下一刻|紧接着|然而|顺势|猛地|毫不犹豫|瞬间|彻底|剧烈|直接将|没有再给[^。！？\n]{0,8}机会)/u;
+
+        segments.forEach((segment, index) => {
+            const sentence = String(segment || "").trim();
+            if (!sentence) {
+                return;
+            }
+            const shortSentence = sentence.length <= 28;
+            if (beatPattern.test(sentence) || (shortSentence && /(太快了|就是现在|然而|下一刻|紧接着)/u.test(sentence))) {
+                markerIndices.push(index);
+            }
+        });
+
+        if (markerIndices.length < 3) {
+            return [];
+        }
+
+        const flagged = new Set();
+        let run = [markerIndices[0]];
+        for (let i = 1; i < markerIndices.length; i += 1) {
+            const current = markerIndices[i];
+            const previous = markerIndices[i - 1];
+            if (current - previous <= 2) {
+                run.push(current);
+            } else {
+                if (run.length >= 3) {
+                    run.forEach((index) => flagged.add(index));
+                }
+                run = [current];
+            }
+        }
+        if (run.length >= 3) {
+            run.forEach((index) => flagged.add(index));
+        }
+        return Array.from(flagged);
     }
 
     getEffectiveAiWhitelist(project) {
