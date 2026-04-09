@@ -5733,6 +5733,7 @@ ${(detailedOutline || concept || "未填写").slice(0, 2200)}`;
             summary: this.elements.chapterSummaryInput.value.trim(),
             chapter_setting_note: this.elements.chapterSettingNoteInput.value.trim(),
             content: this.elements.chapterContentInput.value.trim(),
+            content_cleared: !this.elements.chapterContentInput.value.trim(),
             updatedAt: new Date().toISOString()
         };
 
@@ -5812,6 +5813,7 @@ ${(detailedOutline || concept || "未填写").slice(0, 2200)}`;
             includeStoredExtras: true
         }));
         chapter.content = "";
+        chapter.content_cleared = true;
         chapter.updatedAt = new Date().toISOString();
         this.clearStoredChapterMirrors(chapter);
 

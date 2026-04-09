@@ -212,6 +212,10 @@ class StorageManager {
                 if (!Object.prototype.hasOwnProperty.call(chapter, "content")) {
                     return;
                 }
+                if (chapter.content_cleared === true) {
+                    [chapter.uuid, chapter.id].filter(Boolean).forEach((key) => clearedKeys.add(key));
+                    return;
+                }
                 if (String(chapter.content || "").trim()) {
                     return;
                 }
@@ -250,7 +254,8 @@ class StorageManager {
             number: Number(chapter.number || chapter.chapter_number || 0) || 0,
             title: chapter.title || "",
             summary: chapter.summary || chapter.synopsis || "",
-            content: chapter.content || "",
+            content: chapter.content_cleared === true ? "" : (chapter.content || ""),
+            content_cleared: chapter.content_cleared === true,
             chapter_setting_note: chapter.chapter_setting_note || "",
             keyEvent: chapter.keyEvent || chapter.key_event || "",
             emotionCurve: chapter.emotionCurve || chapter.emotion_curve || "",
@@ -342,6 +347,10 @@ class StorageManager {
             (volume.chapters || []).forEach((chapter) => {
                 const mirrorKeys = [chapter.uuid, chapter.id].filter(Boolean);
                 const isExplicitlyCleared = mirrorKeys.some((key) => explicitlyClearedChapterKeys.has(key));
+                if (isExplicitlyCleared) {
+                    chapter.content = "";
+                    chapter.content_cleared = true;
+                }
                 if (!isExplicitlyCleared && !chapter.content && chapter.uuid && topLevelChapters[chapter.uuid]) {
                     chapter.content = topLevelChapters[chapter.uuid];
                 }
