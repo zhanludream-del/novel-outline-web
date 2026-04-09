@@ -51,6 +51,7 @@ class StorageManager {
     }
 
     normalize(data) {
+        const explicitlyClearedChapterKeys = this.collectExplicitlyClearedChapterKeys(data || {});
         const merged = this.deepMerge(this.getDefaultData(), data || {});
         merged.outline.volumes = (merged.outline.volumes || []).map((volume, index) =>
             this.normalizeVolume(volume, index)
@@ -197,8 +198,27 @@ class StorageManager {
                     : []
             }
             : { plot_units: {}, next_id: 1, unit_history: [] };
-        this.syncTopLevelChapterContent(merged);
+        this.syncTopLevelChapterContent(merged, explicitlyClearedChapterKeys);
         return merged;
+    }
+
+    collectExplicitlyClearedChapterKeys(data) {
+        const clearedKeys = new Set();
+        (((data || {}).outline || {}).volumes || []).forEach((volume) => {
+            (volume.chapters || []).forEach((chapter) => {
+                if (!chapter || typeof chapter !== "object") {
+                    return;
+                }
+                if (!Object.prototype.hasOwnProperty.call(chapter, "content")) {
+                    return;
+                }
+                if (String(chapter.content || "").trim()) {
+                    return;
+                }
+                [chapter.uuid, chapter.id].filter(Boolean).forEach((key) => clearedKeys.add(key));
+            });
+        });
+        return clearedKeys;
     }
 
     normalizeVolume(volume, index) {
@@ -316,22 +336,23 @@ class StorageManager {
         return normalized;
     }
 
-    syncTopLevelChapterContent(data) {
+    syncTopLevelChapterContent(data, explicitlyClearedChapterKeys = new Set()) {
         const topLevelChapters = data.chapters || {};
         (data.outline.volumes || []).forEach((volume) => {
             (volume.chapters || []).forEach((chapter) => {
-                if (!chapter.content && chapter.uuid && topLevelChapters[chapter.uuid]) {
+                const mirrorKeys = [chapter.uuid, chapter.id].filter(Boolean);
+                const isExplicitlyCleared = mirrorKeys.some((key) => explicitlyClearedChapterKeys.has(key));
+                if (!isExplicitlyCleared && !chapter.content && chapter.uuid && topLevelChapters[chapter.uuid]) {
                     chapter.content = topLevelChapters[chapter.uuid];
                 }
                 if (chapter.content && chapter.uuid) {
                     topLevelChapters[chapter.uuid] = chapter.content;
                 } else {
-                    if (chapter.uuid && Object.prototype.hasOwnProperty.call(topLevelChapters, chapter.uuid)) {
-                        delete topLevelChapters[chapter.uuid];
-                    }
-                    if (chapter.id && Object.prototype.hasOwnProperty.call(topLevelChapters, chapter.id)) {
-                        delete topLevelChapters[chapter.id];
-                    }
+                    mirrorKeys.forEach((key) => {
+                        if (Object.prototype.hasOwnProperty.call(topLevelChapters, key)) {
+                            delete topLevelChapters[key];
+                        }
+                    });
                 }
             });
         });
