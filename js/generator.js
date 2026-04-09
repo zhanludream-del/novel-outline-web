@@ -2757,9 +2757,20 @@
             }
         });
 
+        const rewriteIdMap = new Map();
+        taintedIndices.forEach((index, position) => {
+            rewriteIdMap.set(index, `S${position + 1}`);
+        });
+
         const excerptLines = Array.from(contextIndices)
             .sort((a, b) => a - b)
-            .map((index) => `${taintedIndices.includes(index) ? "【需改】" : "【勿动】"}${segments[index].trim()}`);
+            .map((index) => {
+                const sentence = segments[index].trim();
+                if (taintedIndices.includes(index)) {
+                    return `【需改:${rewriteIdMap.get(index)}】${sentence}`;
+                }
+                return `【勿动】${sentence}`;
+            });
         const excerptText = excerptLines.join("\n");
         const hitWordsStr = Array.from(hitWords).slice(0, 50).join("、");
         const categoryGuide = this.buildAiFlavorCategoryGuide(narrativeSignals, taintedIndices);
@@ -2802,9 +2813,10 @@
             "10. 不要改没问题的句子。",
             "",
             "【输出格式】",
-            "- 只输出【需改】句子的改写结果，每行一句。",
-            "- 输出行数尽量与【需改】句子数量一致。",
-            "- 如果某一句应当直接删掉，不要硬改，请只输出【删除】。",
+            "- 只输出【需改】句子的改写结果。",
+            "- 每行必须带编号，格式固定为：S编号=改写后的句子。",
+            "- 例如：S1=改写后的第一句",
+            "- 如果某一句应当直接删掉，不要硬改，请输出：S编号=【删除】。",
             "- 不要解释，不要加标题。",
             "- 不要照抄提示里的示例风格，不要把别处场景的改写套进当前句子。",
             "",
@@ -2820,18 +2832,15 @@
                 maxTokens: Math.min(this.getConfiguredMaxTokens(8000), excerptText.length * 2 + 1200),
                 timeout: this.getTaskTimeoutMs(300000)
             });
-            const rewrittenLines = String(response || "")
-                .split(/\r?\n/)
-                .map((line) => line.replace(/^【需改】|^【勿动】/g, "").trim())
-                .filter(Boolean);
+            const rewrittenMap = this.parseAiFlavorRewriteResponse(response, taintedIndices.length);
 
-            if (!rewrittenLines.length) {
+            if (!rewrittenMap.size) {
                 return sourceText;
             }
 
             const updated = [...segments];
-            taintedIndices.forEach((index, position) => {
-                const rewritten = rewrittenLines[position];
+            taintedIndices.forEach((index) => {
+                const rewritten = rewrittenMap.get(rewriteIdMap.get(index));
                 if (rewritten === "【删除】" || rewritten === "删除") {
                     updated[index] = "";
                     return;
@@ -2845,6 +2854,39 @@
         } catch (error) {
             return sourceText;
         }
+    }
+
+    parseAiFlavorRewriteResponse(response, expectedCount = 0) {
+        const text = String(response || "").trim();
+        const map = new Map();
+        if (!text) {
+            return map;
+        }
+
+        text.split(/\r?\n/).forEach((line) => {
+            const trimmed = String(line || "").trim();
+            if (!trimmed) {
+                return;
+            }
+            const matched = trimmed.match(/^S(\d+)\s*=\s*(.+)$/u);
+            if (matched) {
+                map.set(`S${matched[1]}`, matched[2].trim());
+            }
+        });
+
+        if (map.size) {
+            return map;
+        }
+
+        const fallbackLines = text
+            .split(/\r?\n/)
+            .map((line) => line.replace(/^【需改】|^【勿动】/g, "").trim())
+            .filter(Boolean);
+
+        fallbackLines.slice(0, expectedCount).forEach((line, index) => {
+            map.set(`S${index + 1}`, line);
+        });
+        return map;
     }
 
     buildAiFlavorCategoryGuide(narrativeSignals = new Map(), taintedIndices = []) {
@@ -3255,11 +3297,21 @@
         if (!trimmed) {
             return original;
         }
-        const match = String(original || "").match(/[。！？…]$/);
-        if (match && !/[。！？…]$/.test(trimmed)) {
-            return `${trimmed}${match[0]}`;
+        const source = String(original || "");
+        let result = trimmed;
+        const leadingQuote = source.match(/^[“"'‘]/u);
+        if (leadingQuote && !/^[“"'‘]/u.test(result)) {
+            result = `${leadingQuote[0]}${result.replace(/^[”"'’]/u, "")}`;
         }
-        return trimmed;
+        const endingQuote = source.match(/[”"'’]$/u);
+        if (endingQuote && !/[”"'’]$/u.test(result)) {
+            result = `${result.replace(/[“"'‘]$/u, "")}${endingQuote[0]}`;
+        }
+        const match = source.match(/[。！？…]$/);
+        if (match && !/[。！？…]$/.test(result)) {
+            return `${result}${match[0]}`;
+        }
+        return result;
     }
 
     buildHiddenSecretGuard(project, chapterNumber) {
