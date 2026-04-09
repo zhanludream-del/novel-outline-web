@@ -2804,6 +2804,7 @@
             "【输出格式】",
             "- 只输出【需改】句子的改写结果，每行一句。",
             "- 输出行数尽量与【需改】句子数量一致。",
+            "- 如果某一句应当直接删掉，不要硬改，请只输出【删除】。",
             "- 不要解释，不要加标题。",
             "- 不要照抄提示里的示例风格，不要把别处场景的改写套进当前句子。",
             "",
@@ -2831,6 +2832,10 @@
             const updated = [...segments];
             taintedIndices.forEach((index, position) => {
                 const rewritten = rewrittenLines[position];
+                if (rewritten === "【删除】" || rewritten === "删除") {
+                    updated[index] = "";
+                    return;
+                }
                 if (rewritten && !this.isLeakedAiFlavorRewrite(rewritten)) {
                     updated[index] = this.preserveSentenceEnding(segments[index], rewritten);
                 }
