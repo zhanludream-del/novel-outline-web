@@ -2982,10 +2982,7 @@
 
     getEffectiveAiWhitelist(project) {
         const projectList = project?.prompt_state?.ai_filter_whitelist;
-        if (Array.isArray(projectList) && projectList.length) {
-            return projectList;
-        }
-        return [
+        const defaults = [
             "他笑了",
             "她笑了",
             "他看着窗外",
@@ -2996,14 +2993,18 @@
             "没人说话",
             "屋里很安静"
         ];
+        if (Array.isArray(projectList) && projectList.length) {
+            return Array.from(new Set([
+                ...defaults,
+                ...projectList.map((item) => String(item || "").trim()).filter(Boolean)
+            ]));
+        }
+        return defaults;
     }
 
     getEffectiveAiBlacklist(project) {
         const projectList = project?.prompt_state?.ai_filter_blacklist;
-        if (Array.isArray(projectList) && projectList.length) {
-            return projectList;
-        }
-        return [
+        const defaults = [
             "指节泛白",
             "喉结滚动",
             "舔了舔嘴唇",
@@ -3029,20 +3030,45 @@
             "屈辱，愤怒，杀意",
             "这些情绪在他心底生根发芽"
         ];
+        if (Array.isArray(projectList) && projectList.length) {
+            return Array.from(new Set([
+                ...defaults,
+                ...projectList.map((item) => String(item || "").trim()).filter(Boolean)
+            ]));
+        }
+        return defaults;
     }
 
     getAiWhitelist(project) {
         const projectList = project?.prompt_state?.ai_filter_whitelist;
+        const defaults = ["他笑了", "她笑了", "看着窗外", "看着远方"];
         return Array.isArray(projectList) && projectList.length
-            ? projectList
-            : ["他笑了", "她笑了", "看着窗外", "看着远方"];
+            ? Array.from(new Set([
+                ...defaults,
+                ...projectList.map((item) => String(item || "").trim()).filter(Boolean)
+            ]))
+            : defaults;
     }
 
     getAiBlacklist(project) {
         const projectList = project?.prompt_state?.ai_filter_blacklist;
+        const defaults = [
+            "指关节泛白",
+            "喉结滚动",
+            "舔了舔嘴唇",
+            "全场死寂",
+            "死死",
+            "摩挲",
+            "异变陡生",
+            "屈辱感在胸腔里",
+            "屈辱感啃噬着"
+        ];
         return Array.isArray(projectList) && projectList.length
-            ? projectList
-            : ["指关节泛白", "喉结滚动", "舔了舔嘴唇", "全场死寂"];
+            ? Array.from(new Set([
+                ...defaults,
+                ...projectList.map((item) => String(item || "").trim()).filter(Boolean)
+            ]))
+            : defaults;
     }
 
     splitSentencesForAiFilter(text) {
