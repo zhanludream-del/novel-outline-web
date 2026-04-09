@@ -3554,6 +3554,9 @@ ${(detailedOutline || concept || "未填写").slice(0, 2200)}`;
         this.novelData.synopsisData = synopsis;
         this.novelData.synopsis_data = JSON.parse(JSON.stringify(synopsis));
         this.novelData.chapters = this.novelData.chapters || {};
+        this.novelData.generatedChapterTexts = this.novelData.generatedChapterTexts && typeof this.novelData.generatedChapterTexts === "object"
+            ? this.novelData.generatedChapterTexts
+            : {};
         this.novelData.idea_lab = this.novelData.idea_lab && typeof this.novelData.idea_lab === "object"
             ? this.novelData.idea_lab
             : JSON.parse(JSON.stringify(DEFAULT_NOVEL_DATA.idea_lab));
@@ -3634,9 +3637,23 @@ ${(detailedOutline || concept || "未填写").slice(0, 2200)}`;
             volume.chapter_synopsis = volume.chapterSynopsis || volume.chapter_synopsis || "";
             volume.chapterSynopsis = volume.chapterSynopsis || volume.chapter_synopsis || "";
             (volume.chapters || []).forEach((chapter) => {
-                if (chapter.content && chapter.uuid) {
-                    this.novelData.chapters[chapter.uuid] = chapter.content;
+                const chapterContent = String(chapter.content || "").trim();
+                const mirrorKeys = [chapter.uuid, chapter.id].filter(Boolean);
+                if (chapterContent) {
+                    mirrorKeys.forEach((key) => {
+                        this.novelData.chapters[key] = chapterContent;
+                        this.novelData.generatedChapterTexts[key] = chapterContent;
+                    });
+                    return;
                 }
+                mirrorKeys.forEach((key) => {
+                    if (Object.prototype.hasOwnProperty.call(this.novelData.chapters, key)) {
+                        delete this.novelData.chapters[key];
+                    }
+                    if (Object.prototype.hasOwnProperty.call(this.novelData.generatedChapterTexts, key)) {
+                        delete this.novelData.generatedChapterTexts[key];
+                    }
+                });
             });
         });
 
