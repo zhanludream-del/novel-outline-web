@@ -4133,9 +4133,7 @@ ${(detailedOutline || concept || "未填写").slice(0, 2200)}`;
                     includeContent: true,
                     includeStoredExtras: true
                 }).forEach((name) => cleanupCandidates.add(name));
-                if (chapter.uuid && this.novelData.chapters?.[chapter.uuid]) {
-                    delete this.novelData.chapters[chapter.uuid];
-                }
+                this.clearStoredChapterMirrors(chapter);
                 delete this.novelData.chapter_analysis_reports?.[`chapter_${number}`];
                 delete this.novelData.chapter_qc_reports?.[`chapter_${number}`];
                 delete this.novelData.chapter_rhythms?.[`第${number}章`];
@@ -5426,9 +5424,7 @@ ${(detailedOutline || concept || "未填写").slice(0, 2200)}`;
                 includeStoredExtras: true
             }).forEach((name) => cleanupCandidates.add(name));
             deletedCount += 1;
-            if (chapter.uuid && this.novelData.chapters?.[chapter.uuid]) {
-                delete this.novelData.chapters[chapter.uuid];
-            }
+            this.clearStoredChapterMirrors(chapter);
             delete this.novelData.chapter_analysis_reports?.[`chapter_${number}`];
             delete this.novelData.chapter_qc_reports?.[`chapter_${number}`];
             delete this.novelData.chapter_rhythms?.[`chapter_${number}`];
@@ -5725,6 +5721,9 @@ ${(detailedOutline || concept || "未填写").slice(0, 2200)}`;
 
         this.refreshChapterReports(chapter);
         this.upsertChapter(volume, chapter);
+        if (!chapter.content) {
+            this.clearStoredChapterMirrors(chapter);
+        }
         this.state.selectedChapterId = chapter.id;
         this.persist(true);
         this.renderChapterList();
@@ -5797,10 +5796,7 @@ ${(detailedOutline || concept || "未填写").slice(0, 2200)}`;
         }));
         chapter.content = "";
         chapter.updatedAt = new Date().toISOString();
-
-        if (chapter.uuid && this.novelData.chapters?.[chapter.uuid]) {
-            delete this.novelData.chapters[chapter.uuid];
-        }
+        this.clearStoredChapterMirrors(chapter);
 
         delete this.novelData.chapter_analysis_reports?.[`chapter_${chapterNumber}`];
         delete this.novelData.chapter_qc_reports?.[`chapter_${chapterNumber}`];
@@ -5822,6 +5818,22 @@ ${(detailedOutline || concept || "未填写").slice(0, 2200)}`;
         }
         Utils.log(`已清空第 ${chapterNumber} 章正文，状态系统已回滚到第 ${Math.max(0, chapterNumber - 1)} 章。`, "info");
         Utils.showMessage("当前章节正文已清空。", "success");
+    }
+
+    clearStoredChapterMirrors(chapter = {}) {
+        this.novelData.chapters = this.novelData.chapters || {};
+        [chapter.uuid, chapter.id].forEach((key) => {
+            if (key && Object.prototype.hasOwnProperty.call(this.novelData.chapters, key)) {
+                delete this.novelData.chapters[key];
+            }
+        });
+        if (this.novelData.generatedChapterTexts && typeof this.novelData.generatedChapterTexts === "object") {
+            [chapter.uuid, chapter.id].forEach((key) => {
+                if (key && Object.prototype.hasOwnProperty.call(this.novelData.generatedChapterTexts, key)) {
+                    delete this.novelData.generatedChapterTexts[key];
+                }
+            });
+        }
     }
 
     async expandCurrentChapter() {

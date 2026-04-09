@@ -325,6 +325,13 @@ class StorageManager {
                 }
                 if (chapter.content && chapter.uuid) {
                     topLevelChapters[chapter.uuid] = chapter.content;
+                } else {
+                    if (chapter.uuid && Object.prototype.hasOwnProperty.call(topLevelChapters, chapter.uuid)) {
+                        delete topLevelChapters[chapter.uuid];
+                    }
+                    if (chapter.id && Object.prototype.hasOwnProperty.call(topLevelChapters, chapter.id)) {
+                        delete topLevelChapters[chapter.id];
+                    }
                 }
             });
         });
