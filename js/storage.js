@@ -1,7 +1,6 @@
 class StorageManager {
     constructor(storageKey) {
         this.storageKey = storageKey;
-        this.sessionSnapshotKey = `${storageKey}__session_snapshot`;
         this.dbName = "novel_outline_web_db";
         this.storeName = "documents";
         this.dbVersion = 1;
@@ -12,11 +11,6 @@ class StorageManager {
 
     load() {
         if (this.memoryCache) {
-            return this.normalize(this.memoryCache);
-        }
-        const sessionSnapshot = this.readSessionSnapshot();
-        if (sessionSnapshot) {
-            this.memoryCache = this.normalize(sessionSnapshot);
             return this.normalize(this.memoryCache);
         }
         try {
@@ -46,7 +40,6 @@ class StorageManager {
             }
 
             this.memoryCache = normalized;
-            this.writeSessionSnapshot(normalized);
             this.writeLegacyStub(normalized);
             this.pendingSavePromise = this.saveToIndexedDB(normalized).catch((error) => {
                 console.error("IndexedDB save failed", error);
@@ -62,7 +55,6 @@ class StorageManager {
 
     clear() {
         this.memoryCache = null;
-        this.clearSessionSnapshot();
         localStorage.removeItem(this.storageKey);
         this.deleteFromIndexedDB().catch((error) => {
             console.error("IndexedDB clear failed", error);
@@ -86,26 +78,15 @@ class StorageManager {
             return this.normalize(this.memoryCache);
         }
 
-        const sessionSnapshot = this.readSessionSnapshot();
-        let indexedData = null;
         try {
-            indexedData = await this.loadFromIndexedDB();
+            const indexedData = await this.loadFromIndexedDB();
+            if (indexedData) {
+                this.memoryCache = this.normalize(indexedData);
+                this.writeLegacyStub(this.memoryCache);
+                return this.normalize(this.memoryCache);
+            }
         } catch (error) {
             console.error("IndexedDB load failed", error);
-        }
-
-        const preferredSnapshot = this.pickMoreRecentSnapshot(sessionSnapshot, indexedData);
-        if (preferredSnapshot) {
-            const normalized = this.normalize(preferredSnapshot);
-            this.memoryCache = normalized;
-            this.writeSessionSnapshot(normalized);
-            this.writeLegacyStub(normalized);
-            if (this.pickMoreRecentSnapshot(sessionSnapshot, indexedData) === sessionSnapshot && sessionSnapshot) {
-                this.saveToIndexedDB(normalized).catch((error) => {
-                    console.error("IndexedDB session snapshot recovery failed", error);
-                });
-            }
-            return this.normalize(normalized);
         }
 
         try {
@@ -124,7 +105,6 @@ class StorageManager {
             const normalized = this.normalize(parsed);
             this.memoryCache = normalized;
             await this.saveToIndexedDB(normalized);
-            this.writeSessionSnapshot(normalized);
             this.writeLegacyStub(normalized);
             return this.normalize(normalized);
         } catch (error) {
@@ -145,69 +125,6 @@ class StorageManager {
             volumeCount: Array.isArray(outline.volumes) ? outline.volumes.length : 0
         };
         localStorage.setItem(this.storageKey, JSON.stringify(stub));
-    }
-
-    getSnapshotUpdatedAt(data) {
-        const rawValue = data?.meta?.updatedAt || data?.updatedAt || "";
-        const parsed = Date.parse(rawValue);
-        return Number.isFinite(parsed) ? parsed : 0;
-    }
-
-    pickMoreRecentSnapshot(primary, secondary) {
-        if (!primary) {
-            return secondary || null;
-        }
-        if (!secondary) {
-            return primary;
-        }
-        return this.getSnapshotUpdatedAt(primary) >= this.getSnapshotUpdatedAt(secondary)
-            ? primary
-            : secondary;
-    }
-
-    readSessionSnapshot() {
-        try {
-            const raw = window.sessionStorage?.getItem(this.sessionSnapshotKey);
-            if (!raw) {
-                return null;
-            }
-            const parsed = JSON.parse(raw);
-            return parsed && typeof parsed === "object" ? parsed : null;
-        } catch (error) {
-            console.error("Session snapshot load failed", error);
-            return null;
-        }
-    }
-
-    writeSessionSnapshot(data) {
-        try {
-            window.sessionStorage?.setItem(this.sessionSnapshotKey, JSON.stringify(data));
-            return true;
-        } catch (error) {
-            console.error("Session snapshot save failed", error);
-            return false;
-        }
-    }
-
-    rememberSessionSnapshot(data) {
-        return this.writeSessionSnapshot(this.normalize(data));
-    }
-
-    clearSessionSnapshot() {
-        try {
-            window.sessionStorage?.removeItem(this.sessionSnapshotKey);
-        } catch (error) {
-            console.error("Session snapshot clear failed", error);
-        }
-    }
-
-    async flushPendingSave() {
-        try {
-            return await this.pendingSavePromise;
-        } catch (error) {
-            console.error("IndexedDB pending save flush failed", error);
-            return false;
-        }
     }
 
     openIndexedDB() {
@@ -429,16 +346,13 @@ class StorageManager {
                 if (!chapter || typeof chapter !== "object") {
                     return;
                 }
-                if (chapter.content_cleared === true || chapter.contentCleared === true) {
-                    [chapter.uuid, chapter.id].filter(Boolean).forEach((key) => clearedKeys.add(key));
-                    return;
-                }
+                const inlineContent = String(chapter.content || "").trim();
                 const mirrorKeys = [chapter.uuid, chapter.id].filter(Boolean);
                 const hasMirroredContent = mirrorKeys.some((key) =>
                     String(topLevelChapters[key] || generatedChapterTexts[key] || "").trim()
                 );
-                if (hasMirroredContent) {
-                    return;
+                if ((chapter.content_cleared === true || chapter.contentCleared === true) && !inlineContent && !hasMirroredContent) {
+                    [chapter.uuid, chapter.id].filter(Boolean).forEach((key) => clearedKeys.add(key));
                 }
             });
         });
@@ -467,6 +381,7 @@ class StorageManager {
 
     normalizeChapter(chapter) {
         const chapterId = chapter.id || chapter.uuid || Utils.uid("chapter");
+        const inlineContent = String(chapter.content || "").trim();
         return {
             ...chapter,
             id: chapterId,
@@ -474,8 +389,8 @@ class StorageManager {
             number: Number(chapter.number || chapter.chapter_number || 0) || 0,
             title: chapter.title || "",
             summary: chapter.summary || chapter.synopsis || "",
-            content: chapter.content_cleared === true ? "" : (chapter.content || ""),
-            content_cleared: chapter.content_cleared === true,
+            content: chapter.content || "",
+            content_cleared: (chapter.content_cleared === true || chapter.contentCleared === true) && !inlineContent,
             chapter_setting_note: chapter.chapter_setting_note || "",
             keyEvent: chapter.keyEvent || chapter.key_event || "",
             emotionCurve: chapter.emotionCurve || chapter.emotion_curve || "",
@@ -582,11 +497,12 @@ class StorageManager {
                     chapter.content_cleared = false;
                 }
                 if (chapter.content) {
+                    chapter.content_cleared = false;
                     mirrorKeys.forEach((key) => {
                         topLevelChapters[key] = chapter.content;
                         generatedChapterTexts[key] = chapter.content;
                     });
-                } else if (chapter.content_cleared === true || isExplicitlyCleared) {
+                } else if (isExplicitlyCleared) {
                     mirrorKeys.forEach((key) => {
                         if (Object.prototype.hasOwnProperty.call(topLevelChapters, key)) {
                             delete topLevelChapters[key];

@@ -1,4 +1,4 @@
-const CACHE_NAME = "novel-outline-web-v11";
+const CACHE_NAME = "novel-outline-web-v12";
 const ASSETS = [
   "./",
   "./index.html",
@@ -6,11 +6,11 @@ const ASSETS = [
   "./css/style.css",
   "./css/mobile.css",
   "./js/config.js",
-  "./js/storage.js",
+  "./js/storage.js?v=20260410f",
   "./js/utils.js",
   "./js/api.js",
   "./js/generator.js",
-  "./js/app.js",
+  "./js/app.js?v=20260410f",
   "./icons/app-icon.svg",
   "./prompts/prompt-manifest.json",
   "./prompts/11111.txt"

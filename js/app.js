@@ -265,7 +265,7 @@ class NovelOutlineWebApp {
 
         const params = new URLSearchParams(window.location.search);
         const urlVersion = params.get("v");
-        const buildVersion = "2026.04.06-e";
+        const buildVersion = "2026.04.10-f";
         const label = urlVersion ? `版本 ${urlVersion}` : `版本 ${buildVersion}`;
 
         this.elements.appVersionChip.textContent = label;
@@ -711,8 +711,6 @@ class NovelOutlineWebApp {
         this.elements.btnShowLog.addEventListener("click", () => this.toggleLogDrawerVisibility());
         this.elements.btnHideLog.addEventListener("click", () => this.setLogDrawerVisible(false));
         this.elements.btnToggleLog.addEventListener("click", () => this.toggleLogDrawerCollapsed());
-        this.bindChapterEditorAutoSave();
-        this.bindPageLifecyclePersistence();
     }
 
     safeAsync(task) {
@@ -765,47 +763,6 @@ class NovelOutlineWebApp {
             }
             this.autoSave();
             this.renderDashboard();
-        });
-    }
-
-    bindChapterEditorAutoSave() {
-        const editorKeys = [
-            "chapterNumberInput",
-            "chapterTitleInput",
-            "chapterSummaryInput",
-            "chapterSettingNoteInput",
-            "chapterContentInput"
-        ];
-
-        editorKeys.forEach((key) => {
-            const element = this.elements[key];
-            if (!element) {
-                return;
-            }
-
-            element.addEventListener("input", () => {
-                const chapter = this.syncChapterEditorState({
-                    renderList: key !== "chapterContentInput"
-                });
-                if (!chapter) {
-                    return;
-                }
-                this.autoSave();
-            });
-        });
-    }
-
-    bindPageLifecyclePersistence() {
-        const flushPendingEditorState = () => {
-            this.syncChapterEditorState();
-            this.persist(true);
-        };
-
-        window.addEventListener("pagehide", flushPendingEditorState);
-        document.addEventListener("visibilitychange", () => {
-            if (document.visibilityState === "hidden") {
-                flushPendingEditorState();
-            }
         });
     }
 
@@ -3297,7 +3254,7 @@ ${(detailedOutline || concept || "未填写").slice(0, 2200)}`;
         if (!("serviceWorker" in navigator) || !window.isSecureContext && location.hostname !== "127.0.0.1" && location.hostname !== "localhost") {
             return;
         }
-        navigator.serviceWorker.register("service-worker.js?v=20260406e").then((registration) => {
+        navigator.serviceWorker.register("service-worker.js?v=20260410f", { updateViaCache: "none" }).then((registration) => {
             registration.update().catch(() => {});
         }).catch(() => {});
     }
@@ -3693,7 +3650,7 @@ ${(detailedOutline || concept || "未填写").slice(0, 2200)}`;
                     });
                     return;
                 }
-                if (chapter.content_cleared === true) {
+                if (chapter.content_cleared === true && !mirroredContent) {
                     mirrorKeys.forEach((key) => {
                         if (Object.prototype.hasOwnProperty.call(this.novelData.chapters, key)) {
                             delete this.novelData.chapters[key];
@@ -5629,38 +5586,6 @@ ${(detailedOutline || concept || "未填写").slice(0, 2200)}`;
         }
     }
 
-    syncChapterEditorState(options = {}) {
-        const { renderList = false } = options;
-        const volume = this.getCurrentChapterVolume();
-        const chapter = this.getChapterFromEditor();
-        if (!volume || !chapter) {
-            return null;
-        }
-
-        chapter.content = String(chapter.content || "").trim();
-        chapter.content_cleared = chapter.content ? false : chapter.content_cleared === true;
-        chapter.updatedAt = new Date().toISOString();
-
-        this.upsertChapter(volume, chapter);
-        this.state.selectedChapterId = chapter.id;
-
-        if (chapter.content) {
-            const mirrorKeys = [chapter.uuid, chapter.id].filter(Boolean);
-            mirrorKeys.forEach((key) => {
-                this.novelData.chapters[key] = chapter.content;
-                this.novelData.generatedChapterTexts[key] = chapter.content;
-            });
-        } else if (chapter.content_cleared === true) {
-            this.clearStoredChapterMirrors(chapter);
-        }
-
-        if (renderList) {
-            this.renderChapterList();
-        }
-
-        return chapter;
-    }
-
     selectAdjacentChapter(offset) {
         const volume = this.getCurrentChapterVolume();
         const chapters = [...(volume?.chapters || [])].sort(Utils.chapterSort);
@@ -5840,6 +5765,8 @@ ${(detailedOutline || concept || "未填写").slice(0, 2200)}`;
         const existing = volume.chapters.find((item) =>
             item.id === this.state.selectedChapterId || Number(item.number || 0) === number
         ) || {};
+        const incomingContent = this.elements.chapterContentInput.value.trim();
+        const preservedContent = incomingContent || String(existing.content || this.getStoredChapterContent(existing) || "").trim();
         const chapter = {
             ...existing,
             id: this.state.selectedChapterId || existing.id || Utils.uid("chapter"),
@@ -5847,8 +5774,8 @@ ${(detailedOutline || concept || "未填写").slice(0, 2200)}`;
             title: this.elements.chapterTitleInput.value.trim() || `第${number}章`,
             summary: this.elements.chapterSummaryInput.value.trim(),
             chapter_setting_note: this.elements.chapterSettingNoteInput.value.trim(),
-            content: this.elements.chapterContentInput.value.trim(),
-            content_cleared: this.elements.chapterContentInput.value.trim() ? false : existing.content_cleared === true,
+            content: preservedContent,
+            content_cleared: false,
             updatedAt: new Date().toISOString()
         };
 
