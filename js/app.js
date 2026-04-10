@@ -1316,6 +1316,41 @@ ${(detailedOutline || concept || "未填写").slice(0, 2200)}`;
             }
             return;
         }
+        const batchCardsHTML = orderedChapters.map((chapter) => `
+            <article class="chapter-card chapter-batch-card ${chapter.id === this.state.selectedChapterId ? "active" : ""}" data-chapter-id="${chapter.id}">
+                <div class="chapter-card-head">
+                    <div class="chapter-meta">
+                        <span class="chapter-card-number">第${chapter.number}章</span>
+                        <div class="chapter-batch-meta">
+                            <div class="chapter-badge-row">${this.buildChapterBadgeHTML(chapter)}</div>
+                            <p class="chapter-batch-hint">这里可以直接改章节标题和章纲，保存后会同步到后续正文扩写。</p>
+                        </div>
+                    </div>
+                </div>
+                <label class="field chapter-batch-field">
+                    <span>章节标题</span>
+                    <input
+                        class="input chapter-batch-input"
+                        type="text"
+                        data-batch-field="title"
+                        value="${Utils.escapeHTML(chapter.title || `第${chapter.number}章`)}"
+                        placeholder="章节标题">
+                </label>
+                <label class="field chapter-batch-field">
+                    <span>章节大纲</span>
+                    <textarea
+                        class="input textarea chapter-batch-summary-input"
+                        rows="7"
+                        data-batch-field="summary"
+                        placeholder="在这里直接修改本章章纲、关键场景和情绪钩子。">${Utils.escapeHTML(chapter.summary || "")}</textarea>
+                </label>
+                <div class="panel-actions chapter-batch-actions">
+                    <button class="btn btn-secondary" type="button" data-batch-action="save-outline">保存章纲修改</button>
+                    <button class="btn btn-ghost" type="button" data-batch-action="open-draft">打开正文编辑</button>
+                </div>
+            </article>
+        `).join("");
+
         const cardsHTML = orderedChapters.map((chapter) => `
             <article class="chapter-card ${chapter.id === this.state.selectedChapterId ? "active" : ""}" data-chapter-id="${chapter.id}">
                 <div class="chapter-card-head">
@@ -1332,7 +1367,7 @@ ${(detailedOutline || concept || "未填写").slice(0, 2200)}`;
         `).join("");
 
         if (this.elements.chapterBatchList) {
-            this.elements.chapterBatchList.innerHTML = cardsHTML;
+            this.elements.chapterBatchList.innerHTML = batchCardsHTML;
         }
         if (this.elements.chapterList) {
             this.elements.chapterList.innerHTML = cardsHTML;
@@ -3357,8 +3392,79 @@ ${(detailedOutline || concept || "未填写").slice(0, 2200)}`;
         if (!card) {
             return;
         }
+        const actionButton = event.target.closest("[data-batch-action]");
+        if (actionButton) {
+            const action = String(actionButton.dataset.batchAction || "").trim();
+            if (action === "save-outline") {
+                this.saveBatchChapterOutline(card.dataset.chapterId, card);
+                return;
+            }
+            if (action === "open-draft") {
+                if (this.elements.chapterEditorVolumeSelect && this.elements.chapterVolumeSelect) {
+                    this.elements.chapterEditorVolumeSelect.value = this.elements.chapterVolumeSelect.value;
+                }
+                this.switchTab("chapters");
+                this.selectChapter(card.dataset.chapterId);
+                return;
+            }
+        }
+
+        if (event.target.closest("textarea, input, button, select")) {
+            return;
+        }
+
+        if (this.elements.chapterEditorVolumeSelect && this.elements.chapterVolumeSelect) {
+            this.elements.chapterEditorVolumeSelect.value = this.elements.chapterVolumeSelect.value;
+        }
         this.switchTab("chapters");
         this.selectChapter(card.dataset.chapterId);
+    }
+
+    saveBatchChapterOutline(chapterId, cardElement) {
+        const volume = this.getCurrentChapterVolume();
+        if (!volume) {
+            Utils.showMessage("请先选择一个卷。", "error");
+            return;
+        }
+
+        const chapter = volume.chapters.find((item) => item.id === chapterId);
+        if (!chapter) {
+            Utils.showMessage("当前章纲不存在。", "error");
+            return;
+        }
+
+        const titleInput = cardElement?.querySelector('[data-batch-field="title"]');
+        const summaryInput = cardElement?.querySelector('[data-batch-field="summary"]');
+        const nextTitle = String(titleInput?.value || "").trim() || `第${chapter.number}章`;
+        const nextSummary = String(summaryInput?.value || "").trim();
+        const storedContent = this.getStoredChapterContent(chapter);
+        const updatedChapter = {
+            ...chapter,
+            title: nextTitle,
+            summary: nextSummary,
+            content: String(chapter.content || storedContent || "").trim(),
+            content_cleared: !String(chapter.content || storedContent || "").trim() && chapter.content_cleared === true,
+            updatedAt: new Date().toISOString()
+        };
+
+        this.upsertChapter(volume, updatedChapter);
+        if (updatedChapter.content) {
+            [updatedChapter.uuid, updatedChapter.id].filter(Boolean).forEach((key) => {
+                this.novelData.chapters[key] = updatedChapter.content;
+                this.novelData.generatedChapterTexts[key] = updatedChapter.content;
+            });
+        }
+
+        if (this.state.selectedChapterId === updatedChapter.id) {
+            this.elements.chapterTitleInput.value = updatedChapter.title || "";
+            this.elements.chapterSummaryInput.value = updatedChapter.summary || "";
+            this.renderChapterContextPreview(updatedChapter);
+        }
+
+        this.persist(true);
+        this.renderChapterList();
+        this.renderDashboard();
+        Utils.showMessage(`第${updatedChapter.number}章章纲已保存。`, "success");
     }
 
     handleCharacterListClick(event) {

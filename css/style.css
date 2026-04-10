@@ -1011,6 +1011,46 @@ button {
     font-size: 13px;
 }
 
+.chapter-batch-card {
+    cursor: default;
+    display: grid;
+    gap: 14px;
+}
+
+.chapter-batch-card:hover {
+    transform: none;
+}
+
+.chapter-batch-meta {
+    display: grid;
+    gap: 8px;
+}
+
+.chapter-batch-hint {
+    margin: 0;
+    color: var(--muted);
+    font-size: 12px;
+    line-height: 1.6;
+}
+
+.chapter-batch-field {
+    gap: 8px;
+}
+
+.chapter-batch-input {
+    min-height: 46px;
+}
+
+.chapter-batch-summary-input {
+    min-height: 168px;
+    line-height: 1.8;
+    resize: vertical;
+}
+
+.chapter-batch-actions {
+    justify-content: flex-end;
+}
+
 .chapter-textarea {
     min-height: 360px;
     line-height: 1.9;
