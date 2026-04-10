@@ -4169,6 +4169,52 @@
             lines.push(`已发生：第${item.chapter || item["章节"] || "?"}章 · ${item.time_point || item["时间点"] || "时间未记"} · ${item.event || item["事件"] || ""}`);
         });
 
+        const activeCountdowns = (Array.isArray(tracker.countdowns) ? tracker.countdowns : [])
+            .map((item) => {
+                const title = String(item?.title || item?.name || item?.label || item?.["标题"] || item?.["名称"] || "").trim();
+                const remainingDays = Number(item?.remaining_days ?? item?.days_left ?? item?.["剩余天数"]);
+                const startChapter = Number(item?.start_chapter || item?.chapter || item?.["章节"] || 0) || 0;
+                const startTime = String(item?.start_time || item?.origin_time || item?.["起点时间"] || "").trim();
+                const currentTimeLabel = String(item?.current_time || item?.["当前时间"] || currentTime || "").trim();
+                const currentLabel = String(
+                    item?.current_label
+                    || item?.["当前标签"]
+                    || (Number.isFinite(remainingDays)
+                        ? (remainingDays <= 0 ? "已到眼前" : `还剩${remainingDays}天`)
+                        : "")
+                ).trim();
+                const status = String(item?.status || item?.["状态"] || "").trim();
+                return {
+                    title,
+                    remainingDays,
+                    startChapter,
+                    startTime,
+                    currentTimeLabel,
+                    currentLabel,
+                    status
+                };
+            })
+            .filter((item) => item.title && item.status !== "resolved")
+            .filter((item) => !chapterNumber || !item.startChapter || item.startChapter <= chapterNumber)
+            .sort((left, right) => {
+                const leftDays = Number.isFinite(left.remainingDays) ? left.remainingDays : 99999;
+                const rightDays = Number.isFinite(right.remainingDays) ? right.remainingDays : 99999;
+                return leftDays - rightDays;
+            })
+            .slice(0, 6);
+        if (activeCountdowns.length) {
+            lines.push("进行中的倒计时：");
+            activeCountdowns.forEach((item) => {
+                const detail = [
+                    `${item.title}倒计时：${item.currentLabel || "进行中"}`,
+                    item.startTime ? `起点时间：${item.startTime}` : "",
+                    item.currentTimeLabel ? `当前锚点：${item.currentTimeLabel}` : "",
+                    item.startChapter ? `起于第${item.startChapter}章` : ""
+                ].filter(Boolean).join("；");
+                lines.push(`- ${detail}`);
+            });
+        }
+
         const active = (tracker.time_constraints || [])
             .filter((item) => !chapterNumber || !item["预计完成章节"] || Number(item["预计完成章节"]) >= chapterNumber)
             .slice(0, 6)
@@ -4194,7 +4240,7 @@
         }
 
         if (lines.length) {
-            lines.push("规则：上面“已发生”的时间节点只能回顾，不能写成即将发生；上面“当前时间”就是本章开头默认时间；如果正文推进到次日/若干日后，结尾必须同步更新时间，并让倒计时自然缩短。");
+            lines.push("规则：上面“已发生”的时间节点只能回顾，不能写成即将发生；上面“当前时间”就是本章开头默认时间；如果正文推进到次日、第二天、数日后或当夜/傍晚等新时段，结尾必须同步更新时间锚点，并让所有倒计时自然递减。");
         }
 
         return lines.length ? `【时间线约束】\n${lines.join("\n")}` : "";

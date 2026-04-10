@@ -308,7 +308,8 @@ const DEFAULT_NOVEL_DATA = {
         timeline_events: [],
         current_time: "",
         time_unit: "章",
-        time_constraints: []
+        time_constraints: [],
+        countdowns: []
     },
     chapter_snapshot: {
         snapshots: {}
