@@ -6751,6 +6751,29 @@ ${(detailedOutline || concept || "未填写").slice(0, 2200)}`;
         return "";
     }
 
+    shouldEnrichTimelineWithPrevious(text = "") {
+        const value = String(text || "").trim();
+        if (!value) {
+            return false;
+        }
+        return /^(?:第?[一二两三四五六七八九十百零\d]+(?:个)?(?:时辰|小时|刻钟|炷香|天|日|夜|个月|月|年)后|次日|第二天|翌日|翌晨|次晨|清晨|清早|凌晨|黎明|破晓|天亮时|上午|中午|晌午|午后|黄昏|傍晚|薄暮|入夜|夜里|深夜|夜半|当晚|当夜|片刻后|不多时|半晌后|稍后|很快)/.test(value);
+    }
+
+    mergeTimelineWithPrevious(previousTimeline = "", cue = "") {
+        const previous = String(previousTimeline || "").trim();
+        const suffix = String(cue || "").trim();
+        if (!previous || !suffix) {
+            return suffix || previous;
+        }
+        if (previous.includes(suffix)) {
+            return previous;
+        }
+
+        const tailPattern = /(第?[一二两三四五六七八九十百零\d]+(?:个)?(?:时辰|小时|刻钟|炷香|天|日|夜|个月|月|年)后|次日(?:清晨|清早|上午|中午|午后|傍晚|入夜|夜里|深夜)?|第二天(?:清晨|清早|上午|中午|午后|傍晚|入夜|夜里|深夜)?|翌日(?:清晨|清早|上午|中午|午后|傍晚|入夜|夜里|深夜)?|翌晨|次晨|清晨|清早|凌晨|黎明|破晓|天亮时|上午|中午|晌午|午后|黄昏|傍晚|薄暮|入夜|夜里|深夜|夜半|当晚|当夜|片刻后|不多时|半晌后|稍后|很快)$/;
+        const anchor = previous.replace(tailPattern, "").trim();
+        return anchor ? `${anchor}${suffix}` : suffix;
+    }
+
     isGenericTimelineText(text = "") {
         const value = String(text || "").trim();
         if (!value) {
@@ -6769,16 +6792,19 @@ ${(detailedOutline || concept || "未填写").slice(0, 2200)}`;
         ]);
 
         if (currentTimeline && currentTimeline !== previousTimeline) {
+            if (previousTimeline && this.shouldEnrichTimelineWithPrevious(currentTimeline)) {
+                return this.mergeTimelineWithPrevious(previousTimeline, currentTimeline);
+            }
             return currentTimeline;
         }
         if (!inferredTimeline) {
             return currentTimeline;
         }
         if (!currentTimeline) {
-            return inferredTimeline;
+            return this.mergeTimelineWithPrevious(previousTimeline, inferredTimeline);
         }
         if (currentTimeline === previousTimeline || this.isGenericTimelineText(currentTimeline)) {
-            return inferredTimeline;
+            return this.mergeTimelineWithPrevious(previousTimeline, inferredTimeline);
         }
         return currentTimeline;
     }
