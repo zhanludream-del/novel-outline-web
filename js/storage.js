@@ -337,22 +337,26 @@ class StorageManager {
 
     collectExplicitlyClearedChapterKeys(data) {
         const clearedKeys = new Set();
+        const topLevelChapters = data?.chapters && typeof data.chapters === "object" ? data.chapters : {};
+        const generatedChapterTexts = data?.generatedChapterTexts && typeof data.generatedChapterTexts === "object"
+            ? data.generatedChapterTexts
+            : {};
         (((data || {}).outline || {}).volumes || []).forEach((volume) => {
             (volume.chapters || []).forEach((chapter) => {
                 if (!chapter || typeof chapter !== "object") {
                     return;
                 }
-                if (!Object.prototype.hasOwnProperty.call(chapter, "content")) {
-                    return;
-                }
-                if (chapter.content_cleared === true) {
+                if (chapter.content_cleared === true || chapter.contentCleared === true) {
                     [chapter.uuid, chapter.id].filter(Boolean).forEach((key) => clearedKeys.add(key));
                     return;
                 }
-                if (String(chapter.content || "").trim()) {
+                const mirrorKeys = [chapter.uuid, chapter.id].filter(Boolean);
+                const hasMirroredContent = mirrorKeys.some((key) =>
+                    String(topLevelChapters[key] || generatedChapterTexts[key] || "").trim()
+                );
+                if (hasMirroredContent) {
                     return;
                 }
-                [chapter.uuid, chapter.id].filter(Boolean).forEach((key) => clearedKeys.add(key));
             });
         });
         return clearedKeys;
@@ -476,6 +480,9 @@ class StorageManager {
 
     syncTopLevelChapterContent(data, explicitlyClearedChapterKeys = new Set()) {
         const topLevelChapters = data.chapters || {};
+        const generatedChapterTexts = data.generatedChapterTexts && typeof data.generatedChapterTexts === "object"
+            ? data.generatedChapterTexts
+            : {};
         (data.outline.volumes || []).forEach((volume) => {
             (volume.chapters || []).forEach((chapter) => {
                 const mirrorKeys = [chapter.uuid, chapter.id].filter(Boolean);
@@ -484,21 +491,32 @@ class StorageManager {
                     chapter.content = "";
                     chapter.content_cleared = true;
                 }
-                if (!isExplicitlyCleared && !chapter.content && chapter.uuid && topLevelChapters[chapter.uuid]) {
-                    chapter.content = topLevelChapters[chapter.uuid];
+                const mirroredContent = mirrorKeys
+                    .map((key) => String(topLevelChapters[key] || generatedChapterTexts[key] || "").trim())
+                    .find(Boolean) || "";
+                if (!isExplicitlyCleared && !chapter.content && mirroredContent) {
+                    chapter.content = mirroredContent;
+                    chapter.content_cleared = false;
                 }
-                if (chapter.content && chapter.uuid) {
-                    topLevelChapters[chapter.uuid] = chapter.content;
-                } else {
+                if (chapter.content) {
+                    mirrorKeys.forEach((key) => {
+                        topLevelChapters[key] = chapter.content;
+                        generatedChapterTexts[key] = chapter.content;
+                    });
+                } else if (chapter.content_cleared === true || isExplicitlyCleared) {
                     mirrorKeys.forEach((key) => {
                         if (Object.prototype.hasOwnProperty.call(topLevelChapters, key)) {
                             delete topLevelChapters[key];
+                        }
+                        if (Object.prototype.hasOwnProperty.call(generatedChapterTexts, key)) {
+                            delete generatedChapterTexts[key];
                         }
                     });
                 }
             });
         });
         data.chapters = topLevelChapters;
+        data.generatedChapterTexts = generatedChapterTexts;
     }
 
     deepMerge(target, source) {

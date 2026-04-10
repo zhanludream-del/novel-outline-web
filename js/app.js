@@ -3640,6 +3640,9 @@ ${(detailedOutline || concept || "未填写").slice(0, 2200)}`;
             (volume.chapters || []).forEach((chapter) => {
                 const chapterContent = String(chapter.content || "").trim();
                 const mirrorKeys = [chapter.uuid, chapter.id].filter(Boolean);
+                const mirroredContent = mirrorKeys
+                    .map((key) => String(this.novelData.chapters?.[key] || this.novelData.generatedChapterTexts?.[key] || "").trim())
+                    .find(Boolean) || "";
                 if (chapterContent) {
                     mirrorKeys.forEach((key) => {
                         this.novelData.chapters[key] = chapterContent;
@@ -3647,14 +3650,25 @@ ${(detailedOutline || concept || "未填写").slice(0, 2200)}`;
                     });
                     return;
                 }
-                mirrorKeys.forEach((key) => {
-                    if (Object.prototype.hasOwnProperty.call(this.novelData.chapters, key)) {
-                        delete this.novelData.chapters[key];
-                    }
-                    if (Object.prototype.hasOwnProperty.call(this.novelData.generatedChapterTexts, key)) {
-                        delete this.novelData.generatedChapterTexts[key];
-                    }
-                });
+                if (chapter.content_cleared === true) {
+                    mirrorKeys.forEach((key) => {
+                        if (Object.prototype.hasOwnProperty.call(this.novelData.chapters, key)) {
+                            delete this.novelData.chapters[key];
+                        }
+                        if (Object.prototype.hasOwnProperty.call(this.novelData.generatedChapterTexts, key)) {
+                            delete this.novelData.generatedChapterTexts[key];
+                        }
+                    });
+                    return;
+                }
+                if (mirroredContent) {
+                    chapter.content = mirroredContent;
+                    chapter.content_cleared = false;
+                    mirrorKeys.forEach((key) => {
+                        this.novelData.chapters[key] = mirroredContent;
+                        this.novelData.generatedChapterTexts[key] = mirroredContent;
+                    });
+                }
             });
         });
 
@@ -5544,7 +5558,12 @@ ${(detailedOutline || concept || "未填写").slice(0, 2200)}`;
         this.elements.chapterTitleInput.value = chapter.title || "";
         this.elements.chapterSummaryInput.value = chapter.summary || "";
         this.elements.chapterSettingNoteInput.value = chapter.chapter_setting_note || "";
-        this.elements.chapterContentInput.value = chapter.content || "";
+        const storedContent = this.getStoredChapterContent(chapter);
+        if (!chapter.content && storedContent) {
+            chapter.content = storedContent;
+            chapter.content_cleared = false;
+        }
+        this.elements.chapterContentInput.value = storedContent;
         this.renderChapterContextPreview(chapter);
         this.renderChapterList();
         if (this.elements.chapterQuickSelect) {
@@ -7392,7 +7411,11 @@ ${(detailedOutline || concept || "未填写").slice(0, 2200)}`;
     }
 
     getStoredChapterContent(chapter = {}) {
-        return String(chapter.content || (chapter.uuid ? this.novelData.chapters?.[chapter.uuid] : "") || "").trim();
+        const mirrorKeys = [chapter.uuid, chapter.id].filter(Boolean);
+        const mirrored = mirrorKeys
+            .map((key) => this.novelData.chapters?.[key] || this.novelData.generatedChapterTexts?.[key] || "")
+            .find((value) => String(value || "").trim()) || "";
+        return String(chapter.content || mirrored || "").trim();
     }
 
     getOrderedChapterRecords(includeEmpty = false) {
