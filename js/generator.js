@@ -4156,17 +4156,45 @@
     buildTimelineGuard(project, chapterNumber) {
         const tracker = project.timeline_tracker || {};
         const lines = [];
+        const currentTime = tracker.current_time
+            || project.outline?.story_state?.timeline
+            || project.story_state?.current_time
+            || "";
+
+        if (currentTime) {
+            lines.push(`当前时间：${Utils.summarizeText(currentTime, 80)}`);
+        }
 
         (tracker.timeline_events || []).slice(-6).forEach((item) => {
-            lines.push(`第${item.chapter || item["章节"] || "?"}章：${item.time_point || item["时间点"] || item.event || item["事件"] || ""}`);
+            lines.push(`已发生：第${item.chapter || item["章节"] || "?"}章 · ${item.time_point || item["时间点"] || "时间未记"} · ${item.event || item["事件"] || ""}`);
         });
 
         const active = (tracker.time_constraints || [])
             .filter((item) => !chapterNumber || !item["预计完成章节"] || Number(item["预计完成章节"]) >= chapterNumber)
-            .slice(0, 5)
-            .map((item) => `${item["设定"] || item.constraint_desc || ""}（持续：${item["持续时间"] || item.duration_desc || ""}）`);
+            .slice(0, 6)
+            .map((item) => {
+                const startChapter = Number(item.start_chapter || item.chapter || item["章节"] || 0) || "";
+                const dueChapter = Number(item.due_chapter || item["预计完成章节"] || 0) || "";
+                const elapsed = startChapter && chapterNumber ? Math.max(0, chapterNumber - startChapter) : "";
+                const remaining = dueChapter && chapterNumber ? Math.max(0, dueChapter - chapterNumber) : "";
+                const detail = [
+                    item["设定"] || item.constraint_desc || "",
+                    item.origin_time ? `起点时间：${item.origin_time}` : "",
+                    startChapter ? `起于第${startChapter}章` : "",
+                    elapsed !== "" ? `已过去${elapsed}章` : "",
+                    dueChapter ? `截止第${dueChapter}章` : "",
+                    remaining !== "" ? `还剩${remaining}章` : "",
+                    item["持续时间"] || item.duration_desc ? `持续：${item["持续时间"] || item.duration_desc}` : ""
+                ].filter(Boolean);
+                return detail.join("；");
+            });
         if (active.length) {
-            lines.push(`时间约束：${active.join("、")}`);
+            lines.push("进行中的时间约束：");
+            active.forEach((item) => lines.push(`- ${item}`));
+        }
+
+        if (lines.length) {
+            lines.push("规则：上面“已发生”的时间节点只能回顾，不能写成即将发生；上面“当前时间”就是本章开头默认时间；如果正文推进到次日/若干日后，结尾必须同步更新时间，并让倒计时自然缩短。");
         }
 
         return lines.length ? `【时间线约束】\n${lines.join("\n")}` : "";

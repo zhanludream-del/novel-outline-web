@@ -8287,10 +8287,15 @@ ${(detailedOutline || concept || "未填写").slice(0, 2200)}`;
             if (!text) {
                 return;
             }
+            const dueChapter = Number(item?.["预计完成章节"] || item?.due_chapter || item?.dueChapter || 0) || "";
             tracker.time_constraints.push({
                 chapter: chapterNumber,
+                start_chapter: chapterNumber,
+                origin_time: stateData.timeline || tracker.current_time || "",
+                due_chapter: dueChapter,
                 constraint_desc: text,
-                "设定": text
+                "设定": text,
+                "预计完成章节": dueChapter || ""
             });
         });
         tracker.time_constraints = tracker.time_constraints.slice(-60);
