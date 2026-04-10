@@ -1,16 +1,29 @@
 class StorageManager {
     constructor(storageKey) {
         this.storageKey = storageKey;
+        this.dbName = "novel_outline_web_db";
+        this.storeName = "documents";
+        this.dbVersion = 1;
+        this.dbPromise = null;
+        this.memoryCache = null;
+        this.pendingSavePromise = Promise.resolve();
     }
 
     load() {
+        if (this.memoryCache) {
+            return this.normalize(this.memoryCache);
+        }
         try {
             const raw = localStorage.getItem(this.storageKey);
             if (!raw) {
                 return this.getDefaultData();
             }
 
-            return this.normalize(JSON.parse(raw));
+            const parsed = JSON.parse(raw);
+            if (parsed && parsed.__storage_backend === "indexeddb") {
+                return this.getDefaultData();
+            }
+            return this.normalize(parsed);
         } catch (error) {
             console.error("加载小说数据失败：", error);
             return this.getDefaultData();
@@ -26,7 +39,13 @@ class StorageManager {
                 normalized.meta.createdAt = normalized.meta.updatedAt;
             }
 
-            localStorage.setItem(this.storageKey, JSON.stringify(normalized, null, 2));
+            this.memoryCache = normalized;
+            this.writeLegacyStub(normalized);
+            this.pendingSavePromise = this.saveToIndexedDB(normalized).catch((error) => {
+                console.error("IndexedDB save failed", error);
+                localStorage.setItem(this.storageKey, JSON.stringify(normalized, null, 2));
+                return false;
+            });
             return true;
         } catch (error) {
             console.error("保存小说数据失败：", error);
@@ -35,7 +54,11 @@ class StorageManager {
     }
 
     clear() {
+        this.memoryCache = null;
         localStorage.removeItem(this.storageKey);
+        this.deleteFromIndexedDB().catch((error) => {
+            console.error("IndexedDB clear failed", error);
+        });
     }
 
     export(filename, data) {
@@ -48,6 +71,116 @@ class StorageManager {
         data.meta.createdAt = now;
         data.meta.updatedAt = now;
         return data;
+    }
+
+    async loadPreferred() {
+        if (this.memoryCache) {
+            return this.normalize(this.memoryCache);
+        }
+
+        try {
+            const indexedData = await this.loadFromIndexedDB();
+            if (indexedData) {
+                this.memoryCache = this.normalize(indexedData);
+                this.writeLegacyStub(this.memoryCache);
+                return this.normalize(this.memoryCache);
+            }
+        } catch (error) {
+            console.error("IndexedDB load failed", error);
+        }
+
+        try {
+            const raw = localStorage.getItem(this.storageKey);
+            if (!raw) {
+                const fallback = this.getDefaultData();
+                this.memoryCache = fallback;
+                return fallback;
+            }
+            const parsed = JSON.parse(raw);
+            if (!parsed || parsed.__storage_backend === "indexeddb") {
+                const fallback = this.getDefaultData();
+                this.memoryCache = fallback;
+                return fallback;
+            }
+            const normalized = this.normalize(parsed);
+            this.memoryCache = normalized;
+            await this.saveToIndexedDB(normalized);
+            this.writeLegacyStub(normalized);
+            return this.normalize(normalized);
+        } catch (error) {
+            console.error("Legacy storage migration failed", error);
+            const fallback = this.getDefaultData();
+            this.memoryCache = fallback;
+            return fallback;
+        }
+    }
+
+    writeLegacyStub(data) {
+        const outline = data?.outline || {};
+        const meta = data?.meta || {};
+        const stub = {
+            __storage_backend: "indexeddb",
+            updatedAt: meta.updatedAt || new Date().toISOString(),
+            title: outline.title || "",
+            volumeCount: Array.isArray(outline.volumes) ? outline.volumes.length : 0
+        };
+        localStorage.setItem(this.storageKey, JSON.stringify(stub));
+    }
+
+    openIndexedDB() {
+        if (!window.indexedDB) {
+            return Promise.reject(new Error("IndexedDB is not supported"));
+        }
+        if (this.dbPromise) {
+            return this.dbPromise;
+        }
+        this.dbPromise = new Promise((resolve, reject) => {
+            const request = window.indexedDB.open(this.dbName, this.dbVersion);
+            request.onupgradeneeded = () => {
+                const db = request.result;
+                if (!db.objectStoreNames.contains(this.storeName)) {
+                    db.createObjectStore(this.storeName);
+                }
+            };
+            request.onsuccess = () => resolve(request.result);
+            request.onerror = () => reject(request.error || new Error("Failed to open IndexedDB"));
+        });
+        return this.dbPromise;
+    }
+
+    async loadFromIndexedDB() {
+        const db = await this.openIndexedDB();
+        return new Promise((resolve, reject) => {
+            const tx = db.transaction(this.storeName, "readonly");
+            const store = tx.objectStore(this.storeName);
+            const request = store.get(this.storageKey);
+            request.onsuccess = () => resolve(request.result || null);
+            request.onerror = () => reject(request.error || new Error("Failed to read IndexedDB"));
+        });
+    }
+
+    async saveToIndexedDB(data) {
+        const db = await this.openIndexedDB();
+        return new Promise((resolve, reject) => {
+            const tx = db.transaction(this.storeName, "readwrite");
+            const store = tx.objectStore(this.storeName);
+            store.put(data, this.storageKey);
+            tx.oncomplete = () => resolve(true);
+            tx.onerror = () => reject(tx.error || new Error("Failed to save IndexedDB"));
+            tx.onabort = () => reject(tx.error || new Error("IndexedDB save aborted"));
+        });
+    }
+
+    async deleteFromIndexedDB() {
+        const db = await this.openIndexedDB();
+        return new Promise((resolve, reject) => {
+            const tx = db.transaction(this.storeName, "readwrite");
+            const store = tx.objectStore(this.storeName);
+            store.delete(this.storageKey);
+            tx.oncomplete = () => resolve(true);
+            tx.onerror = () => reject(tx.error || new Error("Failed to delete IndexedDB record"));
+            tx.onabort = () => reject(tx.error || new Error("IndexedDB delete aborted"));
+        });
     }
 
     normalize(data) {

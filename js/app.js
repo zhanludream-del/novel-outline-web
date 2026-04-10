@@ -20,7 +20,7 @@ class NovelOutlineWebApp {
         }, 450);
 
         this.cacheElements();
-        this.init();
+        this.ready = this.init();
     }
 
     cacheElements() {
@@ -231,7 +231,8 @@ class NovelOutlineWebApp {
         };
     }
 
-    init() {
+    async init() {
+        this.novelData = await this.storage.loadPreferred();
         this.ensureBaseData();
         this.rehydrateDerivedChapterArtifacts();
         const startupCleanup = this.cleanupOrphanedCharacterArtifacts({ reason: "startup" });
