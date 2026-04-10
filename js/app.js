@@ -711,6 +711,8 @@ class NovelOutlineWebApp {
         this.elements.btnShowLog.addEventListener("click", () => this.toggleLogDrawerVisibility());
         this.elements.btnHideLog.addEventListener("click", () => this.setLogDrawerVisible(false));
         this.elements.btnToggleLog.addEventListener("click", () => this.toggleLogDrawerCollapsed());
+        this.bindChapterEditorAutoSave();
+        this.bindPageLifecyclePersistence();
     }
 
     safeAsync(task) {
@@ -763,6 +765,47 @@ class NovelOutlineWebApp {
             }
             this.autoSave();
             this.renderDashboard();
+        });
+    }
+
+    bindChapterEditorAutoSave() {
+        const editorKeys = [
+            "chapterNumberInput",
+            "chapterTitleInput",
+            "chapterSummaryInput",
+            "chapterSettingNoteInput",
+            "chapterContentInput"
+        ];
+
+        editorKeys.forEach((key) => {
+            const element = this.elements[key];
+            if (!element) {
+                return;
+            }
+
+            element.addEventListener("input", () => {
+                const chapter = this.syncChapterEditorState({
+                    renderList: key !== "chapterContentInput"
+                });
+                if (!chapter) {
+                    return;
+                }
+                this.autoSave();
+            });
+        });
+    }
+
+    bindPageLifecyclePersistence() {
+        const flushPendingEditorState = () => {
+            this.syncChapterEditorState();
+            this.persist(true);
+        };
+
+        window.addEventListener("pagehide", flushPendingEditorState);
+        document.addEventListener("visibilitychange", () => {
+            if (document.visibilityState === "hidden") {
+                flushPendingEditorState();
+            }
         });
     }
 
@@ -5586,6 +5629,38 @@ ${(detailedOutline || concept || "未填写").slice(0, 2200)}`;
         }
     }
 
+    syncChapterEditorState(options = {}) {
+        const { renderList = false } = options;
+        const volume = this.getCurrentChapterVolume();
+        const chapter = this.getChapterFromEditor();
+        if (!volume || !chapter) {
+            return null;
+        }
+
+        chapter.content = String(chapter.content || "").trim();
+        chapter.content_cleared = chapter.content ? false : chapter.content_cleared === true;
+        chapter.updatedAt = new Date().toISOString();
+
+        this.upsertChapter(volume, chapter);
+        this.state.selectedChapterId = chapter.id;
+
+        if (chapter.content) {
+            const mirrorKeys = [chapter.uuid, chapter.id].filter(Boolean);
+            mirrorKeys.forEach((key) => {
+                this.novelData.chapters[key] = chapter.content;
+                this.novelData.generatedChapterTexts[key] = chapter.content;
+            });
+        } else if (chapter.content_cleared === true) {
+            this.clearStoredChapterMirrors(chapter);
+        }
+
+        if (renderList) {
+            this.renderChapterList();
+        }
+
+        return chapter;
+    }
+
     selectAdjacentChapter(offset) {
         const volume = this.getCurrentChapterVolume();
         const chapters = [...(volume?.chapters || [])].sort(Utils.chapterSort);
@@ -5773,13 +5848,19 @@ ${(detailedOutline || concept || "未填写").slice(0, 2200)}`;
             summary: this.elements.chapterSummaryInput.value.trim(),
             chapter_setting_note: this.elements.chapterSettingNoteInput.value.trim(),
             content: this.elements.chapterContentInput.value.trim(),
-            content_cleared: !this.elements.chapterContentInput.value.trim(),
+            content_cleared: this.elements.chapterContentInput.value.trim() ? false : existing.content_cleared === true,
             updatedAt: new Date().toISOString()
         };
 
         this.refreshChapterReports(chapter);
         this.upsertChapter(volume, chapter);
-        if (!chapter.content) {
+        if (chapter.content) {
+            const mirrorKeys = [chapter.uuid, chapter.id].filter(Boolean);
+            mirrorKeys.forEach((key) => {
+                this.novelData.chapters[key] = chapter.content;
+                this.novelData.generatedChapterTexts[key] = chapter.content;
+            });
+        } else if (chapter.content_cleared === true) {
             this.clearStoredChapterMirrors(chapter);
         }
         this.state.selectedChapterId = chapter.id;
