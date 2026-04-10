@@ -265,7 +265,7 @@ class NovelOutlineWebApp {
 
         const params = new URLSearchParams(window.location.search);
         const urlVersion = params.get("v");
-        const buildVersion = "2026.04.10-f";
+        const buildVersion = "2026.04.10-g";
         const label = urlVersion ? `版本 ${urlVersion}` : `版本 ${buildVersion}`;
 
         this.elements.appVersionChip.textContent = label;
@@ -3289,7 +3289,7 @@ ${(detailedOutline || concept || "未填写").slice(0, 2200)}`;
         if (!("serviceWorker" in navigator) || !window.isSecureContext && location.hostname !== "127.0.0.1" && location.hostname !== "localhost") {
             return;
         }
-        navigator.serviceWorker.register("service-worker.js?v=20260410f", { updateViaCache: "none" }).then((registration) => {
+        navigator.serviceWorker.register("service-worker.js?v=20260410g", { updateViaCache: "none" }).then((registration) => {
             registration.update().catch(() => {});
         }).catch(() => {});
     }
@@ -5872,7 +5872,6 @@ ${(detailedOutline || concept || "未填写").slice(0, 2200)}`;
             item.id === this.state.selectedChapterId || Number(item.number || 0) === number
         ) || {};
         const incomingContent = this.elements.chapterContentInput.value.trim();
-        const preservedContent = incomingContent || String(existing.content || this.getStoredChapterContent(existing) || "").trim();
         const chapter = {
             ...existing,
             id: this.state.selectedChapterId || existing.id || Utils.uid("chapter"),
@@ -5880,8 +5879,8 @@ ${(detailedOutline || concept || "未填写").slice(0, 2200)}`;
             title: this.elements.chapterTitleInput.value.trim() || `第${number}章`,
             summary: this.elements.chapterSummaryInput.value.trim(),
             chapter_setting_note: this.elements.chapterSettingNoteInput.value.trim(),
-            content: preservedContent,
-            content_cleared: false,
+            content: incomingContent,
+            content_cleared: !incomingContent,
             updatedAt: new Date().toISOString()
         };
 
