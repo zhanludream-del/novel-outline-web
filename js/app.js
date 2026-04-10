@@ -6712,6 +6712,77 @@ ${(detailedOutline || concept || "未填写").slice(0, 2200)}`;
         );
     }
 
+    getPreviousChapterTimeline(chapterNumber) {
+        const current = Number(chapterNumber || 0);
+        if (current <= 1) {
+            return "";
+        }
+        const previousSnapshot = this.getChapterSnapshotRecord(current - 1);
+        return this.pickFirstStateString([
+            previousSnapshot.timeline,
+            previousSnapshot["时间"],
+            this.novelData.timeline_tracker?.current_time,
+            this.novelData.outline?.story_state?.timeline,
+            this.novelData.story_state?.current_time
+        ]);
+    }
+
+    extractTimelineCueFromText(text = "") {
+        const source = String(text || "").replace(/\s+/g, " ").trim();
+        if (!source) {
+            return "";
+        }
+
+        const patterns = [
+            /((?:第)?[一二两三四五六七八九十百零\d]+(?:个)?(?:时辰|小时|刻钟|炷香|天|日|夜|个月|月|年)后)/,
+            /(次日(?:清晨|清早|上午|中午|午后|傍晚|入夜|夜里|深夜)?)/,
+            /(第二天(?:清晨|清早|上午|中午|午后|傍晚|入夜|夜里|深夜)?)/,
+            /(翌日(?:清晨|清早|上午|中午|午后|傍晚|入夜|夜里|深夜)?)/,
+            /(翌晨|次晨|清晨|清早|凌晨|黎明|破晓|天亮时|上午|中午|晌午|午后|黄昏|傍晚|薄暮|入夜|夜里|深夜|夜半|当晚|当夜)/,
+            /(片刻后|不多时|半晌后|稍后|很快)/
+        ];
+
+        for (const pattern of patterns) {
+            const match = source.match(pattern);
+            if (match?.[1]) {
+                return match[1].trim();
+            }
+        }
+        return "";
+    }
+
+    isGenericTimelineText(text = "") {
+        const value = String(text || "").trim();
+        if (!value) {
+            return true;
+        }
+        return /^(当前|此时|此刻|同上|延续前文|上一章末|承接上章|继续前文)/.test(value);
+    }
+
+    resolveTimelineForChapter(chapterNumber, stateData, chapter = null, cleanedContent = "") {
+        const currentTimeline = String(stateData?.timeline || "").trim();
+        const previousTimeline = this.getPreviousChapterTimeline(chapterNumber);
+        const inferredTimeline = this.pickFirstStateString([
+            this.extractTimelineCueFromText(cleanedContent),
+            this.extractTimelineCueFromText(chapter?.summary || ""),
+            this.extractTimelineCueFromText(chapter?.title || "")
+        ]);
+
+        if (currentTimeline && currentTimeline !== previousTimeline) {
+            return currentTimeline;
+        }
+        if (!inferredTimeline) {
+            return currentTimeline;
+        }
+        if (!currentTimeline) {
+            return inferredTimeline;
+        }
+        if (currentTimeline === previousTimeline || this.isGenericTimelineText(currentTimeline)) {
+            return inferredTimeline;
+        }
+        return currentTimeline;
+    }
+
     normalizeChapterSnapshotRecord(snapshot) {
         const source = snapshot && typeof snapshot === "object" && !Array.isArray(snapshot) ? snapshot : {};
         const nextChapterSetup = this.pickFirstNonEmptyValue(
@@ -7572,6 +7643,12 @@ ${(detailedOutline || concept || "未填写").slice(0, 2200)}`;
             options.extraCharactersBlock || ""
         );
         const sanitizedStateData = this.sanitizeStateDataWithCharacterEvidence(stateData, evidence);
+        sanitizedStateData.timeline = this.resolveTimelineForChapter(
+            chapterNumber,
+            sanitizedStateData,
+            chapter,
+            options.cleanedContent || ""
+        ) || sanitizedStateData.timeline || "";
         const outlineState = this.novelData.outline.story_state || {};
         outlineState.timeline = sanitizedStateData.timeline || outlineState.timeline || "";
         outlineState.current_location = sanitizedStateData.current_location || outlineState.current_location || "";
