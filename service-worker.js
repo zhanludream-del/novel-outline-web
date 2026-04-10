@@ -1,16 +1,16 @@
-const CACHE_NAME = "novel-outline-web-v13";
+const CACHE_NAME = "novel-outline-web-v14";
 const ASSETS = [
   "./",
   "./index.html",
-  "./manifest.webmanifest?v=20260410g",
-  "./css/style.css?v=20260410g",
-  "./css/mobile.css?v=20260410g",
-  "./js/config.js?v=20260410g",
-  "./js/storage.js?v=20260410g",
-  "./js/utils.js?v=20260410g",
-  "./js/api.js?v=20260410g",
-  "./js/generator.js?v=20260410g",
-  "./js/app.js?v=20260410g",
+  "./manifest.webmanifest?v=20260410i",
+  "./css/style.css?v=20260410i",
+  "./css/mobile.css?v=20260410i",
+  "./js/config.js?v=20260410i",
+  "./js/storage.js?v=20260410i",
+  "./js/utils.js?v=20260410i",
+  "./js/api.js?v=20260410i",
+  "./js/generator.js?v=20260410i",
+  "./js/app.js?v=20260410i",
   "./icons/app-icon.svg",
   "./prompts/prompt-manifest.json",
   "./prompts/11111.txt"

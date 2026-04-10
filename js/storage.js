@@ -337,21 +337,19 @@ class StorageManager {
 
     collectExplicitlyClearedChapterKeys(data) {
         const clearedKeys = new Set();
-        const topLevelChapters = data?.chapters && typeof data.chapters === "object" ? data.chapters : {};
-        const generatedChapterTexts = data?.generatedChapterTexts && typeof data.generatedChapterTexts === "object"
-            ? data.generatedChapterTexts
-            : {};
         (((data || {}).outline || {}).volumes || []).forEach((volume) => {
             (volume.chapters || []).forEach((chapter) => {
                 if (!chapter || typeof chapter !== "object") {
                     return;
                 }
                 const inlineContent = String(chapter.content || "").trim();
-                const mirrorKeys = [chapter.uuid, chapter.id].filter(Boolean);
-                const hasMirroredContent = mirrorKeys.some((key) =>
-                    String(topLevelChapters[key] || generatedChapterTexts[key] || "").trim()
-                );
-                if ((chapter.content_cleared === true || chapter.contentCleared === true) && !inlineContent && !hasMirroredContent) {
+                const clearedAt = String(chapter.content_cleared_at || chapter.contentClearedAt || "").trim();
+                const isExplicitlyCleared = (
+                    chapter.content_cleared === true
+                    || chapter.contentCleared === true
+                    || Boolean(clearedAt)
+                ) && !inlineContent;
+                if (isExplicitlyCleared) {
                     [chapter.uuid, chapter.id].filter(Boolean).forEach((key) => clearedKeys.add(key));
                 }
             });
@@ -382,6 +380,12 @@ class StorageManager {
     normalizeChapter(chapter) {
         const chapterId = chapter.id || chapter.uuid || Utils.uid("chapter");
         const inlineContent = String(chapter.content || "").trim();
+        const clearedAt = String(chapter.content_cleared_at || chapter.contentClearedAt || "").trim();
+        const isExplicitlyCleared = (
+            chapter.content_cleared === true
+            || chapter.contentCleared === true
+            || Boolean(clearedAt)
+        ) && !inlineContent;
         return {
             ...chapter,
             id: chapterId,
@@ -389,8 +393,11 @@ class StorageManager {
             number: Number(chapter.number || chapter.chapter_number || 0) || 0,
             title: chapter.title || "",
             summary: chapter.summary || chapter.synopsis || "",
-            content: chapter.content || "",
-            content_cleared: (chapter.content_cleared === true || chapter.contentCleared === true) && !inlineContent,
+            content: isExplicitlyCleared ? "" : (chapter.content || ""),
+            content_cleared: isExplicitlyCleared,
+            contentCleared: isExplicitlyCleared,
+            content_cleared_at: isExplicitlyCleared ? clearedAt : "",
+            contentClearedAt: isExplicitlyCleared ? clearedAt : "",
             chapter_setting_note: chapter.chapter_setting_note || "",
             keyEvent: chapter.keyEvent || chapter.key_event || "",
             emotionCurve: chapter.emotionCurve || chapter.emotion_curve || "",
@@ -484,25 +491,19 @@ class StorageManager {
         (data.outline.volumes || []).forEach((volume) => {
             (volume.chapters || []).forEach((chapter) => {
                 const mirrorKeys = [chapter.uuid, chapter.id].filter(Boolean);
-                const isExplicitlyCleared = mirrorKeys.some((key) => explicitlyClearedChapterKeys.has(key));
+                const inlineContent = String(chapter.content || "").trim();
+                const clearedAt = String(chapter.content_cleared_at || chapter.contentClearedAt || "").trim();
+                const isExplicitlyCleared = mirrorKeys.some((key) => explicitlyClearedChapterKeys.has(key))
+                    || (
+                        (chapter.content_cleared === true || chapter.contentCleared === true || Boolean(clearedAt))
+                        && !inlineContent
+                    );
                 if (isExplicitlyCleared) {
                     chapter.content = "";
                     chapter.content_cleared = true;
-                }
-                const mirroredContent = mirrorKeys
-                    .map((key) => String(topLevelChapters[key] || generatedChapterTexts[key] || "").trim())
-                    .find(Boolean) || "";
-                if (!isExplicitlyCleared && !chapter.content && mirroredContent) {
-                    chapter.content = mirroredContent;
-                    chapter.content_cleared = false;
-                }
-                if (chapter.content) {
-                    chapter.content_cleared = false;
-                    mirrorKeys.forEach((key) => {
-                        topLevelChapters[key] = chapter.content;
-                        generatedChapterTexts[key] = chapter.content;
-                    });
-                } else if (isExplicitlyCleared) {
+                    chapter.contentCleared = true;
+                    chapter.content_cleared_at = clearedAt;
+                    chapter.contentClearedAt = clearedAt;
                     mirrorKeys.forEach((key) => {
                         if (Object.prototype.hasOwnProperty.call(topLevelChapters, key)) {
                             delete topLevelChapters[key];
@@ -510,6 +511,27 @@ class StorageManager {
                         if (Object.prototype.hasOwnProperty.call(generatedChapterTexts, key)) {
                             delete generatedChapterTexts[key];
                         }
+                    });
+                    return;
+                }
+                const mirroredContent = mirrorKeys
+                    .map((key) => String(topLevelChapters[key] || generatedChapterTexts[key] || "").trim())
+                    .find(Boolean) || "";
+                if (!chapter.content && mirroredContent) {
+                    chapter.content = mirroredContent;
+                    chapter.content_cleared = false;
+                    chapter.contentCleared = false;
+                    chapter.content_cleared_at = "";
+                    chapter.contentClearedAt = "";
+                }
+                if (chapter.content) {
+                    chapter.content_cleared = false;
+                    chapter.contentCleared = false;
+                    chapter.content_cleared_at = "";
+                    chapter.contentClearedAt = "";
+                    mirrorKeys.forEach((key) => {
+                        topLevelChapters[key] = chapter.content;
+                        generatedChapterTexts[key] = chapter.content;
                     });
                 }
             });

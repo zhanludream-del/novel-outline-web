@@ -265,7 +265,7 @@ class NovelOutlineWebApp {
 
         const params = new URLSearchParams(window.location.search);
         const urlVersion = params.get("v");
-        const buildVersion = "2026.04.10-g";
+        const buildVersion = "2026.04.10-i";
         const label = urlVersion ? `版本 ${urlVersion}` : `版本 ${buildVersion}`;
 
         this.elements.appVersionChip.textContent = label;
@@ -3289,7 +3289,7 @@ ${(detailedOutline || concept || "未填写").slice(0, 2200)}`;
         if (!("serviceWorker" in navigator) || !window.isSecureContext && location.hostname !== "127.0.0.1" && location.hostname !== "localhost") {
             return;
         }
-        navigator.serviceWorker.register("service-worker.js?v=20260410g", { updateViaCache: "none" }).then((registration) => {
+        navigator.serviceWorker.register("service-worker.js?v=20260410i", { updateViaCache: "none" }).then((registration) => {
             registration.update().catch(() => {});
         }).catch(() => {});
     }
@@ -3443,7 +3443,16 @@ ${(detailedOutline || concept || "未填写").slice(0, 2200)}`;
             title: nextTitle,
             summary: nextSummary,
             content: String(chapter.content || storedContent || "").trim(),
-            content_cleared: !String(chapter.content || storedContent || "").trim() && chapter.content_cleared === true,
+            content_cleared: !String(chapter.content || storedContent || "").trim()
+                && (chapter.content_cleared === true || chapter.contentCleared === true),
+            contentCleared: !String(chapter.content || storedContent || "").trim()
+                && (chapter.content_cleared === true || chapter.contentCleared === true),
+            content_cleared_at: !String(chapter.content || storedContent || "").trim()
+                ? String(chapter.content_cleared_at || chapter.contentClearedAt || "").trim()
+                : "",
+            contentClearedAt: !String(chapter.content || storedContent || "").trim()
+                ? String(chapter.content_cleared_at || chapter.contentClearedAt || "").trim()
+                : "",
             updatedAt: new Date().toISOString()
         };
 
@@ -3453,6 +3462,12 @@ ${(detailedOutline || concept || "未填写").slice(0, 2200)}`;
                 this.novelData.chapters[key] = updatedChapter.content;
                 this.novelData.generatedChapterTexts[key] = updatedChapter.content;
             });
+        } else if (
+            updatedChapter.content_cleared === true
+            || updatedChapter.contentCleared === true
+            || String(updatedChapter.content_cleared_at || updatedChapter.contentClearedAt || "").trim()
+        ) {
+            this.clearStoredChapterMirrors(updatedChapter);
         }
 
         if (this.state.selectedChapterId === updatedChapter.id) {
@@ -3750,13 +3765,28 @@ ${(detailedOutline || concept || "未填写").slice(0, 2200)}`;
                     .map((key) => String(this.novelData.chapters?.[key] || this.novelData.generatedChapterTexts?.[key] || "").trim())
                     .find(Boolean) || "";
                 if (chapterContent) {
+                    chapter.content_cleared = false;
+                    chapter.contentCleared = false;
+                    chapter.content_cleared_at = "";
+                    chapter.contentClearedAt = "";
                     mirrorKeys.forEach((key) => {
                         this.novelData.chapters[key] = chapterContent;
                         this.novelData.generatedChapterTexts[key] = chapterContent;
                     });
                     return;
                 }
-                if (chapter.content_cleared === true && !mirroredContent) {
+                const clearedAt = String(chapter.content_cleared_at || chapter.contentClearedAt || "").trim();
+                const isExplicitlyCleared = (
+                    chapter.content_cleared === true
+                    || chapter.contentCleared === true
+                    || Boolean(clearedAt)
+                ) && !chapterContent;
+                if (isExplicitlyCleared) {
+                    chapter.content = "";
+                    chapter.content_cleared = true;
+                    chapter.contentCleared = true;
+                    chapter.content_cleared_at = clearedAt;
+                    chapter.contentClearedAt = clearedAt;
                     mirrorKeys.forEach((key) => {
                         if (Object.prototype.hasOwnProperty.call(this.novelData.chapters, key)) {
                             delete this.novelData.chapters[key];
@@ -3770,6 +3800,9 @@ ${(detailedOutline || concept || "未填写").slice(0, 2200)}`;
                 if (mirroredContent) {
                     chapter.content = mirroredContent;
                     chapter.content_cleared = false;
+                    chapter.contentCleared = false;
+                    chapter.content_cleared_at = "";
+                    chapter.contentClearedAt = "";
                     mirrorKeys.forEach((key) => {
                         this.novelData.chapters[key] = mirroredContent;
                         this.novelData.generatedChapterTexts[key] = mirroredContent;
@@ -5665,9 +5698,16 @@ ${(detailedOutline || concept || "未填写").slice(0, 2200)}`;
         this.elements.chapterSummaryInput.value = chapter.summary || "";
         this.elements.chapterSettingNoteInput.value = chapter.chapter_setting_note || "";
         const storedContent = this.getStoredChapterContent(chapter);
-        if (!chapter.content && storedContent) {
+        if (
+            !chapter.content
+            && !chapter.content_cleared
+            && !chapter.contentCleared
+            && !String(chapter.content_cleared_at || chapter.contentClearedAt || "").trim()
+            && storedContent
+        ) {
             chapter.content = storedContent;
             chapter.content_cleared = false;
+            chapter.contentCleared = false;
         }
         this.elements.chapterContentInput.value = storedContent;
         this.renderChapterContextPreview(chapter);
@@ -5872,6 +5912,7 @@ ${(detailedOutline || concept || "未填写").slice(0, 2200)}`;
             item.id === this.state.selectedChapterId || Number(item.number || 0) === number
         ) || {};
         const incomingContent = this.elements.chapterContentInput.value.trim();
+        const clearedAt = !incomingContent ? new Date().toISOString() : "";
         const chapter = {
             ...existing,
             id: this.state.selectedChapterId || existing.id || Utils.uid("chapter"),
@@ -5881,6 +5922,9 @@ ${(detailedOutline || concept || "未填写").slice(0, 2200)}`;
             chapter_setting_note: this.elements.chapterSettingNoteInput.value.trim(),
             content: incomingContent,
             content_cleared: !incomingContent,
+            contentCleared: !incomingContent,
+            content_cleared_at: clearedAt,
+            contentClearedAt: clearedAt,
             updatedAt: new Date().toISOString()
         };
 
@@ -5967,6 +6011,9 @@ ${(detailedOutline || concept || "未填写").slice(0, 2200)}`;
         }));
         chapter.content = "";
         chapter.content_cleared = true;
+        chapter.contentCleared = true;
+        chapter.content_cleared_at = new Date().toISOString();
+        chapter.contentClearedAt = chapter.content_cleared_at;
         chapter.updatedAt = new Date().toISOString();
         this.clearStoredChapterMirrors(chapter);
 
@@ -7524,6 +7571,13 @@ ${(detailedOutline || concept || "未填写").slice(0, 2200)}`;
     }
 
     getStoredChapterContent(chapter = {}) {
+        if (
+            chapter.content_cleared === true
+            || chapter.contentCleared === true
+            || String(chapter.content_cleared_at || chapter.contentClearedAt || "").trim()
+        ) {
+            return "";
+        }
         const mirrorKeys = [chapter.uuid, chapter.id].filter(Boolean);
         const mirrored = mirrorKeys
             .map((key) => this.novelData.chapters?.[key] || this.novelData.generatedChapterTexts?.[key] || "")
