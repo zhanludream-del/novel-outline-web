@@ -3571,7 +3571,8 @@ ${(detailedOutline || concept || "未填写").slice(0, 2200)}`;
         }
         const cleanupResult = this.cleanupOrphanedCharacterArtifacts({
             candidateNames: removedNames,
-            forceRemovedNames: removedCharacters
+            forceRemovedNames: removedCharacters,
+            preserveSummarySource: true
         });
         this.state.selectedCharacterIds = new Set();
         this.persist(true);
@@ -8301,6 +8302,7 @@ ${(detailedOutline || concept || "未填写").slice(0, 2200)}`;
             : new Set(options.excludedChapterIds || []);
         let changedCount = 0;
         const changedChapterNumbers = [];
+        const preserveSummarySource = options.preserveSummarySource !== false;
 
         this.iterateAllChapters((chapter) => {
             if (!chapter || excludedChapterIds.has(chapter.id)) {
@@ -8319,10 +8321,12 @@ ${(detailedOutline || concept || "未填写").slice(0, 2200)}`;
                 changed = true;
             }
 
-            const nextSummary = this.purgeRemovedCharacterNamesFromSummary(chapter.summary || "", removedSet);
-            if (nextSummary !== String(chapter.summary || "").trim()) {
-                chapter.summary = nextSummary;
-                changed = true;
+            if (!preserveSummarySource) {
+                const nextSummary = this.purgeRemovedCharacterNamesFromSummary(chapter.summary || "", removedSet);
+                if (nextSummary !== String(chapter.summary || "").trim()) {
+                    chapter.summary = nextSummary;
+                    changed = true;
+                }
             }
 
             if (changed) {
@@ -8527,7 +8531,8 @@ ${(detailedOutline || concept || "未填写").slice(0, 2200)}`;
         this.novelData.synopsis_data = JSON.parse(JSON.stringify(synopsisData));
         this.rebuildUsedExtraCharacters();
         const outlineResidueCleanup = this.purgeRemovedCharacterResidueFromChapterOutlines(removedNames, {
-            excludedChapterIds: options.excludedChapterIds
+            excludedChapterIds: options.excludedChapterIds,
+            preserveSummarySource: options.preserveSummarySource
         });
         const finalSanitize = this.sanitizeSynopsisCharacterCaches({
             referenceSnapshot: this.buildCharacterCleanupReferenceSnapshot({
@@ -12562,7 +12567,8 @@ ${(detailedOutline || concept || "未填写").slice(0, 2200)}`;
         }
         const cleanupResult = this.cleanupOrphanedCharacterArtifacts({
             candidateNames: [character?.name || character?.["角色名"] || ""],
-            forceRemovedNames: [character]
+            forceRemovedNames: [character],
+            preserveSummarySource: true
         });
         this.persist(true);
         this.renderCharacterList();
