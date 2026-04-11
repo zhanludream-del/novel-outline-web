@@ -6496,8 +6496,118 @@ ${(detailedOutline || concept || "未填写").slice(0, 2200)}`;
     extractStateStructuredField(text, aliases = []) {
         return this.pickFirstNonEmptyValue(
             this.extractStateJsonField(text, aliases, "{", "}"),
-            this.extractStateJsonField(text, aliases, "[", "]")
+            this.extractStateJsonField(text, aliases, "[", "]"),
+            this.extractStateLooseStructuredField(text, aliases, "{", "}"),
+            this.extractStateLooseStructuredField(text, aliases, "[", "]")
         );
+    }
+
+    getStateTopLevelAliasGroups() {
+        return [
+            ["timeline", "current_time", "currentTime", "time", "时间", "当前时间", "当前时间点", "时间点"],
+            ["current_location", "currentLocation", "location", "current_place", "位置", "当前位置", "当前地点", "地点", "所在位置", "当前所在地"],
+            ["important_items", "importantItems", "items", "重要物品", "关键物品", "物品变化"],
+            ["pending_plots", "pendingPlot", "pending_plot", "next_tasks", "todo", "待推进事项", "未完事项", "待处理事项", "后续任务", "待办", "后续安排"],
+            ["key_event", "keyEvent", "core_event", "main_event", "关键事件", "核心事件", "关键信息", "本章关键事件"],
+            ["genre_progress", "genreProgress", "题材进度", "进度变化"],
+            ["world_changes", "worldChanges", "世界变化", "世界状态"],
+            ["time_constraints", "timeConstraints", "时间约束", "倒计时"],
+            ["resolved_countdowns", "resolvedCountdowns", "resolved_timers", "resolvedTimers", "已结束倒计时", "已触发倒计时", "结束的倒计时"],
+            ["item_updates", "itemUpdates", "物品更新"],
+            ["appearance_changes", "appearanceChanges", "外貌变化", "形象变化"],
+            ["characters", "character_states", "characterStates", "角色状态", "人物状态"],
+            ["story_state", "storyState", "state", "故事状态", "状态"]
+        ];
+    }
+
+    buildStateAliasHeadPattern(aliases = []) {
+        const validAliases = Array.from(new Set((aliases || []).map((alias) => String(alias || "").trim()).filter(Boolean)));
+        if (!validAliases.length) {
+            return null;
+        }
+        return new RegExp(
+            `(?:^|\\n)\\s*(?:["'](?:${validAliases.map((alias) => this.escapeRegExp(alias)).join("|")})["']|(?:${validAliases.map((alias) => this.escapeRegExp(alias)).join("|")}))\\s*[:：]`,
+            "u"
+        );
+    }
+
+    findNextTopLevelStateFieldIndex(source, fromIndex = 0, currentAliases = []) {
+        const text = String(source || "");
+        const aliasGroups = this.getStateTopLevelAliasGroups();
+        let nextIndex = -1;
+
+        aliasGroups.forEach((group) => {
+            const otherAliases = group.filter((alias) => !(currentAliases || []).includes(alias));
+            const pattern = this.buildStateAliasHeadPattern(otherAliases);
+            if (!pattern) {
+                return;
+            }
+            const match = pattern.exec(text.slice(fromIndex));
+            if (!match) {
+                return;
+            }
+            const absoluteIndex = fromIndex + match.index + (match[0].startsWith("\n") ? 1 : 0);
+            if (nextIndex === -1 || absoluteIndex < nextIndex) {
+                nextIndex = absoluteIndex;
+            }
+        });
+
+        return nextIndex;
+    }
+
+    extractStateLooseStructuredField(text, aliases = [], openChar = "{", closeChar = "}") {
+        const source = String(text || "");
+        if (!source) {
+            return null;
+        }
+
+        for (const alias of aliases) {
+            const headPattern = new RegExp(
+                `(?:^|\\n)\\s*(?:["']${this.escapeRegExp(alias)}["']|${this.escapeRegExp(alias)})\\s*[:：]\\s*`,
+                "u"
+            );
+            const headMatch = headPattern.exec(source);
+            if (!headMatch) {
+                continue;
+            }
+
+            const valueStart = headMatch.index + headMatch[0].length;
+            const firstOpen = source.indexOf(openChar, valueStart);
+            if (firstOpen < 0) {
+                continue;
+            }
+
+            const balanced = Utils.extractBalancedJson(source.slice(firstOpen), openChar, closeChar);
+            if (balanced) {
+                const parsedBalanced = Utils.parseJsonResponse(balanced);
+                if (parsedBalanced != null) {
+                    return parsedBalanced;
+                }
+            }
+
+            const nextFieldIndex = this.findNextTopLevelStateFieldIndex(source, firstOpen + 1, aliases);
+            const chunkEnd = nextFieldIndex > firstOpen ? nextFieldIndex : source.length;
+            let chunk = source.slice(firstOpen, chunkEnd).trim();
+            if (!chunk) {
+                continue;
+            }
+
+            chunk = chunk
+                .replace(/,\s*$/, "")
+                .replace(/[，、；;]\s*$/, "")
+                .trim();
+
+            if (!chunk.endsWith(closeChar)) {
+                chunk = `${chunk}${closeChar}`;
+            }
+
+            const parsed = Utils.parseJsonResponse(chunk);
+            if (parsed != null) {
+                return parsed;
+            }
+        }
+
+        return null;
     }
 
     pickFirstStateString(candidates = [], rawText = "", aliases = []) {
