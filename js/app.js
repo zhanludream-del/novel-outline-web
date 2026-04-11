@@ -428,6 +428,7 @@ class NovelOutlineWebApp {
         this.novelData.outline_plot_unit_manager.next_id = Number(this.novelData.outline_plot_unit_manager.next_id || 1);
         this.ensureVolumeCount(Number(this.novelData.synopsisData.volumeCount || 5), false);
         this.rebuildPlotUnitManager(false);
+        this.sanitizeSynopsisCharacterCaches();
         this.syncWorldStateManager();
     }
 
@@ -3374,8 +3375,14 @@ ${(detailedOutline || concept || "未填写").slice(0, 2200)}`;
             this.elements.projectVolumeCount.value = this.novelData.synopsisData.volumeCount;
             this.state.selectedChapterId = null;
             this.clearChapterEditor();
+            const cleanupResult = this.cleanupOrphanedCharacterArtifacts({
+                protectedNames: new Set()
+            });
             this.persist(true);
             this.renderAll();
+            if (cleanupResult.changed) {
+                Utils.log(`已按剩余卷数据清理角色/映射残留 ${cleanupResult.removedCount} 个。`, "info");
+            }
         }
     }
 
@@ -3551,16 +3558,33 @@ ${(detailedOutline || concept || "未填写").slice(0, 2200)}`;
             return;
         }
 
+        const removedCharacters = (this.novelData.outline.characters || [])
+            .filter((item) => this.state.selectedCharacterIds.has(item.id));
+        const removedNames = removedCharacters
+            .map((item) => item?.name || item?.["角色名"] || "")
+            .filter(Boolean);
         this.novelData.outline.characters = (this.novelData.outline.characters || []).filter(
             (item) => !this.state.selectedCharacterIds.has(item.id)
         );
         if (this.state.editingCharacterId && this.state.selectedCharacterIds.has(this.state.editingCharacterId)) {
             this.resetCharacterForm();
         }
+        const cleanupResult = this.cleanupOrphanedCharacterArtifacts({
+            candidateNames: removedNames,
+            forceRemovedNames: removedCharacters
+        });
         this.state.selectedCharacterIds = new Set();
         this.persist(true);
         this.renderCharacterList();
+        this.renderChapterList();
         this.renderDashboard();
+        this.renderAdvancedState();
+        if (this.state.selectedChapterId) {
+            this.selectChapter(this.state.selectedChapterId);
+        }
+        if (cleanupResult.changed) {
+            Utils.log(`已在手动删角后同步清理映射/残留 ${cleanupResult.removedCount} 个。`, "info");
+        }
         Utils.showMessage(`已删除 ${selectedIds.length} 个人物。`, "success");
     }
 
@@ -3881,6 +3905,164 @@ ${(detailedOutline || concept || "未填写").slice(0, 2200)}`;
         synopsis.locked_character_names = {};
         synopsis.vague_to_name_mapping = {};
         synopsis.vague_supporting_roles = {};
+        this.novelData.synopsis_data = JSON.parse(JSON.stringify(synopsis));
+    }
+
+    snapshotSynopsisCharacterCaches() {
+        const synopsis = this.ensureSynopsisStores();
+        return JSON.stringify({
+            main_characters: synopsis.main_characters || {},
+            locked_character_names: synopsis.locked_character_names || {},
+            vague_to_name_mapping: synopsis.vague_to_name_mapping || {},
+            vague_supporting_roles: synopsis.vague_supporting_roles || {}
+        });
+    }
+
+    sanitizeSynopsisCharacterCaches(options = {}) {
+        const synopsis = this.ensureSynopsisStores();
+        const before = this.snapshotSynopsisCharacterCaches();
+
+        if (this.generator && typeof this.generator.restoreSynopsisMainCharacters === "function") {
+            this.generator.restoreSynopsisMainCharacters(this.novelData);
+        }
+
+        const referenceSnapshot = options.referenceSnapshot || this.buildCharacterCleanupReferenceSnapshot({
+            excludedChapterIds: options.excludedChapterIds
+        });
+        const projectTexts = Array.isArray(referenceSnapshot?.projectTexts)
+            ? referenceSnapshot.projectTexts
+                .map((item) => String(item || "").trim())
+                .filter(Boolean)
+            : [];
+        const canonicalizeName = (value) => {
+            const normalized = this.normalizeExtraCharacterNameCandidate(value)
+                || this.normalizeCharacterReferenceLabel(value)
+                || String(value || "").trim();
+            if (!normalized) {
+                return "";
+            }
+            return String(this.resolveKnownCharacterName(normalized || value) || normalized).trim();
+        };
+        const textIncludes = (value) => {
+            const cleanValue = String(value || "").trim();
+            if (!cleanValue) {
+                return false;
+            }
+            return projectTexts.some((text) => text.includes(cleanValue));
+        };
+        const cardNames = new Set();
+        if (!options.ignoreCharacterCards) {
+            (this.novelData.outline?.characters || []).forEach((character) => {
+                const canonical = canonicalizeName(character?.name || character?.["角色名"] || "");
+                if (canonical) {
+                    cardNames.add(canonical);
+                }
+            });
+            Object.entries(this.novelData.supporting_characters || {}).forEach(([name, value]) => {
+                const canonical = canonicalizeName(value?.name || value?.["角色名"] || name);
+                if (canonical) {
+                    cardNames.add(canonical);
+                }
+            });
+        }
+
+        const shouldKeepName = (value) => {
+            const canonical = canonicalizeName(value);
+            if (!canonical) {
+                return false;
+            }
+            if (cardNames.has(canonical)) {
+                return true;
+            }
+            return this.isCharacterNameReferencedInCleanupSnapshot(canonical, referenceSnapshot);
+        };
+
+        synopsis.main_characters = Object.fromEntries(
+            Object.entries(synopsis.main_characters || {})
+                .map(([role, name]) => [String(role || "").trim(), canonicalizeName(name)])
+                .filter(([, name]) => shouldKeepName(name))
+        );
+
+        const keptConcreteNames = new Set(
+            Object.values(synopsis.main_characters || {})
+                .map((name) => canonicalizeName(name))
+                .filter(Boolean)
+        );
+
+        synopsis.locked_character_names = Object.fromEntries(
+            Object.entries(synopsis.locked_character_names || {})
+                .map(([name, info]) => {
+                    const canonical = canonicalizeName(name);
+                    const aliases = Utils.ensureArrayFromText(info?.aliases || [])
+                        .map((alias) => String(alias || "").trim())
+                        .filter(Boolean);
+                    const keep = keptConcreteNames.has(canonical)
+                        || shouldKeepName(canonical)
+                        || aliases.some((alias) => textIncludes(alias));
+                    if (!keep || !canonical) {
+                        return null;
+                    }
+                    return [
+                        canonical,
+                        {
+                            ...(info && typeof info === "object" ? info : {}),
+                            aliases
+                        }
+                    ];
+                })
+                .filter(Boolean)
+        );
+
+        const keptLockedNames = new Set(
+            Object.keys(synopsis.locked_character_names || {})
+                .map((name) => canonicalizeName(name))
+                .filter(Boolean)
+        );
+        const keepMappedName = (value) => {
+            const canonical = canonicalizeName(value);
+            if (!canonical) {
+                return false;
+            }
+            return keptConcreteNames.has(canonical)
+                || keptLockedNames.has(canonical)
+                || cardNames.has(canonical)
+                || this.isCharacterNameReferencedInCleanupSnapshot(canonical, referenceSnapshot);
+        };
+
+        synopsis.vague_to_name_mapping = Object.fromEntries(
+            Object.entries(synopsis.vague_to_name_mapping || {})
+                .map(([alias, realName]) => [String(alias || "").trim(), canonicalizeName(realName)])
+                .filter(([alias, realName]) => alias && realName && textIncludes(alias) && keepMappedName(realName))
+        );
+
+        synopsis.vague_supporting_roles = Object.fromEntries(
+            Object.entries(synopsis.vague_supporting_roles || {})
+                .map(([term, info]) => {
+                    const cleanTerm = String(term || "").trim();
+                    if (!cleanTerm || !textIncludes(cleanTerm)) {
+                        return null;
+                    }
+                    const nextInfo = {
+                        ...(info && typeof info === "object" ? info : {})
+                    };
+                    const suggestedName = canonicalizeName(nextInfo.suggested_name || "");
+                    if (suggestedName && keepMappedName(suggestedName)) {
+                        nextInfo.suggested_name = suggestedName;
+                    } else {
+                        nextInfo.suggested_name = "";
+                        nextInfo.needs_name = true;
+                    }
+                    return [cleanTerm, nextInfo];
+                })
+                .filter(Boolean)
+        );
+
+        this.novelData.synopsisData = synopsis;
+        this.novelData.synopsis_data = JSON.parse(JSON.stringify(synopsis));
+
+        return {
+            changed: before !== this.snapshotSynopsisCharacterCaches()
+        };
     }
 
     clearSynopsisFromVolume(startVolumeNumber) {
@@ -3903,7 +4085,9 @@ ${(detailedOutline || concept || "未填写").slice(0, 2200)}`;
 
         this.rebuildSynopsisVolumeStore();
         this.syncGeneratedContexts();
-        this.pruneSynopsisCharacterCaches();
+        const cleanupResult = this.cleanupOrphanedCharacterArtifacts({
+            protectedNames: new Set()
+        });
 
         const currentVolumeNumber = Math.max(1, Number(synopsis.currentVolume || this.elements?.synopsisCurrentVolume?.value || 1) || 1);
         const currentVolume = volumes[currentVolumeNumber - 1];
@@ -3917,6 +4101,9 @@ ${(detailedOutline || concept || "未填写").slice(0, 2200)}`;
         }
         if (this.elements.synopsisOutput) {
             this.elements.synopsisOutput.value = currentSynopsisText;
+        }
+        if (cleanupResult.changed) {
+            Utils.log(`已按剩余细纲清理角色/映射残留 ${cleanupResult.removedCount} 个。`, "info");
         }
     }
 
@@ -4326,7 +4513,8 @@ ${(detailedOutline || concept || "未填写").slice(0, 2200)}`;
         volume.chapters = volume.chapters.filter((chapter) => !deleteSet.has(chapter.id));
         this.rollbackStateSystemsToChapter(start - 1);
         const cleanupResult = this.cleanupOrphanedCharacterArtifacts({
-            candidateNames: cleanupCandidates
+            candidateNames: cleanupCandidates,
+            protectedNames: new Set()
         });
         if (this.state.selectedChapterId && deleteSet.has(this.state.selectedChapterId)) {
             this.state.selectedChapterId = null;
@@ -4437,8 +4625,14 @@ ${(detailedOutline || concept || "未填写").slice(0, 2200)}`;
         this.clearChapterEditor();
         this.ensureVolumeCount(1, false);
         this.syncGeneratedContexts();
+        const cleanupResult = this.cleanupOrphanedCharacterArtifacts({
+            protectedNames: new Set()
+        });
         this.persist(true);
         this.renderAll();
+        if (cleanupResult.changed) {
+            Utils.log(`已按剩余数据清理角色/映射残留 ${cleanupResult.removedCount} 个。`, "info");
+        }
         Utils.showMessage("卷结构已清空。", "success");
     }
 
@@ -4516,8 +4710,14 @@ ${(detailedOutline || concept || "未填写").slice(0, 2200)}`;
         this.ensureVolumeCount(preservedVolumeCount, false);
         this.syncGeneratedContexts();
         this.novelData.synopsis_data = JSON.parse(JSON.stringify(this.novelData.synopsisData));
+        const cleanupResult = this.cleanupOrphanedCharacterArtifacts({
+            protectedNames: new Set()
+        });
         this.persist(true);
         this.renderAll();
+        if (cleanupResult.changed) {
+            Utils.log(`已按剩余卷纲清理角色/映射残留 ${cleanupResult.removedCount} 个。`, "info");
+        }
         Utils.showMessage("卷纲已清空。", "success");
     }
 
@@ -5488,7 +5688,7 @@ ${(detailedOutline || concept || "未填写").slice(0, 2200)}`;
                     progress: 96,
                     detail: `本次共完成 ${generatedAll.length} 章，正在补全人物设定`
                 });
-                await this.generateCharactersFromOutlines(volume.chapters || generatedAll, volumeNumber, false);
+                await this.generateCharactersFromOutlines(generatedAll, volumeNumber, false);
             }
 
             Utils.updateLoading("批量章纲生成完成", {
@@ -5612,7 +5812,8 @@ ${(detailedOutline || concept || "未填写").slice(0, 2200)}`;
         volume.chapters = volume.chapters.filter((chapter) => !deleteSet.has(chapter.id));
         this.rollbackStateSystemsToChapter(start - 1);
         const cleanupResult = this.cleanupOrphanedCharacterArtifacts({
-            candidateNames: cleanupCandidates
+            candidateNames: cleanupCandidates,
+            protectedNames: new Set()
         });
         if (this.state.selectedChapterId && deleteSet.has(this.state.selectedChapterId)) {
             this.state.selectedChapterId = null;
@@ -5970,7 +6171,8 @@ ${(detailedOutline || concept || "未填写").slice(0, 2200)}`;
         volume.chapters = volume.chapters.filter((chapter) => chapter.id !== this.state.selectedChapterId);
         this.rollbackStateSystemsToChapter(deletedChapterNumber - 1);
         const cleanupResult = this.cleanupOrphanedCharacterArtifacts({
-            candidateNames: cleanupCandidates
+            candidateNames: cleanupCandidates,
+            protectedNames: new Set()
         });
         this.state.selectedChapterId = null;
         this.clearChapterEditor();
@@ -6024,7 +6226,8 @@ ${(detailedOutline || concept || "未填写").slice(0, 2200)}`;
 
         this.rollbackStateSystemsToChapter(chapterNumber - 1);
         const cleanupResult = this.cleanupOrphanedCharacterArtifacts({
-            candidateNames: cleanupCandidates
+            candidateNames: cleanupCandidates,
+            protectedNames: new Set()
         });
         this.elements.chapterContentInput.value = "";
         this.persist(true);
@@ -7978,9 +8181,177 @@ ${(detailedOutline || concept || "未填写").slice(0, 2200)}`;
         return (snapshot?.projectTexts || []).some((text) => String(text || "").includes(cleanName));
     }
 
+    collectCanonicalCharacterCleanupNames(values = []) {
+        const result = new Set();
+        const addName = (value) => {
+            const normalized = this.normalizeExtraCharacterNameCandidate(value)
+                || this.normalizeCharacterReferenceLabel(value)
+                || String(value || "").trim();
+            if (!normalized) {
+                return;
+            }
+            const resolved = this.resolveKnownCharacterName(normalized || value);
+            if (resolved) {
+                result.add(String(resolved || "").trim());
+            }
+        };
+
+        const sourceValues = Array.isArray(values)
+            ? values
+            : values == null
+                ? []
+                : [values];
+        sourceValues.forEach((item) => {
+            if (!item) {
+                return;
+            }
+            if (typeof item === "string") {
+                addName(item);
+                return;
+            }
+            addName(item?.name || item?.["角色名"] || "");
+            this.getCharacterAliasSet(item).forEach(addName);
+        });
+
+        return result;
+    }
+
+    purgeRemovedCharacterNamesFromSummary(summary, removedNames = new Set()) {
+        const source = String(summary || "");
+        const removedSet = removedNames instanceof Set ? removedNames : new Set(removedNames || []);
+        if (!source.trim() || !removedSet.size || !source.includes("【出场人物】")) {
+            return source;
+        }
+
+        const lines = source.split(/\r?\n/);
+        const output = [];
+        let inCharacterSection = false;
+        let sectionHeader = "";
+        let sectionLines = [];
+
+        const shouldKeepCharacterLine = (line) => {
+            const trimmed = String(line || "").trim();
+            if (!trimmed) {
+                return true;
+            }
+            if (!trimmed.startsWith("-") && !trimmed.startsWith("•")) {
+                return true;
+            }
+            const item = trimmed.replace(/^[-•]\s*/, "");
+            const rawName = item.split(/[（(：:]/)[0]?.trim() || "";
+            const canonical = this.resolveKnownCharacterName(this.normalizeCharacterReferenceLabel(rawName) || rawName);
+            return !canonical || !removedSet.has(canonical);
+        };
+
+        const flushCharacterSection = () => {
+            if (!inCharacterSection) {
+                return;
+            }
+            const keptLines = sectionLines.filter(shouldKeepCharacterLine);
+            const hasCharacterLine = keptLines.some((line) => {
+                const trimmed = String(line || "").trim();
+                return trimmed.startsWith("-") || trimmed.startsWith("•");
+            });
+            if (hasCharacterLine) {
+                output.push(sectionHeader);
+                output.push(...keptLines);
+            }
+            inCharacterSection = false;
+            sectionHeader = "";
+            sectionLines = [];
+        };
+
+        lines.forEach((line) => {
+            const trimmed = String(line || "").trim();
+            if (trimmed.includes("【出场人物】")) {
+                flushCharacterSection();
+                inCharacterSection = true;
+                sectionHeader = line;
+                sectionLines = [];
+                return;
+            }
+            if (inCharacterSection && /^【/.test(trimmed)) {
+                flushCharacterSection();
+                output.push(line);
+                return;
+            }
+            if (inCharacterSection) {
+                sectionLines.push(line);
+                return;
+            }
+            output.push(line);
+        });
+
+        flushCharacterSection();
+        return output.join("\n").replace(/\n{3,}/g, "\n\n").trim();
+    }
+
+    purgeRemovedCharacterResidueFromChapterOutlines(removedNames = new Set(), options = {}) {
+        const removedSet = removedNames instanceof Set ? removedNames : new Set(removedNames || []);
+        if (!removedSet.size) {
+            return {
+                changed: false,
+                chapterCount: 0,
+                chapterNumbers: []
+            };
+        }
+
+        const excludedChapterIds = options.excludedChapterIds instanceof Set
+            ? options.excludedChapterIds
+            : new Set(options.excludedChapterIds || []);
+        let changedCount = 0;
+        const changedChapterNumbers = [];
+
+        this.iterateAllChapters((chapter) => {
+            if (!chapter || excludedChapterIds.has(chapter.id)) {
+                return;
+            }
+
+            let changed = false;
+            const nextCharacters = Utils.ensureArrayFromText(chapter.characters)
+                .map((name) => this.resolveKnownCharacterName(name))
+                .filter(Boolean)
+                .filter((name, index, list) => list.indexOf(name) === index)
+                .filter((name) => !removedSet.has(name));
+
+            if (JSON.stringify(nextCharacters) !== JSON.stringify(Utils.ensureArrayFromText(chapter.characters))) {
+                chapter.characters = nextCharacters;
+                changed = true;
+            }
+
+            const nextSummary = this.purgeRemovedCharacterNamesFromSummary(chapter.summary || "", removedSet);
+            if (nextSummary !== String(chapter.summary || "").trim()) {
+                chapter.summary = nextSummary;
+                changed = true;
+            }
+
+            if (changed) {
+                chapter.updatedAt = new Date().toISOString();
+                changedCount += 1;
+                const chapterNumber = Number(chapter.number || chapter.chapter_number || 0);
+                if (chapterNumber) {
+                    changedChapterNumbers.push(chapterNumber);
+                }
+            }
+        });
+
+        return {
+            changed: changedCount > 0,
+            chapterCount: changedCount,
+            chapterNumbers: changedChapterNumbers
+        };
+    }
+
     cleanupOrphanedCharacterArtifacts(options = {}) {
+        let referenceSnapshot = options.referenceSnapshot || this.buildCharacterCleanupReferenceSnapshot({
+            excludedChapterIds: options.excludedChapterIds
+        });
+        const initialSanitize = this.sanitizeSynopsisCharacterCaches({
+            referenceSnapshot,
+            excludedChapterIds: options.excludedChapterIds
+        });
         const synopsisData = this.novelData.synopsisData || this.novelData.synopsis_data || {};
-        const referenceSnapshot = options.referenceSnapshot || this.buildCharacterCleanupReferenceSnapshot({
+        referenceSnapshot = this.buildCharacterCleanupReferenceSnapshot({
             excludedChapterIds: options.excludedChapterIds
         });
         const protectedNames = options.protectedNames || this.buildProtectedCharacterNameSet();
@@ -7990,6 +8361,7 @@ ${(detailedOutline || concept || "未填写").slice(0, 2200)}`;
             : Array.isArray(options.candidateNames)
                 ? options.candidateNames
                 : [];
+        const forcedRemovedNames = this.collectCanonicalCharacterCleanupNames(options.forceRemovedNames || []);
         const aliasOwners = new Map();
         referenceSnapshot.registry?.forEach((entry, name) => {
             Array.from(entry?.aliases || []).forEach((alias) => {
@@ -8074,12 +8446,22 @@ ${(detailedOutline || concept || "未填写").slice(0, 2200)}`;
             }
             removedNames.add(name);
         });
+        forcedRemovedNames.forEach((name) => {
+            if (name) {
+                removedNames.add(name);
+            }
+        });
 
         if (!removedNames.size) {
+            const finalSanitize = this.sanitizeSynopsisCharacterCaches({
+                referenceSnapshot
+            });
             return {
-                changed: false,
+                changed: initialSanitize.changed || finalSanitize.changed,
                 removedCount: 0,
-                removedNames: []
+                removedNames: [],
+                cleanedChapters: 0,
+                cleanedChapterNumbers: []
             };
         }
 
@@ -8144,14 +8526,27 @@ ${(detailedOutline || concept || "未填写").slice(0, 2200)}`;
         this.novelData.synopsisData = synopsisData;
         this.novelData.synopsis_data = JSON.parse(JSON.stringify(synopsisData));
         this.rebuildUsedExtraCharacters();
+        const outlineResidueCleanup = this.purgeRemovedCharacterResidueFromChapterOutlines(removedNames, {
+            excludedChapterIds: options.excludedChapterIds
+        });
+        const finalSanitize = this.sanitizeSynopsisCharacterCaches({
+            referenceSnapshot: this.buildCharacterCleanupReferenceSnapshot({
+                excludedChapterIds: options.excludedChapterIds
+            })
+        });
         this.ensureWorldStateManager();
         this.syncWorldStateManager();
 
         return {
-            changed: originalOutlineCount !== this.novelData.outline.characters.length
+            changed: initialSanitize.changed
+                || finalSanitize.changed
+                || outlineResidueCleanup.changed
+                || originalOutlineCount !== this.novelData.outline.characters.length
                 || removedNames.size > 0,
             removedCount: removedNames.size,
-            removedNames: Array.from(removedNames)
+            removedNames: Array.from(removedNames),
+            cleanedChapters: outlineResidueCleanup.chapterCount,
+            cleanedChapterNumbers: outlineResidueCleanup.chapterNumbers
         };
     }
 
@@ -12165,9 +12560,21 @@ ${(detailedOutline || concept || "未填写").slice(0, 2200)}`;
         if (this.state.editingCharacterId === characterId) {
             this.resetCharacterForm();
         }
+        const cleanupResult = this.cleanupOrphanedCharacterArtifacts({
+            candidateNames: [character?.name || character?.["角色名"] || ""],
+            forceRemovedNames: [character]
+        });
         this.persist(true);
         this.renderCharacterList();
+        this.renderChapterList();
         this.renderDashboard();
+        this.renderAdvancedState();
+        if (this.state.selectedChapterId) {
+            this.selectChapter(this.state.selectedChapterId);
+        }
+        if (cleanupResult.changed) {
+            Utils.log(`已在手动删角后同步清理映射/残留 ${cleanupResult.removedCount} 个。`, "info");
+        }
         Utils.showMessage("人物已删除。", "success");
     }
 
