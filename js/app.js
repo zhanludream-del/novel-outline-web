@@ -9269,6 +9269,15 @@ ${(detailedOutline || concept || "未填写").slice(0, 2200)}`;
         return items.join("；");
     }
 
+    extractSummarySection(summary, sectionTitle) {
+        const text = String(summary || "");
+        if (!text.trim()) {
+            return "";
+        }
+        const match = text.match(new RegExp(`【${sectionTitle}】([\\s\\S]*?)(?=\\n【|$)`));
+        return match?.[1] ? String(match[1]).trim() : "";
+    }
+
     recordTimelineUpdate(chapterNumber, stateData, chapter = null, options = {}) {
         const tracker = this.novelData.timeline_tracker || (this.novelData.timeline_tracker = {});
         const previousTime = String(tracker.current_time || this.getPreviousChapterTimeline(chapterNumber) || "").trim();
