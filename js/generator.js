@@ -2074,6 +2074,11 @@
     async generateChapterOutlinesBatch({ project, volume, volumeNumber, startChapter, endChapter, existingChapters }) {
         const existingSummary = this.buildOutlineFrontContext(project, volumeNumber, startChapter, existingChapters);
         const existingEventsContext = this.buildExistingOutlineEventsContext(project, volumeNumber, startChapter, existingChapters);
+        const normalizedVolumeSummary = this.normalizeSynopsisReferenceText(project, volume.summary || "");
+        const normalizedVolumeChapterSynopsis = this.normalizeSynopsisReferenceText(
+            project,
+            volume.chapterSynopsis || volume.chapter_synopsis || ""
+        );
 
         const characterDigest = this.buildRelevantCharactersInfo(project.outline.characters || []);
         const guardContext = this.buildGenerationGuards(project, volumeNumber, startChapter);
@@ -2081,7 +2086,7 @@
         const setupContinuityGuard = this.buildSetupContinuityGuard(project, volumeNumber, startChapter);
         const consistencyContext = this.buildCharacterConsistencyContext(
             project,
-            `${volume.summary || ""}\n${volume.chapterSynopsis || volume.chapter_synopsis || ""}`,
+            `${normalizedVolumeSummary}\n${normalizedVolumeChapterSynopsis}`,
             startChapter
         );
         const outlineSlice = this.extractCurrentVolumeOutlineContext(project, volumeNumber);
@@ -2126,8 +2131,8 @@
             plotUnitReport,
             plotUnitSuggestions,
             `当前卷：第${volumeNumber}卷 ${volume.title || ""}`,
-            `当前卷摘要：${volume.summary || "暂无"}`,
-            `当前卷章节细纲：${volume.chapterSynopsis || volume.chapter_synopsis || "暂无"}`,
+            `当前卷摘要：${normalizedVolumeSummary || "暂无"}`,
+            `当前卷章节细纲：${normalizedVolumeChapterSynopsis || "暂无"}`,
             characterDigest ? `【已有角色与人设】\n${characterDigest}` : "",
             existingSummary ? `【前情提要】\n${existingSummary}` : "",
             existingEventsContext,
@@ -2241,6 +2246,7 @@
             : "暂无已有角色";
 
         const exampleChar = {
+            source_label: "输入中的角色标签",
             name: "角色名",
             identity: "身份定位",
             age: "年龄",
@@ -2263,6 +2269,11 @@
 
         const CHAR_BATCH_SIZE = 8;
         const allCharacters = [];
+        const generatedNameSet = new Set(
+            existingCharacters
+                .map((character) => this.normalizeOutlineCharacterLabel(character?.name || ""))
+                .filter(Boolean)
+        );
         const totalBatches = Math.max(1, Math.ceil(rawItems.length / CHAR_BATCH_SIZE));
 
         for (let batchStart = 0; batchStart < rawItems.length; batchStart += CHAR_BATCH_SIZE) {
@@ -2271,15 +2282,24 @@
             const batchStr = batchItems.map(([label, meta]) => {
                 const detail = meta && typeof meta === "object"
                     ? meta
-                    : { description: String(meta || "").trim(), needsNaming: false, aliases: [] };
+                    : { description: String(meta || "").trim(), needsNaming: false, aliases: [], evidenceLines: [] };
                 const desc = String(detail.description || "").trim();
                 const aliasText = Array.isArray(detail.aliases) && detail.aliases.length
-                    ? `；原称呼/别名：${detail.aliases.join("、")}`
+                    ? `原称呼/别名：${detail.aliases.join("、")}`
+                    : "";
+                const evidenceText = Array.isArray(detail.evidenceLines) && detail.evidenceLines.length
+                    ? `章节证据：${detail.evidenceLines.slice(0, 3).join(" | ")}`
                     : "";
                 const namingHint = detail.needsNaming
-                    ? "；【需要先起一个具体中文名字，禁止继续用模糊称呼做name，并把原称呼写入aliases】"
+                    ? "【需要先起一个具体中文名字，禁止继续用模糊称呼做name，并把原称呼写入aliases】"
                     : "";
-                return `- ${label}${desc ? `（${desc}）` : ""}${aliasText}${namingHint}`;
+                return [
+                    `- source_label: ${label}`,
+                    desc ? `  角色备注：${desc}` : "",
+                    aliasText ? `  ${aliasText}` : "",
+                    evidenceText ? `  ${evidenceText}` : "",
+                    namingHint ? `  ${namingHint}` : ""
+                ].filter(Boolean).join("\n");
             }).join("\n");
 
             if (typeof onProgress === "function") {
@@ -2317,24 +2337,28 @@
                 "",
                 "【严格要求】",
                 `1. 输出必须是 JSON 数组，包含 ${batchItems.length} 个角色对象。`,
-                "2. 每个角色必须包含所有字段：name, identity, age, gender, personality, background, appearance, abilities, goals, relationships 以及对应中文字段。",
-                "3. personality / 性格特点：必须包含核心性格特点，字数不少于30字。",
-                "4. background / 背景故事：必须包含核心冲突和与故事的关联，字数不少于50字。",
-                "5. appearance / 外貌描述：必须有画面感，字数不少于30字。",
-                "6. 关系一致性极其重要：新角色的身份和背景必须与已有角色保持逻辑一致。",
-                "7. 若已有角色设定了某个地位，新角色不能无故取代，必须在 relationships 字段中明确说明与已有角色的关系。",
-                "8. 角色设定必须符合当前小说的世界观和剧情发展。",
-                "9. 各角色之间要有差异化，避免雷同。",
-                "10. 如果输入项本身已经是明确实名，必须保留原名字，不得擅自改名；如果已有别名或常见称呼，请写入 aliases / 别名 字段。",
-                "11. 如果新角色和已有角色存在亲属、师门、敌对、上下级、旧识关系，必须在 relationships 字段中写清楚。",
-                "12. 不要让新角色无故顶替已有角色的重要身份，也不要把已有角色的别名重复发给其他人。",
-                "13. 如果输入项是“主角、女主、男主、龙神、审判官、同事A、某助理”这类模糊称呼或占位称呼，且尚未锁定实名，你必须在本次输出里直接起一个具体中文名字。",
-                "14. 对这类待命名角色，name 字段绝对不能继续写成原称呼、代称、占位符、编号后缀或模糊身份词；原称呼只能放进 aliases / 别名。",
-                "15. 如果某个模糊称呼其实已经对应已有角色，必须沿用已有名字，不能重复造一个新角色。",
-                "16. 诸如“同事A、同事B、秘书甲、助理乙、主角、女主、男主、他、她、这人、那人、黑衣审判官”都不能直接出现在 name 字段。",
-                "17. relationships / 人物关系 只能写与已有实名角色或明确角色的关系，尽量压缩成 1-3 条短句，例如“林书音的继姐（敌对）”“李桂香的女儿（同伙）”。",
-                "18. 禁止把大段背景故事、剧情经过、心理活动塞进 relationships 字段；关系字段不能自相矛盾，也不能同时把一个角色写成两种冲突身份。",
-                "19. 不要包含任何 markdown 标记，直接返回纯 JSON 数组。",
+                "2. 每个角色对象都必须包含 source_label，并且该值必须与输入中的 source_label 完全一致。",
+                "3. 每个角色必须包含所有字段：source_label, name, identity, age, gender, personality, background, appearance, abilities, goals, relationships 以及对应中文字段。",
+                "4. source_label 只用于对齐输入角色，禁止改写、翻译、增删字、换成别名。",
+                "5. 严禁把一个角色的身份、别名、部下、生父/生母、子嗣、伴侣、功法、背景经历写到另一个角色身上。",
+                "6. 如果章节证据已经明确了角色的亲属关系、主从关系、第一次出场剧情，必须以证据为准，不得自行改父母、改身份、改阵营。",
+                "7. personality / 性格特点：必须包含核心性格特点，字数不少于30字。",
+                "8. background / 背景故事：必须包含核心冲突和与故事的关联，字数不少于50字。",
+                "9. appearance / 外貌描述：必须有画面感，字数不少于30字。",
+                "10. 关系一致性极其重要：新角色的身份和背景必须与已有角色保持逻辑一致。",
+                "11. 若已有角色设定了某个地位，新角色不能无故取代，必须在 relationships 字段中明确说明与已有角色的关系。",
+                "12. 角色设定必须符合当前小说的世界观和剧情发展。",
+                "13. 各角色之间要有差异化，避免雷同。",
+                "14. 如果输入项本身已经是明确实名，必须保留原名字，不得擅自改名；如果已有别名或常见称呼，请写入 aliases / 别名 字段。",
+                "15. 如果新角色和已有角色存在亲属、师门、敌对、上下级、旧识关系，必须在 relationships 字段中写清楚。",
+                "16. 不要让新角色无故顶替已有角色的重要身份，也不要把已有角色的别名重复发给其他人。",
+                "17. 如果输入项是“主角、女主、男主、龙神、审判官、同事A、某助理”这类模糊称呼或占位称呼，且尚未锁定实名，你必须在本次输出里直接起一个具体中文名字。",
+                "18. 对这类待命名角色，name 字段绝对不能继续写成原称呼、代称、占位符、编号后缀或模糊身份词；原称呼只能放进 aliases / 别名。",
+                "19. 如果某个模糊称呼其实已经对应已有角色，必须沿用已有名字，不能重复造一个新角色。",
+                "20. 诸如“同事A、同事B、秘书甲、助理乙、主角、女主、男主、他、她、这人、那人、黑衣审判官”都不能直接出现在 name 字段。",
+                "21. relationships / 人物关系 只能写与已有实名角色或明确角色的关系，尽量压缩成 1-3 条短句，例如“林书音的继姐（敌对）”“李桂香的女儿（同伙）”。",
+                "22. 禁止把大段背景故事、剧情经过、心理活动塞进 relationships 字段；关系字段不能自相矛盾，也不能同时把一个角色写成两种冲突身份。",
+                "23. 不要包含任何 markdown 标记，直接返回纯 JSON 数组。",
                 "",
                 "【输出格式示例】",
                 `[${JSON.stringify(exampleChar, null, 2)}]`,
@@ -2350,9 +2374,43 @@
                 maxTokens: this.getConfiguredMaxTokens(12000),
                 timeout: this.getTaskTimeoutMs(240000)
             });
+            const canAlignByOrder = Array.isArray(parsed) && parsed.length === batchItems.length;
+            const normalizedParsed = (Array.isArray(parsed) ? parsed : [])
+                .map((entry, idx) => {
+                    if (entry && typeof entry === "object" && !Array.isArray(entry)) {
+                        const sourceLabel = String(entry.source_label || entry.sourceLabel || entry.input_label || "").trim();
+                        if (sourceLabel || !canAlignByOrder) {
+                            return entry;
+                        }
+                        return {
+                            ...entry,
+                            source_label: String(batchItems[idx]?.[0] || "").trim()
+                        };
+                    }
+                    const textValue = this.normalizeOutlineCharacterLabel(entry);
+                    if (!textValue) {
+                        return null;
+                    }
+                    return {
+                        source_label: canAlignByOrder ? String(batchItems[idx]?.[0] || "").trim() : "",
+                        name: textValue,
+                        identity: "",
+                        age: "",
+                        gender: "",
+                        personality: "",
+                        background: "",
+                        appearance: "",
+                        abilities: "",
+                        goals: "",
+                        relationships: "",
+                        aliases: []
+                    };
+                })
+                .filter(Boolean);
 
             const usedIndexes = new Set();
-            parsed.forEach((character) => {
+            const relationshipContext = this.buildRelationshipValidationContext(project, batchItems, allCharacters);
+            normalizedParsed.forEach((character) => {
                 const matchedIndex = this.matchGeneratedCharacterToBatchIndex(batchItems, character, usedIndexes);
                 if (matchedIndex < 0) {
                     return;
@@ -2368,22 +2426,58 @@
                 const returnedAliases = Array.isArray(character.aliases)
                     ? character.aliases
                     : Utils.ensureArrayFromText(character.aliases || character["别名"]);
-                const returnedConcreteName = this.isLikelySynopsisPersonName(rawReturnedName) && !this.isGenericCharacterCandidateName(rawReturnedName)
-                    ? rawReturnedName
+                const normalizedReturnedName = this.normalizeOutlineCharacterLabel(rawReturnedName);
+                const returnedConcreteName = normalizedReturnedName
+                    && !this.isGenericCharacterCandidateName(normalizedReturnedName)
+                    && !this.containsSynopsisNameNoise(normalizedReturnedName)
+                    && !this.isLikelyActionLikeCharacterCandidate(normalizedReturnedName)
+                    ? normalizedReturnedName
                     : "";
-                const candidateLooksConcrete = this.isLikelySynopsisPersonName(candidateName) && !this.isGenericCharacterCandidateName(candidateName);
-                const chosenName = (sourceMeta.needsNaming || !candidateLooksConcrete)
+                const candidateLooksConcrete = Boolean(candidateName)
+                    && !this.isGenericCharacterCandidateName(candidateName)
+                    && !this.containsSynopsisNameNoise(candidateName)
+                    && !this.isLikelyActionLikeCharacterCandidate(candidateName);
+                let chosenName = (sourceMeta.needsNaming || !candidateLooksConcrete)
                     ? returnedConcreteName
                     : (candidateName || returnedConcreteName);
+                if (!chosenName && sourceMeta.needsNaming) {
+                    chosenName = this.generateFallbackCharacterName(generatedNameSet, `${candidateName}|${sourceMeta.description || ""}`);
+                }
+                let normalizedChosenName = this.normalizeOutlineCharacterLabel(chosenName || "");
+                if ((!normalizedChosenName || this.isGenericCharacterCandidateName(normalizedChosenName)) && sourceMeta.needsNaming) {
+                    const fallbackName = this.generateFallbackCharacterName(generatedNameSet, `${candidateName}|${sourceMeta.description || ""}`);
+                    normalizedChosenName = this.normalizeOutlineCharacterLabel(fallbackName || "");
+                }
+                if (!normalizedChosenName) {
+                    return;
+                }
+                if (this.isGenericCharacterCandidateName(normalizedChosenName)
+                    || this.containsSynopsisNameNoise(normalizedChosenName)
+                    || this.isLikelyActionLikeCharacterCandidate(normalizedChosenName)) {
+                    return;
+                }
+                if (generatedNameSet.has(normalizedChosenName)) {
+                    return;
+                }
+
                 const mergedAliases = Array.from(new Set([
                     ...(sourceMeta.needsNaming && candidateName ? [candidateName] : []),
                     ...inputAliases,
                     ...returnedAliases
                 ]))
                     .map((alias) => this.normalizeOutlineCharacterLabel(alias))
-                    .filter((alias) => alias && alias !== chosenName);
+                    .filter((alias) => alias && alias !== normalizedChosenName)
+                    .filter((alias) => alias.length <= 16)
+                    .filter((alias) => !this.isLikelyActionLikeCharacterCandidate(alias));
+                const relationshipText = this.sanitizeGeneratedRelationshipText(
+                    project,
+                    normalizedChosenName || candidateName,
+                    character.relationships || character["人物关系"] || "",
+                    sourceMeta,
+                    relationshipContext
+                );
                 const normalized = {
-                    name: chosenName || "",
+                    name: normalizedChosenName || "",
                     identity: character.identity || "",
                     age: character.age || "",
                     gender: character.gender || "",
@@ -2392,19 +2486,21 @@
                     appearance: character.appearance || character["外貌描述"] || "",
                     abilities: character.abilities || character["能力特长"] || "",
                     goals: character.goals || character["目标动机"] || "",
-                    relationships: this.sanitizeGeneratedRelationshipText(project, chosenName || candidateName, character.relationships || character["人物关系"] || "", sourceMeta),
+                    relationships: relationshipText,
                     aliases: mergedAliases,
                     性格特点: character.personality || character["性格特点"] || "",
                     背景故事: character.background || character["背景故事"] || "",
                     外貌描述: character.appearance || character["外貌描述"] || "",
                     能力特长: character.abilities || character["能力特长"] || "",
                     目标动机: character.goals || character["目标动机"] || "",
-                    人物关系: this.sanitizeGeneratedRelationshipText(project, chosenName || candidateName, character.relationships || character["人物关系"] || "", sourceMeta),
+                    人物关系: relationshipText,
                     别名: mergedAliases.join("、")
                 };
 
                 if (normalized.name && (!sourceMeta.needsNaming || !this.isGenericCharacterCandidateName(normalized.name))) {
                     allCharacters.push(normalized);
+                    generatedNameSet.add(normalized.name);
+                    relationshipContext.knownNames.add(normalized.name);
                 }
             });
 
@@ -2414,13 +2510,13 @@
                     batchIndex,
                     totalBatches,
                     batchSize: batchItems.length,
-                    generatedCount: parsed.length,
+                    generatedCount: normalizedParsed.length,
                     names: batchItems.map(([name]) => name)
                 });
             }
         }
 
-        return allCharacters;
+        return this.reconcileGeneratedCharacters(project, allCharacters);
     }
 
     async expandChapterContent({ project, volume, chapter, onDebugInfo = null }) {
@@ -5047,7 +5143,7 @@
     }
 
     buildVagueNameGuard(project) {
-        const synopsisData = project.synopsisData || project.synopsis_data || {};
+        const synopsisData = this.restoreSynopsisMainCharacters(project);
         const lines = [];
         const lockedRoleLines = [];
         const lockedNameLines = [];
@@ -5129,9 +5225,49 @@
         return Array.from(aliases).filter(Boolean).sort((left, right) => right.length - left.length);
     }
 
+    isSuspiciousSynopsisPlaceholderName(name, alias = "") {
+        const cleanName = String(name || "").trim();
+        const cleanAlias = String(alias || "").trim();
+        if (!cleanName) {
+            return true;
+        }
+
+        const explicitPlaceholderNames = new Set([
+            "妖鬼神", "绝世大妖", "充电宝", "双胞胎", "三胞胎", "四胞胎", "五胞胎",
+            "六胞胎", "七胞胎", "八胞胎", "九胞胎", "临时跑堂", "店小二", "跑堂",
+            "小跑堂", "店伙计", "大反派", "黑化反派"
+        ]);
+        if (explicitPlaceholderNames.has(cleanName)) {
+            return true;
+        }
+
+        if (/^[一二两三四五六七八九十]+胞胎$/.test(cleanName)) {
+            return true;
+        }
+
+        if (/(?:充电|跑堂|打工|双胞|三胞|四胞|五胞|六胞|七胞|八胞|九胞)/.test(cleanName)) {
+            return true;
+        }
+
+        const aliasToRole = this.buildSynopsisAliasToRoleMap();
+        if (aliasToRole[cleanAlias]) {
+            if (this.isLikelyOutlineRoleLabel(cleanName)) {
+                return true;
+            }
+            if (/(?:大妖|妖鬼|鬼王|黑狐|黑龙|冥帝|妖皇|高僧|掌柜|信使|鬼差|阎王|天帝|王爷|皇帝|太医|首领|boss)$/i.test(cleanName)) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
     isTrustedSynopsisConcreteName(project, name) {
         const cleanName = String(name || "").trim();
         if (!/^[\u4e00-\u9fa5]{2,4}$/.test(cleanName)) {
+            return false;
+        }
+        if (this.isSuspiciousSynopsisPlaceholderName(cleanName)) {
             return false;
         }
         const knownConcreteNames = new Set(
@@ -5168,7 +5304,7 @@
         if (/(国师|质子|太医|尚书|侍郎|首领|总管|宫女|刺客|党羽|系统|皇孙|男宝|女宝|太女|王爷|宗令|掌门|师尊|长老)/.test(cleanName)) {
             return false;
         }
-        if (cleanName.length >= 3 && /[多只察都差来稳武爹危知地们者后前内外上下时]/.test(cleanName.slice(-1))) {
+        if (cleanName.length >= 3 && /[多只察都差来稳武爹危知地们者后前内外上下时本冷]/.test(cleanName.slice(-1))) {
             return false;
         }
         const compoundSurnames = [
@@ -5197,6 +5333,7 @@
             .filter(Boolean)
             .filter((alias) => alias === cleanName || alias.length >= 2)
             .filter((alias) => !this.containsObfuscatedText(alias))
+            .filter((alias) => alias === cleanName || !this.containsSynopsisNameNoise(alias))
             .filter((alias) => alias === cleanName || !this.isLikelyActionLikeCharacterCandidate(alias))
             .filter((alias) => alias === cleanName || !this.isGenericCharacterCandidateName(alias))
             .filter((alias) => {
@@ -5240,16 +5377,22 @@
             };
         });
 
+        const cleanedMainCharacters = {};
         Object.entries(synopsisData.main_characters).forEach(([role, name]) => {
             const cleanName = String(name || "").trim();
+            const cleanRole = String(role || "").trim();
             if (!this.isTrustedSynopsisConcreteName(project, cleanName)) {
                 return;
             }
+            if (!cleanRole) {
+                return;
+            }
+            cleanedMainCharacters[cleanRole] = cleanName;
             const existing = cleanedLockedNames[cleanName] || {};
             cleanedLockedNames[cleanName] = {
                 ...existing,
                 type: "主角",
-                identity: role,
+                identity: cleanRole,
                 locked_volume: existing.locked_volume || 1,
                 aliases: this.sanitizeSynopsisNameAliases(
                     project,
@@ -5262,6 +5405,7 @@
             };
         });
 
+        synopsisData.main_characters = cleanedMainCharacters;
         synopsisData.locked_character_names = cleanedLockedNames;
 
         const aliasToRole = this.buildSynopsisAliasToRoleMap();
@@ -5270,6 +5414,12 @@
                 .map(([alias, realName]) => [String(alias || "").trim(), String(realName || "").trim()])
                 .filter(([alias, realName]) => {
                     if (!alias || !realName || this.containsObfuscatedText(alias)) {
+                        return false;
+                    }
+                    if (this.containsSynopsisNameNoise(alias)) {
+                        return false;
+                    }
+                    if (this.isSuspiciousSynopsisPlaceholderName(realName, alias)) {
                         return false;
                     }
                     if (!this.isTrustedSynopsisConcreteName(project, realName)) {
@@ -6798,20 +6948,27 @@
 
     lockSynopsisCharacterName(project, name, charType = "配角", identity = "未知", lockedVolume = 1) {
         const cleanName = String(name || "").trim();
-        if (!this.isLikelySynopsisPersonName(cleanName)) {
+        if (!this.isTrustedSynopsisConcreteName(project, cleanName)) {
             return false;
         }
 
         const synopsisData = this.restoreSynopsisMainCharacters(project);
-        const aliases = this.buildSynopsisNameAliases(cleanName);
+        const aliases = this.sanitizeSynopsisNameAliases(
+            project,
+            cleanName,
+            this.buildSynopsisNameAliases(cleanName)
+        );
         const existing = synopsisData.locked_character_names[cleanName];
         if (existing) {
             if (charType === "主角") {
                 existing.type = "主角";
                 existing.identity = identity;
             }
-            existing.aliases = Array.from(new Set([...(existing.aliases || []), ...aliases]))
-                .sort((left, right) => right.length - left.length);
+            existing.aliases = this.sanitizeSynopsisNameAliases(
+                project,
+                cleanName,
+                [...(existing.aliases || []), ...aliases]
+            );
             existing.locked_volume = existing.locked_volume || lockedVolume;
             return true;
         }
@@ -6829,6 +6986,9 @@
         const cleanVagueTerm = String(vagueTerm || "").trim();
         const cleanName = String(specificName || "").trim();
         if (!cleanVagueTerm || !this.isLikelySynopsisPersonName(cleanName)) {
+            return false;
+        }
+        if (this.isSuspiciousSynopsisPlaceholderName(cleanName, cleanVagueTerm)) {
             return false;
         }
         if (this.isSynopsisRoleOrRankNoise(cleanName) || this.isSynopsisLocationNoise(cleanName)) {
@@ -7031,7 +7191,9 @@
             "屈辱", "耻辱", "冷宫", "偏院", "景仁宫", "翊坤宫", "常在", "答应",
             "贵人", "嫔位", "妃位", "强行", "强行请", "请脉",
             "温柔", "冷笑", "轻笑", "浅笑", "微笑", "柔声", "冷声", "轻声", "低声",
-            "贺喜声", "赏赐", "归于尽", "严加被", "健康身体", "方情绪", "贺喜", "喜声"
+            "贺喜声", "赏赐", "归于尽", "严加被", "健康身体", "方情绪", "贺喜", "喜声",
+            "冷酷", "关心", "包围", "冷眼", "黄泉", "危险",
+            "焦臭味", "臭味", "危机感", "寒意", "杀机", "笑意", "血腥味", "脚步声"
         ]);
         if (exactNoise.has(cleanName)) {
             return true;
@@ -7047,7 +7209,7 @@
             "常在", "答应", "贵人", "嫔位", "妃位", "福晋", "侧福晋", "嫡福晋",
             "强行", "请脉", "温柔", "冷笑", "轻笑", "浅笑", "微笑", "柔声",
             "冷声", "轻声", "低声", "贺喜", "喜声", "赏赐", "归于", "于尽",
-            "严加", "情绪", "身体", "皮囊", "光环"
+            "严加", "情绪", "身体", "皮囊", "光环", "臭味", "危机感", "脚步声", "血腥味"
         ];
         if (fragmentNoise.some((fragment) => cleanName.includes(fragment))) {
             return true;
@@ -7103,36 +7265,72 @@
             return false;
         }
 
+        if (cleanName.length >= 3 && /(?:本|冷)$/.test(cleanName)) {
+            return false;
+        }
+
         return true;
     }
 
-    collectFrequentNamesFromText(text) {
+    collectFrequentNamesFromText(text, project = null) {
         const content = String(text || "");
-        const candidates = new Set();
-        const addCandidates = (matches = []) => {
-            matches.forEach((name) => {
-                const cleanName = String(name || "").trim();
-                if (this.isLikelySynopsisPersonName(cleanName) && this.isLikelyChinesePersonName(cleanName)) {
-                    candidates.add(cleanName);
-                }
-            });
+        const synopsisData = project ? this.restoreSynopsisMainCharacters(project) : { main_characters: {}, locked_character_names: {} };
+        const knownNames = new Set([
+            ...Object.values(synopsisData.main_characters || {}),
+            ...Object.keys(synopsisData.locked_character_names || {}),
+            ...((project?.outline?.characters || []).map((character) => String(character?.name || "").trim()))
+        ].filter((name) => name && this.isTrustedSynopsisConcreteName(project || {}, name)));
+        const candidateMeta = new Map();
+        const noteCandidate = (name, evidence, weight) => {
+            const cleanName = String(name || "").trim();
+            if (!this.isLikelySynopsisPersonName(cleanName) || !this.isLikelyChinesePersonName(cleanName)) {
+                return;
+            }
+            const current = candidateMeta.get(cleanName) || {
+                hits: 0,
+                score: 0,
+                evidence: new Set()
+            };
+            current.hits += 1;
+            current.score += Number(weight || 0);
+            current.evidence.add(evidence);
+            candidateMeta.set(cleanName, current);
         };
 
-        addCandidates(content.match(/[\u4e00-\u9fa5]{2,4}(?=说|道|笑|问|答|喊|叫|骂|点|看|走|站|坐|跑|想|觉|发现|看到|听到)/g) || []);
+        for (const match of content.matchAll(/(?:名叫|叫做|唤作|名为|本名是|真名是|便是|正是|乃是)([\u4e00-\u9fa5]{2,4})(?=[，。！？、\s]|$)/g)) {
+            noteCandidate(match[1], "explicit", 4);
+        }
 
-        const quotedNames = [];
         for (const match of content.matchAll(/["“”「」『』]([\u4e00-\u9fa5]{2,4})["“”「」『』]/g)) {
-            quotedNames.push(String(match[1] || "").trim());
+            noteCandidate(match[1], "quoted", 3);
         }
-        addCandidates(quotedNames);
 
-        const relationTargets = [];
         for (const match of content.matchAll(/(?:与|和|跟|同|向|对)([\u4e00-\u9fa5]{2,4})(?=[，。、！？\s]|$)/g)) {
-            relationTargets.push(String(match[1] || "").trim());
+            noteCandidate(match[1], "relation", 2);
         }
-        addCandidates(relationTargets);
 
-        return Array.from(candidates);
+        for (const match of content.matchAll(/(?:^|[，。！？、\s“”"「」『』（(])([\u4e00-\u9fa5]{2,4})(?=(?:轻声|低声|沉声|冷声|淡淡|轻轻|缓缓)?(?:说|道|问|答|喊|骂))/g)) {
+            const cleanName = String(match[1] || "").trim();
+            if (knownNames.has(cleanName) || cleanName.length >= 3) {
+                noteCandidate(cleanName, "speech", 1);
+            }
+        }
+
+        return Array.from(candidateMeta.entries())
+            .filter(([name, meta]) => {
+                if (knownNames.has(name)) {
+                    return true;
+                }
+                if (meta.evidence.has("explicit") || meta.evidence.has("quoted")) {
+                    return true;
+                }
+                if (name.length >= 3 && meta.score >= 2) {
+                    return true;
+                }
+                return meta.hits >= 2 && meta.score >= 3;
+            })
+            .sort((left, right) => right[1].score - left[1].score || right[1].hits - left[1].hits)
+            .map(([name]) => name);
     }
 
     normalizeSynopsisReferenceText(project, text) {
@@ -7196,7 +7394,7 @@
             appliedSupportingMappings.push(`${vagueTerm}→${specificName}`);
         });
 
-        this.collectFrequentNamesFromText(text).forEach((name) => {
+        this.collectFrequentNamesFromText(text, project).forEach((name) => {
             const isMainCharacter = Object.values(synopsisData.main_characters || {}).includes(name);
             this.lockSynopsisCharacterName(project, name, isMainCharacter ? "主角" : "配角", isMainCharacter ? "主角" : "未知", volumeNumber);
         });
@@ -8670,22 +8868,6 @@
         const existingAllNames = new Set();
         (project.outline.characters || []).forEach((character) => {
             const primaryName = String(character.name || "").trim();
-            const substantiveFieldCount = [
-                character.personality,
-                character.appearance,
-                character.abilities,
-                character.goals,
-                character.relationships
-            ].filter((value) => String(value || "").trim()).length;
-            const background = String(character.background || "").trim();
-            const hasGeneratedBackground = background
-                && !background.includes("提及角色")
-                && !background.includes("后续可补充背景");
-            const shouldExclude = !this.isGenericCharacterCandidateName(primaryName)
-                && (substantiveFieldCount >= 2 || hasGeneratedBackground);
-            if (!shouldExclude) {
-                return;
-            }
             if (primaryName) {
                 existingAllNames.add(primaryName);
             }
@@ -8695,47 +8877,79 @@
                 .forEach((alias) => existingAllNames.add(alias));
         });
 
+        const aliasMap = this.buildKnownCharacterAliasMap(project);
         const roleMap = {};
 
-        const addRole = (name, description) => {
-            const cleanLabel = this.normalizeOutlineCharacterLabel(name);
-            if (!cleanLabel || cleanLabel.length < 2) {
+        const mergeDescriptions = (left, right) => Array.from(new Set(
+            [String(left || "").trim(), String(right || "").trim()].filter(Boolean)
+        )).join("；");
+
+        const upsertRole = (canonicalLabel, sourceLabel, description, chapter, needsNaming) => {
+            const key = this.normalizeOutlineCharacterLabel(canonicalLabel);
+            if (!key || key.length < 2) {
                 return;
             }
-            if (!this.isPlausibleOutlineCharacterLabel(cleanLabel)) {
-                return;
-            }
-            const resolved = this.resolveOutlineCandidateName(project, cleanLabel, description);
-            const cleanName = this.normalizeOutlineCharacterLabel(resolved.name);
-            if (!cleanName || cleanName.length < 2) {
-                return;
-            }
-            if (!resolved.needsNaming && !this.isPlausibleOutlineCharacterLabel(cleanName)) {
-                return;
-            }
-            if (!resolved.needsNaming && existingAllNames.has(cleanName)) {
+            const aliasCandidate = this.normalizeOutlineCharacterLabel(sourceLabel);
+            const evidenceLine = this.buildRoleCandidateEvidence(chapter, aliasCandidate || key, description);
+            if (roleMap[key]) {
+                roleMap[key].description = mergeDescriptions(roleMap[key].description, description);
+                roleMap[key].needsNaming = Boolean(roleMap[key].needsNaming || needsNaming);
+                roleMap[key].aliases = Array.from(new Set(
+                    [...(roleMap[key].aliases || []), ...(aliasCandidate ? [aliasCandidate] : [])]
+                )).filter(Boolean);
+                roleMap[key].evidenceLines = Array.from(new Set(
+                    [...(roleMap[key].evidenceLines || []), ...(evidenceLine ? [evidenceLine] : [])]
+                )).filter(Boolean).slice(0, 6);
                 return;
             }
 
-            if (roleMap[cleanName]) {
-                roleMap[cleanName].description = [roleMap[cleanName].description, String(description || "").trim()].filter(Boolean).join("；");
-                roleMap[cleanName].needsNaming = roleMap[cleanName].needsNaming && resolved.needsNaming;
-                roleMap[cleanName].aliases = Array.from(new Set([...(roleMap[cleanName].aliases || []), ...(resolved.aliases || [])])).filter(Boolean);
-                return;
-            }
-
-            roleMap[cleanName] = {
+            roleMap[key] = {
                 description: String(description || "").trim(),
-                needsNaming: Boolean(resolved.needsNaming),
-                aliases: Array.from(new Set(resolved.aliases || [])).filter(Boolean)
+                needsNaming: Boolean(needsNaming),
+                aliases: aliasCandidate ? [aliasCandidate] : [],
+                evidenceLines: evidenceLine ? [evidenceLine] : []
             };
         };
 
+        const addRole = (name, description, chapter = null, sourceType = "section") => {
+            const cleanLabel = this.normalizeOutlineCharacterLabel(name);
+            const desc = String(description || "").trim();
+            if (!cleanLabel || cleanLabel.length < 2) {
+                return;
+            }
+            const looseSectionLabel = /^[\u4e00-\u9fa5A-Za-z0-9]{2,12}$/u.test(cleanLabel);
+            const plausible = this.isPlausibleOutlineCharacterLabel(cleanLabel) || (sourceType === "section" && looseSectionLabel);
+            if (!plausible) {
+                return;
+            }
+            if (this.isLikelyActionLikeCharacterCandidate(cleanLabel)) {
+                return;
+            }
+            if (this.containsSynopsisNameNoise(cleanLabel) && !this.isGenericCharacterCandidateName(cleanLabel)) {
+                return;
+            }
+
+            // 仅用于“是否已是旧角色”判断，避免把旧映射反向污染新角色候选。
+            const mappedExisting = this.normalizeOutlineCharacterLabel(aliasMap[cleanLabel] || "");
+            if (existingAllNames.has(cleanLabel) || (mappedExisting && existingAllNames.has(mappedExisting))) {
+                return;
+            }
+
+            const looksConcreteName = !this.isGenericCharacterCandidateName(cleanLabel)
+                && !this.containsSynopsisNameNoise(cleanLabel)
+                && !this.isLikelyActionLikeCharacterCandidate(cleanLabel);
+            const needsNaming = !looksConcreteName || this.matchesGenericRolePattern(cleanLabel);
+            upsertRole(cleanLabel, cleanLabel, desc, chapter, needsNaming);
+        };
+
         (chapters || []).forEach((chapter) => {
-            const summary = String(chapter.summary || "");
+            const summary = String(chapter.summary || chapter.content || chapter["大纲内容"] || "");
+            if (!summary.trim()) {
+                return;
+            }
+
             const lines = summary.split(/\r?\n/);
             let inCharSection = false;
-
             lines.forEach((rawLine) => {
                 const line = String(rawLine || "").trim();
                 if (!line) {
@@ -8747,42 +8961,83 @@
                 }
                 if (inCharSection && line.startsWith("【")) {
                     inCharSection = false;
-                    return;
                 }
                 if (!inCharSection || (!line.startsWith("-") && !line.startsWith("•"))) {
                     return;
                 }
 
-                const content = line.slice(1).trim();
-                if (!content) {
+                const item = line.slice(1).trim();
+                if (!item || item.length < 2) {
                     return;
                 }
 
-                let label = content;
+                let label = item;
                 let desc = "";
-                if (content.includes("（")) {
-                    const parts = content.split("（", 2);
+                if (item.includes("（")) {
+                    const parts = item.split("（", 2);
                     label = parts[0].trim();
                     desc = parts[1].replace(/）/g, "").trim();
-                } else if (content.includes("(")) {
-                    const parts = content.split("(", 2);
+                } else if (item.includes("(")) {
+                    const parts = item.split("(", 2);
                     label = parts[0].trim();
                     desc = parts[1].replace(/\)/g, "").trim();
-                } else if (content.includes("：")) {
-                    const parts = content.split("：", 2);
+                } else if (item.includes("：")) {
+                    const parts = item.split("：", 2);
                     label = parts[0].trim();
                     desc = parts[1].trim();
-                } else if (content.includes(":")) {
-                    const parts = content.split(":", 2);
+                } else if (item.includes(":")) {
+                    const parts = item.split(":", 2);
                     label = parts[0].trim();
                     desc = parts[1].trim();
                 }
 
-                addRole(label, desc || `第${chapter.number}章出场人物`);
+                addRole(label, desc, chapter, "section");
+            });
+
+            this.sanitizeOutlineCharacterArray(chapter.characters || []).forEach((label) => {
+                addRole(label, "", chapter, "array");
             });
         });
 
         return roleMap;
+    }
+
+    extractSummarySection(summary, sectionName) {
+        const text = String(summary || "");
+        if (!text.trim() || !sectionName) {
+            return "";
+        }
+        const escapedName = String(sectionName).replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+        const match = text.match(new RegExp(`【${escapedName}】\\s*([\\s\\S]*?)(?=\\n【|$)`));
+        return String(match?.[1] || "").trim();
+    }
+
+    buildRoleCandidateEvidence(chapter, label, description = "") {
+        if (!chapter || typeof chapter !== "object") {
+            return "";
+        }
+        const chapterNumber = String(chapter.number || chapter.chapter_number || "").trim();
+        const chapterTitle = String(chapter.title || chapter.chapter_title || chapter.name || "").trim();
+        const summary = String(chapter.summary || chapter.content || chapter["大纲内容"] || "").trim();
+        const chapterLabel = chapterNumber
+            ? `第${chapterNumber}章${chapterTitle ? `《${chapterTitle}》` : ""}`
+            : (chapterTitle ? `《${chapterTitle}》` : "");
+        const coreEvent = this.extractSummarySection(summary, "核心事件")
+            || String(chapter.key_event || chapter.keyEvent || "").trim();
+        const desc = String(description || "").trim();
+        const pieces = [];
+
+        if (chapterLabel) {
+            pieces.push(chapterLabel);
+        }
+        if (desc) {
+            pieces.push(`角色定位：${Utils.summarizeText(desc, 28)}`);
+        }
+        if (coreEvent) {
+            pieces.push(`相关剧情：${Utils.summarizeText(coreEvent, 96)}`);
+        }
+
+        return pieces.join("；");
     }
 
     normalizeOutlineCharacterLabel(value) {
@@ -8818,12 +9073,58 @@
             return false;
         }
 
-        const rolePattern = "(?:龙神|神胎|审判官|骑士|圣骑士|主教|祭司|侍女|丫鬟|婢女|护卫|下属|手下|师兄|师姐|师弟|师妹|师父|师母|父亲|母亲|亲妈|后妈|养母|养父|继母|继父|哥哥|姐姐|妹妹|弟弟|继姐|继妹|继兄|继弟|老婆|老公|前夫|前妻|丈夫|妻子|未婚夫|未婚妻|婆婆|公公|岳母|岳父|嫂子|姐夫|妹夫|小姨|姨妈|婶子|姑妈|舅妈|舅舅|姑父|同门|同伴|邻居|室友|同事|上司|老板|老师|学生|某人|某助理|某同事|某老师|某医生|某护士|某警官|某秘书|助理|秘书|医生|护士|警官|路人|保镖|司机|管家|校医|同学|学长|学姐|前台|店员|经理|总监|院长|教授|导师|研究员|顾问|学徒|工程师|技工|组长|厂长|副厂长|技术员|组员|科员|检查组长|检查组组长)";
+        const rolePattern = "(?:龙神|神胎|审判官|骑士|圣骑士|主教|祭司|侍女|丫鬟|婢女|护卫|侍卫|暗卫|门卫|守卫|守门人|门房|守门|鬼差|阴差|牛头|马面|下属|手下|师兄|师姐|师弟|师妹|师父|师母|父亲|母亲|亲妈|后妈|养母|养父|继母|继父|哥哥|姐姐|妹妹|弟弟|继姐|继妹|继兄|继弟|老婆|老公|前夫|前妻|丈夫|妻子|未婚夫|未婚妻|婆婆|公公|岳母|岳父|嫂子|姐夫|妹夫|小姨|姨妈|婶子|姑妈|舅妈|舅舅|姑父|同门|同伴|邻居|室友|同事|上司|老板|老师|学生|某人|某助理|某同事|某老师|某医生|某护士|某警官|某秘书|助理|秘书|医生|护士|警官|路人|保镖|司机|管家|校医|同学|学长|学姐|前台|店员|经理|总监|院长|教授|导师|研究员|顾问|学徒|工程师|技工|组长|厂长|副厂长|技术员|组员|科员|检查组长|检查组组长|小厮|仆妇|婆子|奶娘|稳婆|车夫|船夫|摊主|店主|伙计|小贩|大宝|二宝|三宝|四宝|五宝|长子|次子|长女|次女|幼子|幼女)";
         const suffixIndexPattern = "[A-Za-z甲乙丙丁戊己庚辛壬癸一二三四五六七八九十0-9]*";
         if (new RegExp(`^[\\u4e00-\\u9fa5]{0,4}${rolePattern}${suffixIndexPattern}$`).test(cleanName)) {
             return true;
         }
         return /^(?:[\u4e00-\u9fa5]{1,6}的)?(?:亲妈|后妈|养母|养父|继母|继父|继姐|继妹|继兄|继弟|母亲|父亲|姐姐|哥哥|妹妹|弟弟|嫂子|姐夫|前夫|前妻|未婚夫|未婚妻)$/.test(cleanName);
+    }
+
+    generateFallbackCharacterName(existingNames = new Set(), seedText = "") {
+        const occupied = new Set(
+            Array.from(existingNames || [])
+                .map((name) => this.normalizeOutlineCharacterLabel(name))
+                .filter(Boolean)
+        );
+        const surnames = [
+            "沈", "陆", "顾", "苏", "林", "程", "许", "宋", "韩", "宁",
+            "谢", "裴", "秦", "温", "纪", "姜", "周", "白", "叶", "梁",
+            "傅", "贺", "季", "唐", "徐", "乔", "陈", "凌", "苏", "莫"
+        ];
+        const givens = [
+            "青禾", "知夏", "映雪", "若棠", "听澜", "清晚", "星遥", "明岚", "昭月", "云舒",
+            "时雨", "临川", "怀安", "景行", "长宁", "承砚", "行舟", "知远", "叙白", "屿川",
+            "南栀", "书意", "朝雨", "晚棠", "闻溪", "砚秋", "归宁", "清和", "景初", "望舒"
+        ];
+
+        let seed = 0;
+        String(seedText || "").split("").forEach((char) => {
+            seed = (seed * 131 + char.charCodeAt(0)) % 1000003;
+        });
+
+        const maxAttempts = surnames.length * givens.length;
+        for (let attempt = 0; attempt < maxAttempts; attempt += 1) {
+            const sIndex = (seed + attempt) % surnames.length;
+            const gIndex = Math.floor((seed + attempt) / surnames.length) % givens.length;
+            const candidate = `${surnames[sIndex]}${givens[gIndex]}`;
+            if (!candidate
+                || occupied.has(candidate)
+                || this.isGenericCharacterCandidateName(candidate)
+                || this.containsSynopsisNameNoise(candidate)
+                || this.isLikelyActionLikeCharacterCandidate(candidate)) {
+                continue;
+            }
+            return candidate;
+        }
+
+        for (let attempt = 0; attempt < surnames.length; attempt += 1) {
+            const candidate = `${surnames[attempt % surnames.length]}${givens[attempt % givens.length].slice(0, 1)}宁`;
+            if (!occupied.has(candidate)) {
+                return candidate;
+            }
+        }
+        return "";
     }
 
     isLikelyActionLikeCharacterCandidate(name) {
@@ -9035,6 +9336,32 @@
 
     buildKnownCharacterAliasMap(project) {
         const aliasMap = {};
+        const synopsisData = this.restoreSynopsisMainCharacters(project) || {};
+        const knownConcreteNames = new Set(
+            [
+                ...Object.values(synopsisData.main_characters || {}),
+                ...Object.keys(synopsisData.locked_character_names || {}),
+                ...(project.outline?.characters || []).map((character) => String(character?.name || "").trim())
+            ]
+                .map((name) => String(name || "").trim())
+                .filter((name) => name && this.isTrustedSynopsisConcreteName(project, name))
+        );
+        const isSafeAliasForName = (alias, primaryName) => {
+            const cleanAlias = String(alias || "").trim();
+            const cleanPrimaryName = String(primaryName || "").trim();
+            if (!cleanAlias || !cleanPrimaryName) {
+                return false;
+            }
+            if (this.containsSynopsisNameNoise(cleanAlias)) {
+                return false;
+            }
+            return !Array.from(knownConcreteNames).some((otherName) =>
+                otherName
+                && otherName !== cleanPrimaryName
+                && cleanAlias !== otherName
+                && cleanAlias.includes(otherName)
+            );
+        };
         const addAlias = (alias, realName) => {
             const cleanAlias = String(alias || "").trim();
             const cleanName = String(realName || "").trim();
@@ -9043,8 +9370,6 @@
             }
             aliasMap[cleanAlias] = cleanName;
         };
-
-        const synopsisData = this.restoreSynopsisMainCharacters(project) || {};
         Object.entries(synopsisData.vague_to_name_mapping || {}).forEach(([alias, realName]) => addAlias(alias, realName));
         Object.entries(synopsisData.main_characters || {}).forEach(([role, realName]) => {
             addAlias(role, realName);
@@ -9062,7 +9387,9 @@
                     ...this.buildSynopsisNameAliases(name),
                     ...Utils.ensureArrayFromText(info?.aliases || [])
                 ]
-            ).forEach((alias) => addAlias(alias, name));
+            )
+                .filter((alias) => isSafeAliasForName(alias, name))
+                .forEach((alias) => addAlias(alias, name));
         });
         (project.outline?.characters || []).forEach((character) => {
             const primaryName = String(character.name || "").trim();
@@ -9072,6 +9399,7 @@
             addAlias(primaryName, primaryName);
             Utils.ensureArrayFromText(character.aliases || character["别名"] || "")
                 .filter((alias) => String(alias || "").trim().length >= 2)
+                .filter((alias) => isSafeAliasForName(alias, primaryName))
                 .forEach((alias) => addAlias(alias, primaryName));
         });
 
@@ -9163,30 +9491,277 @@
         if (!Array.isArray(batchItems) || !batchItems.length) {
             return -1;
         }
+        const rawSourceLabel = this.normalizeOutlineCharacterLabel(
+            character?.source_label || character?.sourceLabel || character?.input_label || ""
+        );
         const rawName = this.normalizeOutlineCharacterLabel(character?.name || character?.real_name || character?.realName || "");
         const aliasValues = [
             ...(Array.isArray(character?.aliases) ? character.aliases : Utils.ensureArrayFromText(character?.aliases || character?.["别名"] || ""))
         ]
             .map((value) => String(value || "").trim())
             .filter(Boolean);
+        const normalizedTexts = Array.from(new Set(
+            [rawName, ...aliasValues.map((value) => this.normalizeOutlineCharacterLabel(value))]
+                .map((value) => String(value || "").trim())
+                .filter(Boolean)
+        ));
 
-        const normalizedTexts = [rawName, ...aliasValues.map((value) => this.normalizeOutlineCharacterLabel(value))]
-            .filter(Boolean);
-
-        for (let i = 0; i < batchItems.length; i += 1) {
-            if (usedIndexes.has(i)) {
-                continue;
+        const findUniqueIndex = (matcher) => {
+            const candidates = [];
+            for (let i = 0; i < batchItems.length; i += 1) {
+                if (usedIndexes.has(i)) {
+                    continue;
+                }
+                if (matcher(i, batchItems[i])) {
+                    candidates.push(i);
+                }
             }
-            const [label, meta] = batchItems[i];
-            const cleanLabel = this.normalizeOutlineCharacterLabel(label);
-            const aliases = Array.isArray(meta?.aliases) ? meta.aliases.map((alias) => this.normalizeOutlineCharacterLabel(alias)) : [];
-            const targets = [cleanLabel, ...aliases].filter(Boolean);
-            if (targets.some((target) => normalizedTexts.some((text) => text === target || text.includes(target) || target.includes(text)))) {
-                return i;
+            return candidates.length === 1 ? candidates[0] : -1;
+        };
+
+        // 1) source_label 必须优先，严格按输入标签对齐
+        if (rawSourceLabel) {
+            const exactByLabel = findUniqueIndex((_, [label]) => this.normalizeOutlineCharacterLabel(label) === rawSourceLabel);
+            if (exactByLabel >= 0) {
+                return exactByLabel;
+            }
+
+            const exactByAlias = findUniqueIndex((_, [, meta]) =>
+                (Array.isArray(meta?.aliases) ? meta.aliases : [])
+                    .map((alias) => this.normalizeOutlineCharacterLabel(alias))
+                    .includes(rawSourceLabel)
+            );
+            if (exactByAlias >= 0) {
+                return exactByAlias;
             }
         }
 
-        return batchItems.findIndex((_, index) => !usedIndexes.has(index));
+        // 2) 仅允许“精确文本”回退，且必须唯一匹配；禁止模糊打分与顺位兜底
+        if (normalizedTexts.length) {
+            const exactByReturnedNameOrAlias = findUniqueIndex((_, [label, meta]) => {
+                const cleanLabel = this.normalizeOutlineCharacterLabel(label);
+                const aliases = (Array.isArray(meta?.aliases) ? meta.aliases : [])
+                    .map((alias) => this.normalizeOutlineCharacterLabel(alias))
+                    .filter(Boolean);
+                return normalizedTexts.some((text) => text === cleanLabel || aliases.includes(text));
+            });
+            if (exactByReturnedNameOrAlias >= 0) {
+                return exactByReturnedNameOrAlias;
+            }
+        }
+
+        // 3) 单角色批次安全兜底：只有一个待匹配目标时，允许直接对齐，避免整批归零
+        const remainingIndexes = batchItems
+            .map((_, index) => index)
+            .filter((index) => !usedIndexes.has(index));
+        if (remainingIndexes.length === 1) {
+            return remainingIndexes[0];
+        }
+
+        return -1;
+    }
+
+    buildRelationshipValidationContext(project, batchItems = [], generatedCharacters = []) {
+        const knownNames = new Set(
+            (project?.outline?.characters || [])
+                .map((character) => this.normalizeOutlineCharacterLabel(character?.name || ""))
+                .filter(Boolean)
+        );
+
+        (generatedCharacters || []).forEach((character) => {
+            const name = this.normalizeOutlineCharacterLabel(character?.name || "");
+            if (name) {
+                knownNames.add(name);
+            }
+        });
+
+        (batchItems || []).forEach(([label, meta]) => {
+            const cleanLabel = this.normalizeOutlineCharacterLabel(label);
+            if (cleanLabel
+                && !this.isGenericCharacterCandidateName(cleanLabel)
+                && !this.containsSynopsisNameNoise(cleanLabel)
+                && !this.isLikelyActionLikeCharacterCandidate(cleanLabel)) {
+                knownNames.add(cleanLabel);
+            }
+            (Array.isArray(meta?.aliases) ? meta.aliases : [])
+                .map((alias) => this.normalizeOutlineCharacterLabel(alias))
+                .filter(Boolean)
+                .filter((alias) =>
+                    !this.isGenericCharacterCandidateName(alias)
+                    && !this.containsSynopsisNameNoise(alias)
+                    && !this.isLikelyActionLikeCharacterCandidate(alias)
+                    && alias.length <= 12
+                )
+                .forEach((alias) => knownNames.add(alias));
+        });
+
+        return { knownNames };
+    }
+
+    extractKnownNamesFromText(text, knownNames = []) {
+        const content = String(text || "");
+        const candidates = Array.from(new Set(
+            (Array.isArray(knownNames) ? knownNames : [])
+                .map((name) => this.normalizeOutlineCharacterLabel(name))
+                .filter(Boolean)
+        )).sort((left, right) => right.length - left.length);
+
+        const matched = [];
+        candidates.forEach((name) => {
+            if (content.includes(name)) {
+                matched.push(name);
+            }
+        });
+        return Array.from(new Set(matched));
+    }
+
+    detectRelationshipCategory(text) {
+        const content = String(text || "");
+        if (!content) {
+            return "other";
+        }
+        if (/父亲|母亲|养父|养母|继父|继母|爹|娘/.test(content)) {
+            return "parent";
+        }
+        if (/儿子|女儿|孩子|子嗣|后代/.test(content)) {
+            return "child";
+        }
+        if (/丈夫|妻子|夫君|娘子|恋人|未婚夫|未婚妻|伴侣|道侣|夫妇/.test(content)) {
+            return "spouse";
+        }
+        if (/哥哥|姐姐|妹妹|弟弟|兄长|兄妹|姐妹|姐弟/.test(content)) {
+            return "sibling";
+        }
+        if (/师父|师尊|师傅|师门|师徒|师兄|师姐|师弟|师妹/.test(content)) {
+            return "master";
+        }
+        if (/上司|下属|主仆|侍从|部下|属下|统领|手下/.test(content)) {
+            return "subordinate";
+        }
+        if (/敌对|敌人|仇敌|死敌|对手/.test(content)) {
+            return "enemy";
+        }
+        if (/盟友|同伴|朋友|旧识|同伙/.test(content)) {
+            return "ally";
+        }
+        return "other";
+    }
+
+    isConflictingRelationshipCategory(previousCategory, nextCategory) {
+        const prev = String(previousCategory || "");
+        const next = String(nextCategory || "");
+        if (!prev || !next || prev === next) {
+            return false;
+        }
+        const pair = `${prev}|${next}`;
+        const reverse = `${next}|${prev}`;
+        const conflictPairs = new Set([
+            "parent|child",
+            "spouse|sibling",
+            "master|subordinate"
+        ]);
+        return conflictPairs.has(pair) || conflictPairs.has(reverse);
+    }
+
+    reconcileGeneratedCharacters(project, characters = []) {
+        if (!Array.isArray(characters) || !characters.length) {
+            return [];
+        }
+        const existingNames = new Set(
+            (project?.outline?.characters || [])
+                .map((character) => this.normalizeOutlineCharacterLabel(character?.name || ""))
+                .filter(Boolean)
+        );
+        const mergedByName = new Map();
+        const scoreCharacter = (character) => {
+            const fields = [
+                character?.identity,
+                character?.personality || character?.["性格特点"],
+                character?.background || character?.["背景故事"],
+                character?.appearance || character?.["外貌描述"],
+                character?.abilities || character?.["能力特长"],
+                character?.goals || character?.["目标动机"],
+                character?.relationships || character?.["人物关系"]
+            ];
+            return fields.reduce((sum, field) => sum + String(field || "").trim().length, 0);
+        };
+
+        (characters || []).forEach((character) => {
+            const name = this.normalizeOutlineCharacterLabel(character?.name || "");
+            if (!name
+                || this.isGenericCharacterCandidateName(name)
+                || this.containsSynopsisNameNoise(name)
+                || this.isLikelyActionLikeCharacterCandidate(name)) {
+                return;
+            }
+            if (existingNames.has(name)) {
+                return;
+            }
+            const current = mergedByName.get(name);
+            if (!current) {
+                mergedByName.set(name, { ...character, name });
+                return;
+            }
+
+            const currentScore = scoreCharacter(current);
+            const incomingScore = scoreCharacter(character);
+            const chosen = incomingScore > currentScore ? { ...character, name } : current;
+            const mergedAliases = Array.from(new Set([
+                ...Utils.ensureArrayFromText(current?.aliases || current?.["别名"] || ""),
+                ...Utils.ensureArrayFromText(character?.aliases || character?.["别名"] || "")
+            ]))
+                .map((alias) => this.normalizeOutlineCharacterLabel(alias))
+                .filter((alias) => alias && alias !== name);
+            chosen.aliases = mergedAliases;
+            chosen["别名"] = mergedAliases.join("、");
+            mergedByName.set(name, chosen);
+        });
+
+        const knownNames = new Set([...existingNames, ...Array.from(mergedByName.keys())]);
+        const occupiedAlias = new Set([...knownNames]);
+        const result = [];
+
+        Array.from(mergedByName.values()).forEach((character) => {
+            const name = this.normalizeOutlineCharacterLabel(character?.name || "");
+            if (!name) {
+                return;
+            }
+
+            const aliases = Array.from(new Set(
+                Utils.ensureArrayFromText(character?.aliases || character?.["别名"] || "")
+                    .map((alias) => this.normalizeOutlineCharacterLabel(alias))
+                    .filter((alias) => alias && alias !== name)
+                    .filter((alias) => alias.length <= 16)
+                    .filter((alias) => !this.isLikelyActionLikeCharacterCandidate(alias))
+            ))
+                .filter((alias) => !occupiedAlias.has(alias))
+                .slice(0, 8);
+            aliases.forEach((alias) => occupiedAlias.add(alias));
+
+            const relationContext = { knownNames };
+            const relationshipText = this.sanitizeGeneratedRelationshipText(
+                project,
+                name,
+                character?.relationships || character?.["人物关系"] || "",
+                {
+                    description: "",
+                    evidenceLines: []
+                },
+                relationContext
+            );
+
+            const normalized = {
+                ...character,
+                name,
+                aliases,
+                relationships: relationshipText,
+                人物关系: relationshipText,
+                别名: aliases.join("、")
+            };
+            result.push(normalized);
+        });
+
+        return result;
     }
 
     applySafeAliasMappings(text, aliasMap = {}) {
@@ -9233,17 +9808,32 @@
         return protectedText;
     }
 
-    sanitizeGeneratedRelationshipText(project, currentName, relationships, sourceMeta = {}) {
+    sanitizeGeneratedRelationshipText(project, currentName, relationships, sourceMeta = {}, context = {}) {
         const rawText = String(relationships || "").trim();
-        const relationKeywords = /父亲|母亲|亲妈|后妈|养母|养父|继母|继父|继姐|继妹|继兄|继弟|哥哥|姐姐|妹妹|弟弟|夫妻|妻子|丈夫|恋人|未婚夫|未婚妻|朋友|敌对|敌人|仇敌|对手|同门|师徒|师兄妹|上下级|上司|下属|同事|盟友|帮凶|旧识|亲属|母女|父女|姐妹|兄妹/;
+        const relationKeywords = /父亲|母亲|亲妈|后妈|养母|养父|继母|继父|继姐|继妹|继兄|继弟|哥哥|姐姐|妹妹|弟弟|儿子|女儿|孩子|子嗣|夫妻|妻子|丈夫|恋人|未婚夫|未婚妻|朋友|敌对|敌人|仇敌|对手|同门|师徒|师兄妹|上下级|上司|下属|同事|盟友|帮凶|旧识|亲属|母女|父女|姐妹|兄妹|主仆|部下|属下/;
         const noiseKeywords = /后续可补充|信息后续补充|提及角色|剧情中|经历了|心理落差|不死心|想要报复|煽风点火|无情粉碎|装作|试图|企图|表面上|实则/;
-        const knownNames = new Set(
+        const projectKnownNames = new Set(
             (project?.outline?.characters || [])
                 .map((character) => String(character?.name || "").trim())
                 .filter(Boolean)
         );
+        const knownNames = new Set([
+            ...Array.from(projectKnownNames),
+            ...Array.from((context?.knownNames instanceof Set ? context.knownNames : new Set(
+                Utils.ensureArrayFromText(context?.knownNames || "")
+            )))
+        ].map((name) => this.normalizeOutlineCharacterLabel(name)).filter(Boolean));
+
         const aliasMap = this.buildKnownCharacterAliasMap(project);
         let normalized = this.applySafeAliasMappings(rawText, aliasMap);
+        const normalizedCurrentName = this.normalizeOutlineCharacterLabel(currentName || "");
+        const knownNameList = Array.from(knownNames).sort((left, right) => right.length - left.length);
+        const evidenceText = this.applySafeAliasMappings([
+            String(sourceMeta?.description || "").trim(),
+            ...(Array.isArray(sourceMeta?.evidenceLines) ? sourceMeta.evidenceLines : [])
+        ].filter(Boolean).join("；"), aliasMap);
+        const evidenceNames = new Set(this.extractKnownNamesFromText(evidenceText, knownNameList));
+        const evidenceCategory = this.detectRelationshipCategory(evidenceText);
 
         const cleanClause = (text) => String(text || "")
             .replace(/[\r\n]+/g, " ")
@@ -9259,14 +9849,52 @@
             .map(cleanClause)
             .filter(Boolean)
             .filter((clause) => !noiseKeywords.test(clause))
-            .filter((clause) => clause.length <= 40)
-            .filter((clause) => {
-                const containsKnownName = Array.from(knownNames).some((name) => name && clause.includes(name));
-                return containsKnownName || relationKeywords.test(clause);
-            });
+            .filter((clause) => clause.length <= 48);
 
-        const deduped = Array.from(new Set(clauses))
-            .filter((clause) => !currentName || !clause.startsWith(currentName))
+        const targetCategoryMap = new Map();
+        const accepted = [];
+        clauses.forEach((clause) => {
+            const clauseNames = this.extractKnownNamesFromText(clause, knownNameList);
+            const targetNames = clauseNames.filter((name) => !normalizedCurrentName || name !== normalizedCurrentName);
+            const category = this.detectRelationshipCategory(clause);
+            const hasRelationKeyword = relationKeywords.test(clause);
+
+            if (!targetNames.length) {
+                return;
+            }
+            if (!hasRelationKeyword && category === "other") {
+                return;
+            }
+            if (targetNames.length > 2) {
+                return;
+            }
+
+            const evidenceOverlap = targetNames.some((name) => evidenceNames.has(name));
+            if (evidenceNames.size && !evidenceOverlap && (category !== "ally" && category !== "enemy")) {
+                return;
+            }
+            if (evidenceCategory !== "other" && category !== "other" && category !== evidenceCategory && !evidenceOverlap) {
+                return;
+            }
+
+            const hasConflict = targetNames.some((targetName) => {
+                const existingCategory = targetCategoryMap.get(targetName);
+                return this.isConflictingRelationshipCategory(existingCategory, category);
+            });
+            if (hasConflict) {
+                return;
+            }
+
+            targetNames.forEach((targetName) => {
+                if (category !== "other") {
+                    targetCategoryMap.set(targetName, category);
+                }
+            });
+            accepted.push(clause);
+        });
+
+        const deduped = Array.from(new Set(accepted))
+            .filter((clause) => !normalizedCurrentName || !clause.startsWith(normalizedCurrentName))
             .slice(0, 3);
 
         if (deduped.length) {
@@ -9274,7 +9902,9 @@
         }
 
         const fallbackDesc = cleanClause(sourceMeta?.description || "");
-        if (fallbackDesc && relationKeywords.test(fallbackDesc) && fallbackDesc.length <= 28) {
+        const fallbackNames = this.extractKnownNamesFromText(fallbackDesc, knownNameList)
+            .filter((name) => !normalizedCurrentName || name !== normalizedCurrentName);
+        if (fallbackDesc && relationKeywords.test(fallbackDesc) && fallbackDesc.length <= 30 && fallbackNames.length) {
             return fallbackDesc;
         }
 
