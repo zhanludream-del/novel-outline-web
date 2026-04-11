@@ -6867,6 +6867,25 @@ ${(detailedOutline || concept || "未填写").slice(0, 2200)}`;
                 ? rawWorldChanges
                 : {},
             time_constraints: this.coerceStateArray(rawTimeConstraints),
+            resolved_countdowns: this.coerceStateArray(
+                this.pickFirstNonEmptyValue(
+                    base.resolved_countdowns,
+                    base.resolvedCountdowns,
+                    base.resolved_timers,
+                    base.resolvedTimers,
+                    base["\u5df2\u7ed3\u675f\u5012\u8ba1\u65f6"],
+                    base["\u5df2\u89e6\u53d1\u5012\u8ba1\u65f6"],
+                    base["\u7ed3\u675f\u7684\u5012\u8ba1\u65f6"],
+                    storyState.resolved_countdowns,
+                    storyState.resolvedCountdowns,
+                    storyState.resolved_timers,
+                    storyState.resolvedTimers,
+                    storyState["\u5df2\u7ed3\u675f\u5012\u8ba1\u65f6"],
+                    storyState["\u5df2\u89e6\u53d1\u5012\u8ba1\u65f6"],
+                    storyState["\u7ed3\u675f\u7684\u5012\u8ba1\u65f6"],
+                    this.extractStateStructuredField(rawText, ["resolved_countdowns", "resolvedCountdowns", "resolved_timers", "resolvedTimers", "\u5df2\u7ed3\u675f\u5012\u8ba1\u65f6", "\u5df2\u89e6\u53d1\u5012\u8ba1\u65f6", "\u7ed3\u675f\u7684\u5012\u8ba1\u65f6"])
+                )
+            ),
             item_updates: this.coerceStateArray(
                 this.pickFirstNonEmptyValue(
                     base.item_updates,
@@ -6904,6 +6923,7 @@ ${(detailedOutline || concept || "未填写").slice(0, 2200)}`;
             || stateData.key_event
             || (stateData.genre_progress || []).length
             || (stateData.time_constraints || []).length
+            || (stateData.resolved_countdowns || []).length
             || (stateData.item_updates || []).length
             || (stateData.appearance_changes || []).length
             || Object.keys(stateData.characters || {}).length
@@ -7262,6 +7282,15 @@ ${(detailedOutline || concept || "未填写").slice(0, 2200)}`;
             return "";
         }
 
+        const descriptor = this.parseTimelineDescriptor(source, 0);
+        if (descriptor?.cues?.length) {
+            return this.buildExplicitTimelineLabel(
+                "",
+                descriptor.relationLabel || "",
+                descriptor.phaseLabel || ""
+            ) || descriptor.cues[descriptor.cues.length - 1]?.raw || "";
+        }
+
         const patterns = [
             /((?:第)?[一二两三四五六七八九十百零\d]+(?:个)?(?:时辰|小时|刻钟|炷香|天|日|夜|个月|月|年)后)/,
             /(次日(?:清晨|清早|上午|中午|午后|傍晚|入夜|夜里|深夜)?)/,
@@ -7271,13 +7300,17 @@ ${(detailedOutline || concept || "未填写").slice(0, 2200)}`;
             /(片刻后|不多时|半晌后|稍后|很快)/
         ];
 
+        let lastMatch = "";
         for (const pattern of patterns) {
-            const match = source.match(pattern);
-            if (match?.[1]) {
-                return match[1].trim();
+            const matcher = new RegExp(pattern.source, pattern.flags?.includes("g") ? pattern.flags : `${pattern.flags || ""}g`);
+            let match = null;
+            while ((match = matcher.exec(source)) !== null) {
+                if (match?.[1]) {
+                    lastMatch = match[1].trim();
+                }
             }
         }
-        return "";
+        return lastMatch;
     }
 
     shouldEnrichTimelineWithPrevious(text = "") {
@@ -8271,7 +8304,9 @@ ${(detailedOutline || concept || "未填写").slice(0, 2200)}`;
         this.novelData.story_state.current_location = outlineState.current_location || "";
         this.novelData.story_state.current_time = outlineState.timeline || "";
 
-        this.recordTimelineUpdate(chapterNumber, sanitizedStateData);
+        this.recordTimelineUpdate(chapterNumber, sanitizedStateData, chapter, {
+            cleanedContent: options.cleanedContent || ""
+        });
         this.recordChapterSnapshot(chapterNumber, chapterTitle, sanitizedStateData, chapter);
         this.recordDynamicStateUpdateRich(chapterNumber, sanitizedStateData);
         this.recordWorldTrackerUpdate(chapterNumber, sanitizedStateData);
@@ -8870,7 +8905,143 @@ ${(detailedOutline || concept || "未填写").slice(0, 2200)}`;
         return this.normalizeTimelineCountdownTitle(text).replace(/[^\u4e00-\u9fa5A-Za-z0-9]/g, "");
     }
 
+    normalizeTimelineResolutionText(text = "") {
+        return String(text || "")
+            .replace(/\s+/g, "")
+            .replace(/[，。！？；：、“”‘’"'`~!@#$%^&*()_\-+=\[\]{}<>《》【】|\\\/]/g, "")
+            .replace(/(?:还有|还剩|剩余|约莫|大概|预计|至少)?[一二两三四五六七八九十百零\d]+\s*(?:天|日)(?:后|内|左右)?/g, "")
+            .replace(/(?:倒计时|时间约束|应对|面对|处理|准备|等待|警惕|提防|需要|必须|尽快|持续|预计|将要|即将)/g, "")
+            .trim();
+    }
+
+    isGenericTimelineResolutionKeyword(token = "") {
+        return /^(?:危机|风波|事件|行动|任务|计划|安排|问题|局势|情况|期限|节点|结果|消息|大事|变故|冲突|矛盾|时期|阶段)$/.test(String(token || "").trim());
+    }
+
+    buildTimelineResolutionKeywords(text = "") {
+        const normalized = this.normalizeTimelineResolutionText(text);
+        if (!normalized) {
+            return [];
+        }
+
+        const keywords = new Set();
+        const segments = normalized
+            .split(/(?:的|之|和|与|及|并|或|而|在|于|从|到|向|往|里|内|外|前|后|时|将|已|又|再|把|被|让|给|对|为|着|了)/)
+            .map((item) => item.trim())
+            .filter(Boolean);
+
+        segments.forEach((segment) => {
+            if (segment.length >= 2 && !this.isGenericTimelineResolutionKeyword(segment)) {
+                keywords.add(segment);
+            }
+            if (segment.length >= 4) {
+                for (let index = 0; index <= segment.length - 2; index += 1) {
+                    const gram = segment.slice(index, index + 2);
+                    if (!this.isGenericTimelineResolutionKeyword(gram)) {
+                        keywords.add(gram);
+                    }
+                }
+            }
+        });
+
+        if (!keywords.size) {
+            if (normalized.length <= 8) {
+                keywords.add(normalized);
+            } else {
+                keywords.add(normalized.slice(0, 4));
+                keywords.add(normalized.slice(-4));
+            }
+        }
+
+        return Array.from(keywords).filter((item) => item && item.length >= 2);
+    }
+
+    doesTimelineCountdownMatchEvidence(entry = {}, evidenceTexts = []) {
+        const normalizedEvidence = (Array.isArray(evidenceTexts) ? evidenceTexts : [])
+            .map((item) => this.normalizeTimelineResolutionText(item))
+            .filter(Boolean);
+        if (!normalizedEvidence.length) {
+            return false;
+        }
+
+        const futureOnlyPattern = /(准备|等待|提防|防备|应对|处理|计划|打算|谋划|商议|讨论|防止|避免|预计|将要|即将|还有|还剩|剩余|之前|前夜|前夕)/;
+        const resolutionSignalPattern = /(已经|终于|忽然|突然|当场|正式|彻底|爆发|发生|来临|抵达|抵京|入京|杀到|赶到|开始|开启|发动|举行|揭晓|降临|现身|发作|临盆|生产|围城|兵变|决战|攻城|攻入|出兵|失守|落幕|结束|解除|取消|终止|平息|遇袭|刺杀|到来)/;
+        const dueSoon = Number.isFinite(Number(entry.remaining_days)) && Number(entry.remaining_days) <= 1;
+
+        const exactNeedles = [
+            this.normalizeTimelineResolutionText(entry.title || ""),
+            this.normalizeTimelineResolutionText(entry.raw_text || "")
+        ].filter((item) => item && item.length >= 3);
+        if (exactNeedles.some((needle) => normalizedEvidence.some((text) => {
+            if (!text.includes(needle)) {
+                return false;
+            }
+            if (futureOnlyPattern.test(text) && !resolutionSignalPattern.test(text)) {
+                return false;
+            }
+            if (resolutionSignalPattern.test(text)) {
+                return true;
+            }
+            return dueSoon && text.length >= needle.length + 2;
+        }))) {
+            return true;
+        }
+
+        const keywords = Array.from(new Set([
+            ...this.buildTimelineResolutionKeywords(entry.title || ""),
+            ...this.buildTimelineResolutionKeywords(entry.raw_text || "")
+        ]));
+        if (!keywords.length) {
+            return false;
+        }
+
+        return normalizedEvidence.some((text) => {
+            if (futureOnlyPattern.test(text) && !resolutionSignalPattern.test(text)) {
+                return false;
+            }
+            const matched = keywords.filter((keyword) => text.includes(keyword));
+            const strong = matched.filter((keyword) => keyword.length >= 3);
+            const hasResolutionSignal = resolutionSignalPattern.test(text);
+            if (hasResolutionSignal && strong.length >= 1 && (matched.length >= 2 || keywords.length === 1)) {
+                return true;
+            }
+            if (hasResolutionSignal && matched.length >= Math.min(2, keywords.length)) {
+                return true;
+            }
+            return dueSoon && matched.length >= 1 && text.length >= 8;
+        });
+    }
+
+    getResolvedTimelineCountdownKeys(stateData = {}) {
+        return this.coerceStateArray(
+            stateData.resolved_countdowns
+            || stateData.resolvedCountdowns
+            || stateData.resolved_timers
+            || stateData.resolvedTimers
+            || stateData["\u5df2\u7ed3\u675f\u5012\u8ba1\u65f6"]
+            || stateData["\u5df2\u89e6\u53d1\u5012\u8ba1\u65f6"]
+            || stateData["\u7ed3\u675f\u7684\u5012\u8ba1\u65f6"]
+        ).map((item) => {
+            if (item && typeof item === "object") {
+                return this.normalizeTimelineCountdownKey(
+                    item.title || item.name || item.label || item.raw_text || item["\u6807\u9898"] || item["\u540d\u79f0"] || item["\u8bbe\u5b9a"] || ""
+                );
+            }
+            return this.normalizeTimelineCountdownKey(item);
+        }).filter(Boolean);
+    }
+
     buildTimelineCountdownCurrentLabel(entry = {}) {
+        const status = String(entry.status || "").trim().toLowerCase();
+        if (status === "resolved") {
+            return String(entry.current_label || "本章已结束").trim();
+        }
+        if (status === "cancelled") {
+            return String(entry.current_label || "已取消").trim();
+        }
+        if (status === "expired") {
+            return String(entry.current_label || "已失效").trim();
+        }
         const remainingDays = Number(entry.remaining_days);
         if (Number.isFinite(remainingDays)) {
             if (remainingDays <= 0) {
@@ -8884,6 +9055,7 @@ ${(detailedOutline || concept || "未填写").slice(0, 2200)}`;
     normalizeTimelineCountdownEntry(entry = {}) {
         const source = entry && typeof entry === "object" ? entry : {};
         const title = String(source.title || source.name || source.label || source["标题"] || source["名称"] || "").trim();
+        const explicitStatus = String(source.status || source["状态"] || "").trim().toLowerCase();
         const normalized = {
             ...source,
             id: String(source.id || Utils.uid("countdown")),
@@ -8895,9 +9067,11 @@ ${(detailedOutline || concept || "未填写").slice(0, 2200)}`;
             initial_days: Number(source.initial_days ?? source.total_days ?? source["初始天数"]),
             current_time: String(source.current_time || source["当前时间"] || "").trim(),
             current_label: String(source.current_label || source["当前标签"] || "").trim(),
-            status: String(source.status || source["状态"] || "").trim() || "active",
+            status: explicitStatus || "active",
             raw_text: String(source.raw_text || source.constraint_desc || source["设定"] || "").trim(),
-            last_updated_chapter: Number(source.last_updated_chapter || source.chapter || source["章节"] || 0) || 0
+            last_updated_chapter: Number(source.last_updated_chapter || source.chapter || source["章节"] || 0) || 0,
+            resolved_chapter: Number(source.resolved_chapter || source["结束章节"] || 0) || 0,
+            resolved_time: String(source.resolved_time || source["结束时间"] || "").trim()
         };
         if (!Number.isFinite(normalized.remaining_days)) {
             normalized.remaining_days = "";
@@ -8905,10 +9079,13 @@ ${(detailedOutline || concept || "未填写").slice(0, 2200)}`;
         if (!Number.isFinite(normalized.initial_days)) {
             normalized.initial_days = Number.isFinite(normalized.remaining_days) ? normalized.remaining_days : "";
         }
-        normalized.current_label = this.buildTimelineCountdownCurrentLabel(normalized);
-        if (Number.isFinite(normalized.remaining_days)) {
+        if (
+            !["resolved", "cancelled", "expired"].includes(normalized.status)
+            && Number.isFinite(normalized.remaining_days)
+        ) {
             normalized.status = normalized.remaining_days <= 0 ? "due" : "active";
         }
+        normalized.current_label = this.buildTimelineCountdownCurrentLabel(normalized);
         return normalized;
     }
 
@@ -8964,7 +9141,7 @@ ${(detailedOutline || concept || "未填写").slice(0, 2200)}`;
         const currentChapter = Number(chapterNumber || 0);
         return (Array.isArray(tracker.countdowns) ? tracker.countdowns : [])
             .map((item) => this.normalizeTimelineCountdownEntry(item))
-            .filter((item) => item.title && item.status !== "resolved")
+            .filter((item) => item.title && !["resolved", "cancelled", "expired"].includes(item.status))
             .filter((item) => !currentChapter || Number(item.start_chapter || 0) <= currentChapter)
             .sort((left, right) => {
                 const leftDays = Number.isFinite(Number(left.remaining_days)) ? Number(left.remaining_days) : 99999;
@@ -8982,11 +9159,20 @@ ${(detailedOutline || concept || "未填写").slice(0, 2200)}`;
         return items.join("；");
     }
 
-    recordTimelineUpdate(chapterNumber, stateData, chapter = null) {
+    recordTimelineUpdate(chapterNumber, stateData, chapter = null, options = {}) {
         const tracker = this.novelData.timeline_tracker || (this.novelData.timeline_tracker = {});
         const previousTime = String(tracker.current_time || this.getPreviousChapterTimeline(chapterNumber) || "").trim();
         const currentTime = String(stateData.timeline || previousTime || "").trim();
         const dayAdvance = this.calculateTimelineDayAdvance(previousTime, currentTime, chapterNumber);
+        const cleanedContent = String(options?.cleanedContent || "").trim();
+        const explicitResolvedKeys = new Set(this.getResolvedTimelineCountdownKeys(stateData));
+        const resolutionEvidence = [
+            stateData.key_event,
+            chapter?.title || "",
+            this.extractSummarySection(chapter?.summary || "", "核心事件"),
+            chapter?.key_event || chapter?.keyEvent || "",
+            cleanedContent ? cleanedContent.slice(-1800) : ""
+        ].filter(Boolean);
 
         tracker.current_time = currentTime || tracker.current_time || "";
         tracker.timeline_events = Array.isArray(tracker.timeline_events) ? tracker.timeline_events : [];
@@ -8996,14 +9182,32 @@ ${(detailedOutline || concept || "未填写").slice(0, 2200)}`;
         tracker.countdowns = tracker.countdowns
             .map((item) => {
                 const normalized = this.normalizeTimelineCountdownEntry(item);
+                const isTerminal = ["resolved", "cancelled", "expired"].includes(normalized.status);
                 const remainingDays = Number.isFinite(Number(normalized.remaining_days))
                     ? Math.max(0, Number(normalized.remaining_days) - Math.max(0, dayAdvance))
                     : normalized.remaining_days;
-                return this.normalizeTimelineCountdownEntry({
+                const updated = this.normalizeTimelineCountdownEntry({
                     ...normalized,
-                    remaining_days: remainingDays,
+                    remaining_days: isTerminal ? normalized.remaining_days : remainingDays,
                     current_time: currentTime || normalized.current_time || "",
                     last_updated_chapter: Number(chapterNumber || normalized.last_updated_chapter || 0) || 0
+                });
+                const matchKey = updated.match_key || this.normalizeTimelineCountdownKey(updated.title);
+                const shouldResolve = !isTerminal && (
+                    explicitResolvedKeys.has(matchKey)
+                    || this.doesTimelineCountdownMatchEvidence(updated, resolutionEvidence)
+                );
+                if (!shouldResolve) {
+                    return updated;
+                }
+                return this.normalizeTimelineCountdownEntry({
+                    ...updated,
+                    status: "resolved",
+                    current_time: currentTime || updated.current_time || "",
+                    current_label: "本章已结束",
+                    resolved_chapter: Number(chapterNumber || updated.resolved_chapter || 0) || 0,
+                    resolved_time: currentTime || updated.current_time || updated.resolved_time || "",
+                    last_updated_chapter: Number(chapterNumber || updated.last_updated_chapter || 0) || 0
                 });
             })
             .filter((item) => item.title);
@@ -9029,9 +9233,15 @@ ${(detailedOutline || concept || "未填写").slice(0, 2200)}`;
 
         countdownCandidates.forEach((candidate) => {
             const matchKey = candidate.match_key || this.normalizeTimelineCountdownKey(candidate.title);
+            if (explicitResolvedKeys.has(matchKey)) {
+                return;
+            }
             const existingIndex = tracker.countdowns.findIndex((item) => (item.match_key || this.normalizeTimelineCountdownKey(item.title)) === matchKey);
             if (existingIndex >= 0) {
                 const existing = this.normalizeTimelineCountdownEntry(tracker.countdowns[existingIndex]);
+                if (["resolved", "cancelled", "expired"].includes(existing.status)) {
+                    return;
+                }
                 const nextRemaining = Number.isFinite(Number(existing.remaining_days))
                     ? Math.min(Number(existing.remaining_days), Number(candidate.remaining_days))
                     : Number(candidate.remaining_days);
@@ -9040,7 +9250,11 @@ ${(detailedOutline || concept || "未填写").slice(0, 2200)}`;
                     raw_text: candidate.raw_text || existing.raw_text,
                     current_time: currentTime || existing.current_time,
                     last_updated_chapter: chapterNumber,
-                    remaining_days: nextRemaining
+                    remaining_days: nextRemaining,
+                    start_time: existing.start_time || candidate.start_time || "",
+                    initial_days: Number.isFinite(Number(existing.initial_days))
+                        ? Number(existing.initial_days)
+                        : Number(candidate.initial_days)
                 });
                 return;
             }
