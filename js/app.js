@@ -6378,6 +6378,8 @@ ${(detailedOutline || concept || "未填写").slice(0, 2200)}`;
         const logs = [];
         const generatedTitle = this.extractGeneratedChapterTitle(rawContent);
         const stateBlock = this.extractDelimitedBlock(rawContent, "<<<STATE_JSON>>>", [
+            "<<<CHAPTER_TITLE>>>",
+            "<<<END_CHAPTER_TITLE>>>",
             "<<<EXTRA_CHARACTERS>>>",
             "<<<FORESHADOWS>>>",
             "<<<PERSONALITY_CHANGE>>>",
@@ -6514,7 +6516,7 @@ ${(detailedOutline || concept || "未填写").slice(0, 2200)}`;
         let cleaned = String(content || "");
         [
             ["<<<CHAPTER_TITLE>>>", ["<<<END_CHAPTER_TITLE>>>", "<<<STATE_JSON>>>", "<<<EXTRA_CHARACTERS>>>", "<<<FORESHADOWS>>>", "<<<PERSONALITY_CHANGE>>>", "<<<CHARACTER_APPEARANCE>>>"]],
-            ["<<<STATE_JSON>>>", ["<<<EXTRA_CHARACTERS>>>", "<<<FORESHADOWS>>>", "<<<PERSONALITY_CHANGE>>>", "<<<CHARACTER_APPEARANCE>>>", "<<<END_STATE>>>"]],
+            ["<<<STATE_JSON>>>", ["<<<CHAPTER_TITLE>>>", "<<<END_CHAPTER_TITLE>>>", "<<<EXTRA_CHARACTERS>>>", "<<<FORESHADOWS>>>", "<<<PERSONALITY_CHANGE>>>", "<<<CHARACTER_APPEARANCE>>>", "<<<END_STATE>>>"]],
             ["<<<EXTRA_CHARACTERS>>>", ["<<<END_EXTRA>>>"]],
             ["<<<FORESHADOWS>>>", ["<<<END_FORESHADOWS>>>"]],
             ["<<<PERSONALITY_CHANGE>>>", ["<<<END_PERSONALITY_CHANGE>>>"]],
