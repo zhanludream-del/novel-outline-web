@@ -91,7 +91,6 @@ class NovelOutlineWebApp {
             chapterAnalysisReportPreview: document.getElementById("chapterAnalysisReportPreview"),
             chapterQcPreview: document.getElementById("chapterQcPreview"),
             chapterAiFilterEnabled: document.getElementById("chapterAiFilterEnabled"),
-            chapterAutoTitleEnabled: document.getElementById("chapterAutoTitleEnabled"),
 
             characterName: document.getElementById("characterName"),
             characterIdentity: document.getElementById("characterIdentity"),
@@ -352,7 +351,6 @@ class NovelOutlineWebApp {
         if (!this.novelData.prompt_state) {
             this.novelData.prompt_state = JSON.parse(JSON.stringify(DEFAULT_NOVEL_DATA.prompt_state));
         }
-        this.novelData.prompt_state.auto_chapter_title_enabled = this.novelData.prompt_state.auto_chapter_title_enabled === true;
         this.novelData.prompt_state.ai_filter_enabled = this.novelData.prompt_state.ai_filter_enabled !== false;
         this.novelData.prompt_state.ai_filter_whitelist = Array.isArray(this.novelData.prompt_state.ai_filter_whitelist)
             ? this.novelData.prompt_state.ai_filter_whitelist
@@ -566,13 +564,6 @@ class NovelOutlineWebApp {
                 this.novelData.prompt_state.ai_filter_enabled = this.elements.chapterAiFilterEnabled.checked;
                 this.persist(true);
                 Utils.showMessage(this.elements.chapterAiFilterEnabled.checked ? "已开启 AI 去味。" : "已关闭 AI 去味。", "success");
-            });
-        }
-        if (this.elements.chapterAutoTitleEnabled) {
-            this.elements.chapterAutoTitleEnabled.addEventListener("change", () => {
-                this.novelData.prompt_state.auto_chapter_title_enabled = this.elements.chapterAutoTitleEnabled.checked;
-                this.persist(true);
-                Utils.showMessage(this.elements.chapterAutoTitleEnabled.checked ? "已开启生成后自动改章名。" : "已关闭生成后自动改章名。", "success");
             });
         }
 
@@ -1066,9 +1057,6 @@ ${(detailedOutline || concept || "未填写").slice(0, 2200)}`;
         this.elements.promptFrequencySelect.value = this.novelData.prompt_state.chapter_frequency || "male";
         if (this.elements.chapterAiFilterEnabled) {
             this.elements.chapterAiFilterEnabled.checked = this.novelData.prompt_state.ai_filter_enabled !== false;
-        }
-        if (this.elements.chapterAutoTitleEnabled) {
-            this.elements.chapterAutoTitleEnabled.checked = this.novelData.prompt_state.auto_chapter_title_enabled === true;
         }
         if (this.elements.aiFilterWhitelistInput) {
             this.elements.aiFilterWhitelistInput.value = (this.novelData.prompt_state.ai_filter_whitelist || []).join("\n");
@@ -6310,7 +6298,6 @@ ${(detailedOutline || concept || "未填写").slice(0, 2200)}`;
                         Utils.log(message, "error");
                         processed = {
                             cleanedContent: fallbackContent,
-                            generatedTitle: this.extractGeneratedChapterTitle(rawContent),
                             logs: ["状态回写重试失败，本次已跳过部分追踪更新，但正文内容已保留。"]
                         };
                     }
@@ -6319,7 +6306,6 @@ ${(detailedOutline || concept || "未填写").slice(0, 2200)}`;
                     Utils.log(message, "error");
                     processed = {
                         cleanedContent: fallbackContent,
-                        generatedTitle: this.extractGeneratedChapterTitle(rawContent),
                         logs: ["状态回写失败，本次已跳过部分追踪更新，但正文内容已保留。"]
                     };
                 }
@@ -6334,10 +6320,6 @@ ${(detailedOutline || concept || "未填写").slice(0, 2200)}`;
                 Utils.log(continuityWarning, "info");
             }
             this.elements.chapterContentInput.value = finalContent;
-            if (this.novelData.prompt_state?.auto_chapter_title_enabled === true && processed.generatedTitle) {
-                this.elements.chapterTitleInput.value = processed.generatedTitle;
-                Utils.log(`第 ${chapter.number} 章已自动更新标题：${processed.generatedTitle}`, "success");
-            }
             this.saveChapterEditor();
             Utils.showMessage("章节正文草稿已生成。", "success");
             if (processed.logs.length) {
@@ -6376,10 +6358,7 @@ ${(detailedOutline || concept || "未填写").slice(0, 2200)}`;
         const chapterNumber = Number(chapter.number || chapter.chapter_number || 0);
         const { allowRetryPrompt = true } = options;
         const logs = [];
-        const generatedTitle = this.extractGeneratedChapterTitle(rawContent);
         const stateBlock = this.extractDelimitedBlock(rawContent, "<<<STATE_JSON>>>", [
-            "<<<CHAPTER_TITLE>>>",
-            "<<<END_CHAPTER_TITLE>>>",
             "<<<EXTRA_CHARACTERS>>>",
             "<<<FORESHADOWS>>>",
             "<<<PERSONALITY_CHANGE>>>",
@@ -6445,26 +6424,8 @@ ${(detailedOutline || concept || "未填写").slice(0, 2200)}`;
 
         return {
             cleanedContent,
-            generatedTitle,
             logs
         };
-    }
-
-    extractGeneratedChapterTitle(content) {
-        const title = this.extractDelimitedBlock(content, "<<<CHAPTER_TITLE>>>", [
-            "<<<END_CHAPTER_TITLE>>>",
-            "<<<STATE_JSON>>>",
-            "<<<EXTRA_CHARACTERS>>>",
-            "<<<FORESHADOWS>>>",
-            "<<<PERSONALITY_CHANGE>>>",
-            "<<<CHARACTER_APPEARANCE>>>"
-        ]);
-        return String(title || "")
-            .replace(/^章节标题[:：]\s*/u, "")
-            .replace(/^标题[:：]\s*/u, "")
-            .replace(/\r?\n/g, " ")
-            .replace(/\s+/g, " ")
-            .trim();
     }
 
     async recoverMissingChapterStateData(volume, chapter, cleanedContent, stateBlock = "") {
@@ -6515,8 +6476,7 @@ ${(detailedOutline || concept || "未填写").slice(0, 2200)}`;
     stripGeneratedMarkers(content) {
         let cleaned = String(content || "");
         [
-            ["<<<CHAPTER_TITLE>>>", ["<<<END_CHAPTER_TITLE>>>", "<<<STATE_JSON>>>", "<<<EXTRA_CHARACTERS>>>", "<<<FORESHADOWS>>>", "<<<PERSONALITY_CHANGE>>>", "<<<CHARACTER_APPEARANCE>>>"]],
-            ["<<<STATE_JSON>>>", ["<<<CHAPTER_TITLE>>>", "<<<END_CHAPTER_TITLE>>>", "<<<EXTRA_CHARACTERS>>>", "<<<FORESHADOWS>>>", "<<<PERSONALITY_CHANGE>>>", "<<<CHARACTER_APPEARANCE>>>", "<<<END_STATE>>>"]],
+            ["<<<STATE_JSON>>>", ["<<<EXTRA_CHARACTERS>>>", "<<<FORESHADOWS>>>", "<<<PERSONALITY_CHANGE>>>", "<<<CHARACTER_APPEARANCE>>>", "<<<END_STATE>>>"]],
             ["<<<EXTRA_CHARACTERS>>>", ["<<<END_EXTRA>>>"]],
             ["<<<FORESHADOWS>>>", ["<<<END_FORESHADOWS>>>"]],
             ["<<<PERSONALITY_CHANGE>>>", ["<<<END_PERSONALITY_CHANGE>>>"]],
@@ -8500,12 +8460,8 @@ ${(detailedOutline || concept || "未填写").slice(0, 2200)}`;
             const finalSanitize = this.sanitizeSynopsisCharacterCaches({
                 referenceSnapshot
             });
-            const worldStateBeforeSync = JSON.stringify(this.novelData.world_state_manager || {});
-            this.ensureWorldStateManager();
-            this.syncWorldStateManager();
-            const worldStateChanged = JSON.stringify(this.novelData.world_state_manager || {}) !== worldStateBeforeSync;
             return {
-                changed: initialSanitize.changed || finalSanitize.changed || worldStateChanged,
+                changed: initialSanitize.changed || finalSanitize.changed,
                 removedCount: 0,
                 removedNames: [],
                 cleanedChapters: 0,
@@ -8583,18 +8539,15 @@ ${(detailedOutline || concept || "未填写").slice(0, 2200)}`;
                 excludedChapterIds: options.excludedChapterIds
             })
         });
-        const worldStateBeforeSync = JSON.stringify(this.novelData.world_state_manager || {});
         this.ensureWorldStateManager();
         this.syncWorldStateManager();
-        const worldStateChanged = JSON.stringify(this.novelData.world_state_manager || {}) !== worldStateBeforeSync;
 
         return {
             changed: initialSanitize.changed
                 || finalSanitize.changed
                 || outlineResidueCleanup.changed
                 || originalOutlineCount !== this.novelData.outline.characters.length
-                || removedNames.size > 0
-                || worldStateChanged,
+                || removedNames.size > 0,
             removedCount: removedNames.size,
             removedNames: Array.from(removedNames),
             cleanedChapters: outlineResidueCleanup.chapterCount,
@@ -11362,8 +11315,8 @@ ${(detailedOutline || concept || "未填写").slice(0, 2200)}`;
             return false;
         }
 
-        const genericRolePattern = /^(主角|男主|女主|反派|非人反派|妖鬼神|绝世大妖|充电宝|双胞胎|黄泉|系统|路人|众人|少年|少女|男人|女人|师尊|掌门|长老|弟子|同门|敌人|对手|医生|护士|老师|学生|同学|学长|学姐|秘书|助理|前台|店员|经理|总监|院长|教授|导师|研究员|顾问|工程师|技工|组长|厂长|副厂长|技术员|组员|科员|科长|主任|部长|老板|上司|同事|室友|邻居|保镖|司机|管家|校医|警官|某人|某助理|某同事|某老师|某医生|某护士|某警官|某秘书)$/u;
-        const traitPattern = /(不苟言笑|势利眼|热心肠|傲慢|阴险|八卦|冷淡|严肃|冷漠|注重|纪律|厂区|说话|目光|表情|声音|语气|冷酷|关心|包围|危险)$/u;
+        const genericRolePattern = /^(主角|男主|女主|反派|路人|众人|少年|少女|男人|女人|师尊|掌门|长老|弟子|同门|敌人|对手|医生|护士|老师|学生|同学|学长|学姐|秘书|助理|前台|店员|经理|总监|院长|教授|导师|研究员|顾问|工程师|技工|组长|厂长|副厂长|技术员|组员|科员|科长|主任|部长|老板|上司|同事|室友|邻居|保镖|司机|管家|校医|警官|某人|某助理|某同事|某老师|某医生|某护士|某警官|某秘书)$/u;
+        const traitPattern = /(不苟言笑|势利眼|热心肠|傲慢|阴险|八卦|冷淡|严肃|冷漠|注重|纪律|厂区|说话|目光|表情|声音|语气)$/u;
         if (genericRolePattern.test(normalized) || traitPattern.test(normalized)) {
             return false;
         }
@@ -12119,71 +12072,11 @@ ${(detailedOutline || concept || "未填写").slice(0, 2200)}`;
     }
 
     isValidOutlineCharacterName(name) {
-        const resolved = this.normalizeCharacterReferenceLabel(this.resolveKnownCharacterName(name));
-        if (!resolved) {
+        const resolved = this.resolveKnownCharacterName(name);
+        if (!/^[\u4e00-\u9fa5]{2,4}$/.test(resolved)) {
             return false;
         }
-        if (!/^[\u4e00-\u9fa5A-Za-z0-9·・]{2,16}$/u.test(resolved)) {
-            return false;
-        }
-        if (this.getOutlineCharacterExcludedNames().has(resolved)) {
-            return false;
-        }
-
-        const exactRejectedNames = new Set([
-            "系统",
-            "非人反派",
-            "妖鬼神",
-            "绝世大妖",
-            "充电宝",
-            "双胞胎",
-            "黄泉",
-            "冷酷",
-            "关心",
-            "包围",
-            "危险",
-            "绝望",
-            "痛苦",
-            "疯狂",
-            "温柔",
-            "沉默",
-            "冷笑",
-            "讥笑",
-            "看向",
-            "走向",
-            "冲向",
-            "扑向",
-            "抱住",
-            "推开",
-            "拉住",
-            "抬手",
-            "开口",
-            "命令",
-            "质问"
-        ]);
-        if (exactRejectedNames.has(resolved)) {
-            return false;
-        }
-
-        const genericRolePattern = /^(?:主角|男主|女主|反派|路人|众人|少年|少女|男人|女人|师尊|掌门|长老|弟子|同门|敌人|对手|黑影|来人|医者|龙神|神胎|审判官|骑士|圣骑士|主教|祭司|侍女|丫鬟|婢女|护卫|下属|手下|师兄|师姐|师弟|师妹|师父|师母|父亲|母亲|哥哥|姐姐|妹妹|弟弟|同伴|邻居|室友|同事|上司|老板|老师|学生)$/u;
-        return !genericRolePattern.test(resolved);
-    }
-
-    extractOutlineCharacterNameCandidate(lineText = "") {
-        const cleaned = String(lineText || "")
-            .trim()
-            .replace(/^[•\-]\s*/, "")
-            .trim();
-        if (!cleaned) {
-            return "";
-        }
-        const candidate = cleaned
-            .split(/[（(]/)[0]
-            .split(/[：:]/)[0]
-            .split(/[，,；;。]/)[0]
-            .replace(/\s+[—\-－–].*$/, "")
-            .trim();
-        return this.normalizeCharacterReferenceLabel(candidate);
+        return !this.getOutlineCharacterExcludedNames().has(resolved);
     }
 
     extractCharacterSeedsFromSummary(summary, chapterNumber = 0) {
@@ -12454,7 +12347,8 @@ ${(detailedOutline || concept || "未填写").slice(0, 2200)}`;
                     return;
                 }
                 const cleaned = rawLine.replace(/^[•-]\s*/, "");
-                const rawName = this.extractOutlineCharacterNameCandidate(cleaned);
+                const primaryMatch = cleaned.match(/^([\u4e00-\u9fa5]{2,4})/);
+                const rawName = primaryMatch?.[1] || "";
                 const name = this.resolveKnownCharacterName(rawName);
                 if (this.isValidOutlineCharacterName(name)) {
                     sectionKnownNames.push(name);
@@ -12472,18 +12366,14 @@ ${(detailedOutline || concept || "未填写").slice(0, 2200)}`;
                     return;
                 }
 
-                const primaryMatch = cleaned.match(/^[^（(：:，,；;。\s]+(?:[（(]([^）)]+)[）)])?/u);
-                const rawName = this.extractOutlineCharacterNameCandidate(cleaned);
+                const primaryMatch = cleaned.match(/^([\u4e00-\u9fa5]{2,4})(?:[（(]([^）)]+)[）)])?/);
+                const rawName = primaryMatch?.[1] || cleaned.split(/[（(：:]/)[0]?.trim() || "";
                 const name = this.resolveKnownCharacterName(rawName);
                 if (!this.isValidOutlineCharacterName(name)) {
                     return;
                 }
 
-                const descSource = primaryMatch?.[1]
-                    || (cleaned.startsWith(rawName) ? cleaned.slice(rawName.length) : cleaned.replace(rawName, ""));
-                const desc = String(descSource || "")
-                    .replace(/^[：:\s\-—－–、，,；;]+/, "")
-                    .trim();
+                const desc = String(primaryMatch?.[2] || cleaned.replace(rawName, "").replace(/^[：:\s-]+/, "")).trim();
                 const relationInfo = this.extractRelationshipInfoForSeed(name, desc, mergedKnownNames);
                 seeds.push({
                     name,

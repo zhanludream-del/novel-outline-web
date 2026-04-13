@@ -435,7 +435,6 @@ const DEFAULT_NOVEL_DATA = {
         saved_prompts: {},
         selected_prompt: "",
         chapter_frequency: "male",
-        auto_chapter_title_enabled: false,
         ai_filter_enabled: true,
         ai_filter_whitelist: [],
         ai_filter_blacklist: []
