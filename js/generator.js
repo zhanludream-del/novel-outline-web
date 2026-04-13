@@ -2563,6 +2563,7 @@
             chapter.number || 0,
             `${chapter.title || ""}\n${chapter.summary || ""}`
         );
+        const chapterTitleOutputProtocol = this.buildChapterTitleOutputProtocol(chapter);
         const extraOutputProtocol = this.buildExtraOutputProtocol();
         const stateOutputProtocol = this.buildStateOutputProtocol(project, chapter, relevantCharacters);
 
@@ -2578,7 +2579,7 @@
             "如果本章大纲或前文衔接略显生硬，你要在正文里自然补足因果与过桥动作，让读者读起来顺，但不能篡改主线结果。",
             "拒绝AI味：不要堆砌嘴角、眼神、瞳孔、喉结、指节等模板化微表情；不要写空泛比喻、总结腔和文绉绉的抽象抒情。",
             "短句优先，动词优先，口语化，少副词，少形容词，少套路比喻。",
-            "正文写完后，必须按要求追加状态输出和追踪输出。",
+            "正文写完后，必须按要求追加章节标题、状态输出和追踪输出。",
             guardContext,
             characterConsistencyContext
         ].filter(Boolean).join("\n\n");
@@ -2604,6 +2605,7 @@
             nextChapterSetupInstruction,
             nextChapterForbiddenPreview,
             transitionGuide,
+            chapterTitleOutputProtocol,
             stateOutputProtocol,
             extraOutputProtocol
         });
@@ -2699,6 +2701,11 @@
                         label: "下一章禁止预写预警",
                         length: String(nextChapterForbiddenPreview || "").trim().length,
                         preview: this.limitContext(nextChapterForbiddenPreview || "", 160)
+                    },
+                    {
+                        label: "章节标题输出协议",
+                        length: String(chapterTitleOutputProtocol || "").trim().length,
+                        preview: this.limitContext(chapterTitleOutputProtocol || "", 120)
                     },
                     {
                         label: "状态输出协议",
@@ -4184,7 +4191,14 @@
             return source;
         }
 
-        const markers = ["<<<STATE_JSON>>>", "<<<EXTRA_CHARACTERS>>>", "<<<FORESHADOWS>>>", "<<<PERSONALITY_CHANGE>>>", "<<<CHARACTER_APPEARANCE>>>"];
+        const markers = [
+            "<<<CHAPTER_TITLE>>>",
+            "<<<STATE_JSON>>>",
+            "<<<EXTRA_CHARACTERS>>>",
+            "<<<FORESHADOWS>>>",
+            "<<<PERSONALITY_CHANGE>>>",
+            "<<<CHARACTER_APPEARANCE>>>"
+        ];
         let splitIndex = source.length;
         markers.forEach((marker) => {
             const index = source.indexOf(marker);
@@ -7555,6 +7569,7 @@
         nextChapterSetupInstruction,
         nextChapterForbiddenPreview,
         transitionGuide,
+        chapterTitleOutputProtocol,
         stateOutputProtocol,
         extraOutputProtocol
     }) {
@@ -7637,7 +7652,9 @@
             "8. 如果上一章情绪还没落下，本章开头要延续那股情绪，不要突然换频道。",
             "9. 如果前文交接略生硬，要用动作、对话、场景变化自然补桥，不要生硬跳切。",
             "10. 本章结尾必须停在钩子上，卡在下一章核心事件发生前最有张力的一刻，绝对不能把下一章内容先写进去。",
-            "11. 正文写完后，必须按下面协议追加追踪输出。",
+            "11. 正文写完后，必须按下面协议追加章节标题和追踪输出。",
+            "",
+            "{{chapter_title_output_protocol}}",
             "",
             "{{state_output_protocol}}",
             "",
@@ -7671,6 +7688,7 @@
             current_volume_summary: volume.summary || "",
             next_chapter_setup_instruction: nextChapterSetupInstruction || "【本章结尾铺垫任务】当前章纲未提供 next_chapter_setup，可自行做轻度悬念铺垫。",
             next_chapter_forbidden_preview: nextChapterForbiddenPreview || "【后续剧情预告（下一章剧情） - 绝对不可写】暂无下一章章纲。",
+            chapter_title_output_protocol: chapterTitleOutputProtocol || "",
             state_output_protocol: stateOutputProtocol || "",
             extra_output_protocol: extraOutputProtocol || ""
         };
@@ -7681,50 +7699,49 @@
             output = output.replace(pattern, value || "");
         });
 
-        const hardPinnedFrontMatter = [
+        const executionFocusHeader = [
             "【最高优先级：当前章执行任务】",
             `当前只允许扩写第${chapter.number || "?"}章《${chapter.title || "未命名章节"}》的正文。`,
             "世界观、详细大纲、卷细纲、前文状态都只能辅助当前章，绝不能覆盖当前章的大纲要求。",
-            "如果任一辅助信息与本章大纲看似冲突，以【本章大纲】和上一章结尾的直接衔接为准。",
-            "",
-            "【本章大纲（必须逐条落实）】",
-            chapter.summary || "暂无本章大纲",
-            "",
-            openingRelayPacket || "",
-            "",
-            "【前文原文使用规则】",
-            "前五章原文继续完整提供给模型，但只能用来继承事实、名词、状态和语气，不允许把其中已完成内容改写成新章开头。",
-            "",
-            "【前文五章（重点看最后一章结尾）】",
-            prevContent || "暂无前文",
-            "",
-            "【开章衔接指导】",
-            transitionGuide || "请直接承接上一章最后一个有效场景与状态展开，不要平地重开。"
+            "如果任一辅助信息与本章大纲看似冲突，以【本章大纲】和上一章结尾的直接衔接为准。"
         ].join("\n");
 
-        const desktopInvariantBundle = [
-            storyStateSummary ? `【当前故事状态（必须延续）】\n${storyStateSummary}` : "",
-            narrativeBridgePlan || "",
-            previousOutlineContext ? `【前文大纲摘要】\n${previousOutlineContext}` : "",
-            currentVolumeOutlineContext ? `【当前卷细纲参考】\n${this.limitContext(currentVolumeOutlineContext, 1800)}` : "",
-            worldAndPlanContext ? worldAndPlanContext : "",
-            characterDigest ? `【本章出场/相关角色设定（防崩坏参考）】\n${characterDigest}` : "",
-            project.global_setting_note ? `【全局设定提醒】\n${project.global_setting_note}` : "",
-            chapter.chapter_setting_note ? `【本章设定提醒】\n${chapter.chapter_setting_note}` : "",
-            setupContinuityGuard || "",
-            openingAntiRepeatGuard || "",
-            expansionHint || "",
-            nextChapterSetupInstruction || "",
-            nextChapterForbiddenPreview || "",
-            stateOutputProtocol || "",
-            extraOutputProtocol || ""
-        ].filter(Boolean).join("\n\n");
+        const forcedContextBlocks = [];
+        const hasOutline = Boolean(chapter.summary && String(chapter.summary).trim());
+        const hasOpeningRelay = Boolean(openingRelayPacket && String(openingRelayPacket).trim());
+        const hasPrevContent = Boolean(prevContent && String(prevContent).trim());
+        const hasTransitionGuide = Boolean(transitionGuide && String(transitionGuide).trim());
 
+        if (hasOutline && !output.includes(String(chapter.summary).trim())) {
+            forcedContextBlocks.push([
+                "【本章大纲（必须逐条落实）】",
+                String(chapter.summary).trim()
+            ].join("\n"));
+        }
+
+        if (hasOpeningRelay && !output.includes(String(openingRelayPacket).trim())) {
+            forcedContextBlocks.push(String(openingRelayPacket).trim());
+        }
+
+        // 前五章必须保留原文，不做压缩；仅在模板未包含时补一次，避免重复拼接。
+        if (hasPrevContent && !output.includes(String(prevContent).trim())) {
+            forcedContextBlocks.push([
+                "【前文五章（重点看最后一章结尾）】",
+                String(prevContent).trim()
+            ].join("\n"));
+        }
+
+        if (hasTransitionGuide && !output.includes(String(transitionGuide).trim())) {
+            forcedContextBlocks.push([
+                "【开章衔接指导】",
+                String(transitionGuide).trim()
+            ].join("\n"));
+        }
+
+        // 保留一份完整提示词，避免同一上下文被多次重复拼接导致请求体膨胀。
         return [
-            hardPinnedFrontMatter,
-            desktopInvariantBundle,
-            "【补充写作模板】",
-            "以下内容是补充写作要求，优先级低于前面的刚性约束，不得覆盖本章大纲与状态衔接规则。",
+            executionFocusHeader,
+            forcedContextBlocks.length ? forcedContextBlocks.join("\n\n") : "",
             output
         ].filter(Boolean).join("\n\n");
     }
@@ -7800,6 +7817,24 @@
             "    }",
             "  ]",
             "}"
+        ].join("\n");
+    }
+
+    buildChapterTitleOutputProtocol(chapter) {
+        return [
+            "【章节标题输出协议】",
+            `请为第${chapter?.number || "?"}章额外拟一个新章节标题，风格按【番茄小说爆款章节名】来写。`,
+            "要求：",
+            "1. 标题必须紧扣本章正文里已经实际发生的核心冲突、情绪爆点、反转或章末钩子，不能脱离本章乱起。",
+            "2. 标题要短、狠、抓眼，有悬念感和点击感，像番茄常见爆款章节名，但不要写得浮夸失真。",
+            "3. 优先突出打脸、反杀、掉马、修罗场、失控、逼迫、心动、翻车、危机、撕破脸等强钩子，但必须符合当前题材。",
+            "4. 不要剧透下一章核心结果，不要写成卷名、总结句、大而空的口号，也不要照抄原章标题。",
+            "5. 长度建议 8 到 18 个字，可适当用逗号制造节奏，但只输出一个标题。",
+            "6. 不要解释，不要带“第X章”，不要加书名号，不要输出多个备选。",
+            "",
+            "<<<CHAPTER_TITLE>>>",
+            "这里输出新的章节标题",
+            "<<<END_CHAPTER_TITLE>>>"
         ].join("\n");
     }
 
