@@ -1871,6 +1871,10 @@ ${(detailedOutline || concept || "未填写").slice(0, 2200)}`;
         return "";
     }
 
+    pickTimelineText(...values) {
+        return this.sanitizeTimelineLabel(this.pickWorldStateText(...values));
+    }
+
     splitWorldStateLabels(value) {
         return String(value || "")
             .split(/[\n,，、；;\/]/)
@@ -2333,7 +2337,7 @@ ${(detailedOutline || concept || "未填写").slice(0, 2200)}`;
         }
 
         const overview = {
-            current_time: this.pickWorldStateText(
+            current_time: this.pickTimelineText(
                 latestSnapshot.timeline,
                 latestSnapshot["时间"],
                 this.novelData.story_state?.current_time,
@@ -4290,7 +4294,10 @@ ${(detailedOutline || concept || "未填写").slice(0, 2200)}`;
             });
         });
 
-        return lines.join("\n");
+        const visibleLines = this.isTimelineSystemEnabled()
+            ? lines
+            : lines.filter((line) => !String(line || "").includes("褰撳墠鏃堕棿"));
+        return visibleLines.join("\n");
     }
 
     buildBodyOnlyChaptersTxtExport() {
@@ -7246,18 +7253,140 @@ ${(detailedOutline || concept || "未填写").slice(0, 2200)}`;
     }
 
     getPreviousChapterTimeline(chapterNumber) {
+        if (!this.isTimelineSystemEnabled()) {
+            return "";
+        }
         const current = Number(chapterNumber || 0);
         if (current <= 1) {
             return "";
         }
         const previousSnapshot = this.getChapterSnapshotRecord(current - 1);
-        return this.pickFirstStateString([
+        const snapshotTimeline = this.pickFirstStateString([
             previousSnapshot.timeline,
-            previousSnapshot["时间"],
+            previousSnapshot["时间"]
+        ]);
+        if (snapshotTimeline) {
+            return this.sanitizeTimelineLabel(snapshotTimeline, Math.max(0, current - 1));
+        }
+        return this.sanitizeTimelineLabel(this.pickFirstStateString([
             this.novelData.timeline_tracker?.current_time,
             this.novelData.outline?.story_state?.timeline,
             this.novelData.story_state?.current_time
-        ]);
+        ]), Math.max(0, current - 1));
+    }
+
+    isTimelineSystemEnabled() {
+        return false;
+    }
+
+    sanitizeTimelineBaseLabel(label = "") {
+        let text = String(label || "").replace(/\s+/g, "").trim();
+        if (!text) {
+            return "";
+        }
+
+        text = text.replace(/的{2,}/g, "的");
+        text = text.replace(/(?:之后的)+$/u, "之后");
+        text = text.replace(/(?:之际的)+$/u, "之际");
+        text = text.replace(/(?:时候的)+$/u, "时候");
+        text = text.replace(/(?:时的)+$/u, "时");
+        text = text.replace(/(?:后的)+$/u, "后");
+        text = text.replace(/(?:前的)+$/u, "前");
+        text = text.replace(/(?:中的)+$/u, "中");
+        text = text.replace(/(?:内的)+$/u, "内");
+        text = text.replace(/(?:里的)+$/u, "里");
+        text = text.replace(/的{2,}/g, "的");
+        text = text.replace(/的+$/u, "");
+
+        return text.trim();
+    }
+
+    getTimelinePhaseCandidates() {
+        return [
+            "晨光熹微",
+            "天光微亮",
+            "清晨时分",
+            "天亮时分",
+            "鸡鸣时分",
+            "天光大亮",
+            "日上三竿",
+            "夜幕降临",
+            "华灯初上",
+            "掌灯时分",
+            "暮色四合",
+            "暮色初临",
+            "天色将晚",
+            "日头偏西",
+            "夕阳西下",
+            "天将亮",
+            "早朝后",
+            "拂晓",
+            "晨起",
+            "晨间",
+            "清晨",
+            "清早",
+            "寅时",
+            "卯时",
+            "凌晨",
+            "黎明",
+            "破晓",
+            "天亮时",
+            "早朝",
+            "上午",
+            "辰时",
+            "巳时",
+            "正午",
+            "午时",
+            "中午",
+            "晌午",
+            "午后",
+            "下午",
+            "申时",
+            "未时",
+            "黄昏",
+            "傍晚",
+            "薄暮",
+            "日暮",
+            "酉时",
+            "入夜",
+            "当晚",
+            "当夜",
+            "戌时",
+            "亥时",
+            "子时",
+            "丑时",
+            "夜色渐深",
+            "更深露重",
+            "月上中天",
+            "夜深",
+            "夜里",
+            "深夜",
+            "夜半",
+            "半夜",
+            "子夜",
+            "三更",
+            "五更",
+            "夜阑",
+            "转眼",
+            "须臾后",
+            "片刻后",
+            "不多时",
+            "半晌后",
+            "稍后",
+            "很快"
+        ];
+    }
+
+    getTimelineRelativeCuePattern(flags = "g") {
+        const phaseSource = this.getTimelinePhaseCandidates()
+            .slice()
+            .sort((left, right) => right.length - left.length)
+            .map((item) => this.escapeRegExp(item))
+            .join("|");
+        return new RegExp(
+            `(第?[一二两三四五六七八九十百零\\d]+(?:个)?(?:天|日|夜|个月|月|年)后(?:${phaseSource})?|次日(?:${phaseSource})?|第二天(?:${phaseSource})?|第二日(?:${phaseSource})?|翌日(?:${phaseSource})?|隔日(?:${phaseSource})?|隔天(?:${phaseSource})?|翌晨|次晨|当日(?:${phaseSource})?|当天(?:${phaseSource})?|今日(?:${phaseSource})?|今天(?:${phaseSource})?|今晨|今早|今晚|今夜|${phaseSource})`,
+            flags
+        );
     }
 
     parseChineseNumberValue(token = "") {
@@ -7345,39 +7474,112 @@ ${(detailedOutline || concept || "未填写").slice(0, 2200)}`;
         return `第${offset}天`;
     }
 
+    formatNarrativeElapsedLabel(dayOffset) {
+        const offset = Number(dayOffset);
+        if (!Number.isFinite(offset) || offset < 0) {
+            return "";
+        }
+        if (offset === 0) {
+            return "当日";
+        }
+        if (offset === 1) {
+            return "次日";
+        }
+        if (offset === 2) {
+            return "两日后";
+        }
+        if (offset <= 3) {
+            return "三日后";
+        }
+        if (offset <= 5) {
+            return "五日后";
+        }
+        if (offset <= 10) {
+            return "十日后";
+        }
+        if (offset <= 20) {
+            return "半月后";
+        }
+        if (offset <= 45) {
+            return "一月后";
+        }
+        return "数月后";
+    }
+
     getTimelinePhaseRank(label = "") {
         const text = String(label || "").trim();
         if (!text) {
             return 0;
         }
-        if (/凌晨|黎明|破晓|天亮时|清晨|清早/.test(text)) {
+        if (/凌晨|黎明|破晓|天亮时|天亮时分|清晨时分|清晨|清早|拂晓|晨起|晨间|天将亮|鸡鸣时分|寅时|卯时/.test(text)) {
             return 1;
         }
         if (/早朝/.test(text)) {
             return 2;
         }
-        if (/上午/.test(text)) {
+        if (/上午|辰时|巳时/.test(text)) {
             return 3;
         }
-        if (/中午|晌午/.test(text)) {
+        if (/正午|午时|中午|晌午/.test(text)) {
             return 4;
         }
-        if (/午后/.test(text)) {
+        if (/午后|下午|申时|未时|日头偏西/.test(text)) {
             return 5;
         }
-        if (/黄昏|傍晚|薄暮/.test(text)) {
+        if (/黄昏|傍晚|薄暮|日暮|暮色四合|天色将晚|夕阳西下|酉时/.test(text)) {
             return 6;
         }
-        if (/入夜/.test(text)) {
+        if (/入夜|夜幕降临|华灯初上|戌时/.test(text)) {
             return 7;
         }
-        if (/当晚|当夜|夜里|深夜|夜半/.test(text)) {
+        if (/当晚|当夜|夜深|夜里|深夜|夜半|半夜|子夜|三更|五更|夜阑|亥时|子时|丑时/.test(text)) {
             return 8;
         }
-        if (/片刻后|不多时|半晌后|稍后|很快/.test(text)) {
+        if (/转眼|须臾后|片刻后|不多时|半晌后|稍后|很快/.test(text)) {
             return 9;
         }
         return 0;
+    }
+
+    normalizeTimelinePhaseLabel(label = "") {
+        const text = String(label || "").trim();
+        if (!text) {
+            return "";
+        }
+        if (/清晨时分|天亮时分|鸡鸣时分|晨光熹微|天光微亮|拂晓|晨起|晨间|清晨|清早|今晨|今早|凌晨|黎明|破晓|天亮时|天将亮|寅时|卯时/.test(text)) {
+            return "清晨";
+        }
+        if (/早朝后/.test(text)) {
+            return "早朝后";
+        }
+        if (/早朝/.test(text)) {
+            return "早朝";
+        }
+        if (/上午|辰时|巳时|天光大亮|日上三竿/.test(text)) {
+            return "上午";
+        }
+        if (/正午|午时|中午|晌午/.test(text)) {
+            return "正午";
+        }
+        if (/午后|下午|申时|未时|日头偏西/.test(text)) {
+            return "午后";
+        }
+        if (/黄昏|傍晚|薄暮|日暮|暮色四合|天色将晚|夕阳西下|暮色初临|酉时/.test(text)) {
+            return "傍晚";
+        }
+        if (/入夜|夜幕降临|华灯初上|掌灯时分|戌时/.test(text)) {
+            return "入夜";
+        }
+        if (/当晚|当夜|今晚|今夜/.test(text)) {
+            return "当夜";
+        }
+        if (/夜深|夜里|深夜|夜半|半夜|子夜|三更|五更|夜阑|夜色渐深|更深露重|月上中天|亥时|子时|丑时/.test(text)) {
+            return "深夜";
+        }
+        if (/转眼|须臾后|片刻后|不多时|半晌后|稍后|很快/.test(text)) {
+            return "稍后";
+        }
+        return text;
     }
 
     extractTimelineBaseFromEvent(text = "") {
@@ -7391,13 +7593,43 @@ ${(detailedOutline || concept || "未填写").slice(0, 2200)}`;
         }
         const eventKeywordMatch = source.match(/([\u4e00-\u9fa5A-Za-z0-9]{2,18}?(?:大典|家宴|宴席|秋狩|围猎|兵变|风波|危机|祭典|封禅|婚宴|寿宴|围城|大战|决战|行刺|刺杀|审讯|会试|殿试|回宫|入宫|入府|出征|凯旋))/);
         if (eventKeywordMatch?.[1]) {
-            return eventKeywordMatch[1].trim();
+            return this.sanitizeTimelineBaseLabel(eventKeywordMatch[1].trim());
         }
         const firstSegment = source.split(/[，。！？；]/)[0]?.trim() || "";
         if (!firstSegment) {
             return "";
         }
-        return firstSegment.length > 16 ? firstSegment.slice(0, 16) : firstSegment;
+        return this.sanitizeTimelineBaseLabel(firstSegment.length > 16 ? firstSegment.slice(0, 16) : firstSegment);
+    }
+
+/*__BROKEN_TIMELINE_BASE__
+    extractReliableTimelineBaseFromEvent(text = "") {
+        const source = String(text || "").replace(/\s+/g, "").trim();
+        if (!source) {
+            return "";
+        }
+        const anchoredMatch = source.match(/(?:鍦▅浜巪鑷獆浠?([^锛屻€傦紒锛燂紱銆乚{2,18}?)(?:涓妡鍚巪鍓峾鏃秥涔嬮檯|褰撳ぉ|褰撳|娆℃棩|缈屾棩)/);
+        if (anchoredMatch?.[1]) {
+            return this.sanitizeTimelineBaseLabel(anchoredMatch[1].trim());
+        }
+        const eventKeywordMatch = source.match(/([\u4e00-\u9fa5A-Za-z0-9]{2,18}?(?:澶у吀|瀹跺|瀹村腑|绉嬬嫨|鍥寸寧|鍏靛彉|椋庢尝|鍗辨満|绁吀|灏佺|濠氬|瀵垮|鍥村煄|澶ф垬|鍐虫垬|琛屽埡|鍒烘潃|瀹¤|浼氳瘯|娈胯瘯|鍥炲|鍏ュ|鍏ュ簻|鍑哄緛|鍑棆))/);
+        if (eventKeywordMatch?.[1]) {
+            return this.sanitizeTimelineBaseLabel(eventKeywordMatch[1].trim());
+        }
+        return "";
+    }
+
+__END_BROKEN_TIMELINE_BASE__*/
+    extractReliableTimelineBaseFromEvent(text = "") {
+        const source = String(text || "").replace(/\s+/g, "").trim();
+        if (!source) {
+            return "";
+        }
+        const eventKeywordMatch = source.match(/([\u4e00-\u9fa5A-Za-z0-9]{2,18}?(?:大典|家宴|宴席|秋狩|围猎|兵变|风波|危机|祭典|封禁|婚宴|寿宴|围城|大战|决战|行刺|刺杀|审讯|会试|殿试|回宫|入宫|入府|出征|凯旋))/u);
+        if (eventKeywordMatch?.[1]) {
+            return this.sanitizeTimelineBaseLabel(eventKeywordMatch[1].trim());
+        }
+        return "";
     }
 
     getPreviousChapterTimelineBase(chapterNumber) {
@@ -7416,10 +7648,10 @@ ${(detailedOutline || concept || "未填写").slice(0, 2200)}`;
             return "";
         }
         const cleaned = source
-            .replace(/(?:第?[一二两三四五六七八九十百零\d]+(?:个)?(?:天|日|夜|个月|月|年)后(?:清晨|清早|早朝后|早朝|上午|中午|晌午|午后|傍晚|黄昏|薄暮|入夜|夜里|深夜|夜半|当晚|当夜)?|次日(?:清晨|清早|早朝后|早朝|上午|中午|晌午|午后|傍晚|黄昏|薄暮|入夜|夜里|深夜|夜半|当晚|当夜)?|第二天(?:清晨|清早|早朝后|早朝|上午|中午|晌午|午后|傍晚|黄昏|薄暮|入夜|夜里|深夜|夜半|当晚|当夜)?|翌日(?:清晨|清早|早朝后|早朝|上午|中午|晌午|午后|傍晚|黄昏|薄暮|入夜|夜里|深夜|夜半|当晚|当夜)?|翌晨|次晨|当日(?:清晨|清早|早朝后|早朝|上午|中午|晌午|午后|傍晚|黄昏|薄暮|入夜|夜里|深夜|夜半|当晚|当夜)?|当天(?:清晨|清早|早朝后|早朝|上午|中午|晌午|午后|傍晚|黄昏|薄暮|入夜|夜里|深夜|夜半|当晚|当夜)?|清晨|清早|凌晨|黎明|破晓|天亮时|早朝后|早朝|上午|中午|晌午|午后|黄昏|傍晚|薄暮|入夜|夜里|深夜|夜半|当晚|当夜|片刻后|不多时|半晌后|稍后|很快)/g, "")
+            .replace(this.getTimelineRelativeCuePattern("gu"), "")
             .replace(/[，。！？；：、,\-—\s]/g, "")
             .trim();
-        return cleaned;
+        return this.sanitizeTimelineBaseLabel(cleaned);
     }
 
     parseSingleTimelineCue(rawCue = "") {
@@ -7430,49 +7662,30 @@ ${(detailedOutline || concept || "未填写").slice(0, 2200)}`;
 
         let dayOffset = null;
         let relationLabel = "";
-        if (/^(?:次日|第二天|翌日|翌晨|次晨)/.test(cue)) {
+        let phaseLabel = "";
+        if (/^(?:次日|第二天|第二日|翌日|隔日|隔天|翌晨|次晨)/.test(cue)) {
             dayOffset = 1;
-            relationLabel = "次日";
+            relationLabel = /^(?:第二天|第二日)/.test(cue) ? "第二天" : "次日";
+            if (/^(?:翌晨|次晨)$/.test(cue)) {
+                phaseLabel = "清晨";
+            }
         } else {
             const dayMatch = cue.match(/^第?([一二两三四五六七八九十百零\d]+)(?:个)?(?:天|日)后/);
             if (dayMatch?.[1]) {
                 dayOffset = this.parseChineseNumberValue(dayMatch[1]);
                 relationLabel = this.formatRelativeDayLabel(dayOffset);
-            } else if (/^(?:当日|当天)/.test(cue)) {
+            } else if (/^(?:当日|当天|今日|今天)/.test(cue)) {
                 dayOffset = 0;
                 relationLabel = "当日";
             }
         }
 
-        const phaseCandidates = [
-            "早朝后",
-            "早朝",
-            "清晨",
-            "清早",
-            "凌晨",
-            "黎明",
-            "破晓",
-            "天亮时",
-            "上午",
-            "中午",
-            "晌午",
-            "午后",
-            "黄昏",
-            "傍晚",
-            "薄暮",
-            "入夜",
-            "当晚",
-            "当夜",
-            "夜里",
-            "深夜",
-            "夜半",
-            "片刻后",
-            "不多时",
-            "半晌后",
-            "稍后",
-            "很快"
-        ];
-        const phaseLabel = phaseCandidates.find((item) => cue.includes(item)) || "";
+        const phaseCandidates = this.getTimelinePhaseCandidates()
+            .slice()
+            .sort((left, right) => right.length - left.length);
+        phaseLabel = this.normalizeTimelinePhaseLabel(
+            phaseLabel || phaseCandidates.find((item) => cue.includes(item)) || cue
+        );
         const phaseRank = this.getTimelinePhaseRank(phaseLabel || cue);
 
         return {
@@ -7498,7 +7711,7 @@ ${(detailedOutline || concept || "未填写").slice(0, 2200)}`;
             };
         }
 
-        const cuePattern = /(第?[一二两三四五六七八九十百零\d]+(?:个)?(?:天|日|夜|个月|月|年)后(?:清晨|清早|早朝后|早朝|上午|中午|晌午|午后|傍晚|黄昏|薄暮|入夜|夜里|深夜|夜半|当晚|当夜)?|次日(?:清晨|清早|早朝后|早朝|上午|中午|晌午|午后|傍晚|黄昏|薄暮|入夜|夜里|深夜|夜半|当晚|当夜)?|第二天(?:清晨|清早|早朝后|早朝|上午|中午|晌午|午后|傍晚|黄昏|薄暮|入夜|夜里|深夜|夜半|当晚|当夜)?|翌日(?:清晨|清早|早朝后|早朝|上午|中午|晌午|午后|傍晚|黄昏|薄暮|入夜|夜里|深夜|夜半|当晚|当夜)?|翌晨|次晨|当日(?:清晨|清早|早朝后|早朝|上午|中午|晌午|午后|傍晚|黄昏|薄暮|入夜|夜里|深夜|夜半|当晚|当夜)?|当天(?:清晨|清早|早朝后|早朝|上午|中午|晌午|午后|傍晚|黄昏|薄暮|入夜|夜里|深夜|夜半|当晚|当夜)?|清晨|清早|凌晨|黎明|破晓|天亮时|早朝后|早朝|上午|中午|晌午|午后|黄昏|傍晚|薄暮|入夜|当晚|当夜|夜里|深夜|夜半|片刻后|不多时|半晌后|稍后|很快)/g;
+        const cuePattern = this.getTimelineRelativeCuePattern("gu");
         const cues = [];
         let match = null;
         while ((match = cuePattern.exec(source)) !== null) {
@@ -7525,21 +7738,31 @@ ${(detailedOutline || concept || "未填写").slice(0, 2200)}`;
     }
 
     buildExplicitTimelineLabel(baseLabel = "", relationLabel = "", phaseLabel = "") {
-        const base = String(baseLabel || "").trim();
+        const base = this.sanitizeTimelineBaseLabel(baseLabel);
         const relation = String(relationLabel || "").trim();
-        const phase = String(phaseLabel || "").trim();
+        const phase = this.normalizeTimelinePhaseLabel(String(phaseLabel || "").trim().replace(/^的+/u, ""));
 
         let body = "";
         if (relation) {
-            body = `${relation}${phase && !phase.startsWith(relation) ? phase : ""}`;
+            if (!phase) {
+                body = relation;
+            } else if (phase.startsWith(relation) || (relation === "当日" && /^当/.test(phase))) {
+                body = phase;
+            } else {
+                body = `${relation}${phase}`;
+            }
         } else if (phase) {
-            body = base ? `${phase.startsWith("当") ? phase : `当日${phase}`}` : phase;
+            body = phase;
         }
 
         if (!body) {
             return base;
         }
-        return base ? `${base}的${body}` : body;
+        const normalizedBody = String(body || "").replace(/^的+/u, "").trim();
+        if (!base) {
+            return normalizedBody;
+        }
+        return `${base}的${normalizedBody}`.replace(/的{2,}/g, "的");
     }
 
     normalizeTimelineText(currentTimeline = "", chapterNumber = 0, previousTimeline = "") {
@@ -7550,24 +7773,772 @@ ${(detailedOutline || concept || "未填写").slice(0, 2200)}`;
 
         const descriptor = this.parseTimelineDescriptor(raw, chapterNumber);
         if (!descriptor.cues.length) {
-            return raw;
+            return raw.replace(/的{2,}/g, "的");
         }
 
         const previousDescriptor = this.parseTimelineDescriptor(previousTimeline, Math.max(0, Number(chapterNumber || 0) - 1));
         const lastCue = descriptor.cues[descriptor.cues.length - 1] || {};
-        const inheritedDay = descriptor.dayOffset !== null
+        let inheritedDay = descriptor.dayOffset !== null
             ? descriptor.dayOffset
             : (previousDescriptor.dayOffset !== null ? previousDescriptor.dayOffset : null);
-        const inheritedRelation = descriptor.relationLabel
+        let inheritedRelation = descriptor.relationLabel
             || (descriptor.dayOffset !== null ? this.formatRelativeDayLabel(descriptor.dayOffset) : "")
             || previousDescriptor.relationLabel
             || "";
+        const previousPhaseRank = this.getTimelinePhaseRank(previousDescriptor.phaseLabel || "");
+        const currentPhaseRank = this.getTimelinePhaseRank(lastCue.phaseLabel || "");
+        const hasPhaseWrap = Boolean(
+            lastCue.phaseLabel
+            && previousPhaseRank
+            && currentPhaseRank
+            && currentPhaseRank < previousPhaseRank
+        );
+        if (hasPhaseWrap) {
+            const previousDay = previousDescriptor.dayOffset !== null ? Number(previousDescriptor.dayOffset) : 0;
+            if (descriptor.dayOffset === null || descriptor.dayOffset === 0) {
+                inheritedDay = previousDay + 1;
+                inheritedRelation = this.formatRelativeDayLabel(inheritedDay);
+            }
+        }
         const relationLabel = inheritedDay === 0 && !lastCue.phaseLabel
             ? "当日"
             : inheritedRelation;
         const baseLabel = descriptor.baseLabel || previousDescriptor.baseLabel || this.getPreviousChapterTimelineBase(chapterNumber);
 
         return this.buildExplicitTimelineLabel(baseLabel, relationLabel, lastCue.phaseLabel);
+    }
+
+    sanitizeTimelineLabel(label = "", chapterNumber = 0, previousTimeline = "") {
+        const raw = String(label || "").replace(/\s+/g, "").trim();
+        if (!raw) {
+            return "";
+        }
+
+        const descriptor = this.parseTimelineDescriptor(raw, chapterNumber);
+        if (!descriptor.cues.length) {
+            return raw.replace(/的{2,}/g, "的");
+        }
+
+        const relationLabel = descriptor.relationLabel
+            || (descriptor.dayOffset !== null ? this.formatRelativeDayLabel(descriptor.dayOffset) : "")
+            || "";
+        const baseLabel = descriptor.baseLabel
+            || this.extractTimelineBaseFromLabel(previousTimeline)
+            || this.getPreviousChapterTimelineBase(chapterNumber);
+
+        return this.buildExplicitTimelineLabel(baseLabel, relationLabel, descriptor.phaseLabel || "")
+            || raw.replace(/的{2,}/g, "的");
+    }
+
+    buildTimelineMetadata(label = "", chapterNumber = 0, previousTimeline = "") {
+        if (!this.isTimelineSystemEnabled()) {
+            return {
+                timeline: "",
+                anchor_event: "",
+                day_index: "",
+                phase: "",
+                relation_label: ""
+            };
+        }
+        const timeline = this.sanitizeTimelineLabel(label, chapterNumber, previousTimeline);
+        const descriptor = this.parseTimelineDescriptor(timeline, chapterNumber);
+        const looseRelationLabel = this.extractLooseTimelineRelationLabel(timeline);
+        const baseLabel = this.sanitizeTimelineBaseLabel(descriptor.baseLabel || "");
+        const isRelativeBase = Boolean(
+            baseLabel
+            && (
+                baseLabel === looseRelationLabel
+                || /^(?:次日|第二天|当日|当天|今日|今天|第[一二两三四五六七八九十百零\d]+天)$/u.test(baseLabel)
+            )
+        );
+        return {
+            timeline,
+            anchor_event: isRelativeBase ? "" : baseLabel,
+            day_index: descriptor.dayOffset !== null ? Number(descriptor.dayOffset) : "",
+            phase: this.normalizeTimelinePhaseLabel(descriptor.phaseLabel || ""),
+            relation_label: descriptor.relationLabel
+                || (descriptor.dayOffset !== null ? this.formatRelativeDayLabel(descriptor.dayOffset) : "")
+                || looseRelationLabel
+        };
+    }
+
+    getTimelinePhaseSequence() {
+        return [
+            "清晨",
+            "早朝",
+            "早朝后",
+            "上午",
+            "正午",
+            "午后",
+            "傍晚",
+            "入夜",
+            "当夜",
+            "深夜"
+        ];
+    }
+
+    getTimelineFallbackPhaseSequence() {
+        return [
+            "娓呮櫒",
+            "涓婂崍",
+            "姝ｅ崍",
+            "鍗堝悗",
+            "鍌嶆櫄",
+            "鍏ュ",
+            "褰撳",
+            "娣卞"
+        ];
+    }
+
+    advanceFallbackTimelinePhase(phaseLabel = "", step = 1) {
+        const normalizedPhase = this.normalizeTimelinePhaseLabel(phaseLabel || "");
+        const sequence = this.getTimelineFallbackPhaseSequence();
+        const currentIndex = sequence.indexOf(normalizedPhase);
+        if (currentIndex < 0) {
+            return {
+                phase: normalizedPhase,
+                dayCarry: 0
+            };
+        }
+
+        let nextIndex = currentIndex;
+        let dayCarry = 0;
+        for (let count = 0; count < Math.max(0, Number(step || 0)); count += 1) {
+            nextIndex += 1;
+            if (nextIndex >= sequence.length) {
+                nextIndex = 0;
+                dayCarry += 1;
+            }
+        }
+
+        return {
+            phase: sequence[nextIndex] || normalizedPhase,
+            dayCarry
+        };
+    }
+
+    advanceTimelinePhase(phaseLabel = "", step = 1) {
+        const normalizedPhase = this.normalizeTimelinePhaseLabel(phaseLabel || "");
+        const sequence = this.getTimelinePhaseSequence();
+        const currentIndex = sequence.indexOf(normalizedPhase);
+        if (currentIndex < 0) {
+            return {
+                phase: normalizedPhase,
+                dayCarry: 0
+            };
+        }
+
+        let nextIndex = currentIndex;
+        let dayCarry = 0;
+        for (let count = 0; count < Math.max(0, Number(step || 0)); count += 1) {
+            nextIndex += 1;
+            if (nextIndex >= sequence.length) {
+                nextIndex = 0;
+                dayCarry += 1;
+            }
+        }
+
+        return {
+            phase: sequence[nextIndex] || normalizedPhase,
+            dayCarry
+        };
+    }
+
+    getTimelineStagnationStreak(chapterNumber = 0, timeline = "") {
+        const target = this.sanitizeTimelineLabel(timeline || "", Math.max(0, Number(chapterNumber || 0) - 1));
+        if (!target) {
+            return 0;
+        }
+
+        let streak = 0;
+        for (let current = Number(chapterNumber || 0) - 1; current >= 1; current -= 1) {
+            const snapshot = this.getChapterSnapshotRecord(current);
+            const snapshotTimeline = this.sanitizeTimelineLabel(snapshot.timeline || snapshot["时间"] || "", current);
+            if (!snapshotTimeline || snapshotTimeline !== target) {
+                break;
+            }
+            streak += 1;
+        }
+        return streak;
+    }
+
+    findChapterRecordByNumber(chapterNumber = 0) {
+        const target = Number(chapterNumber || 0);
+        if (!target) {
+            return null;
+        }
+        for (const volume of (this.novelData.outline?.volumes || [])) {
+            for (const chapter of (volume.chapters || [])) {
+                if (Number(chapter?.number || chapter?.chapter_number || 0) === target) {
+                    return {
+                        volume,
+                        chapter
+                    };
+                }
+            }
+        }
+        return null;
+    }
+
+    collectRecentTimelineNarrativeTexts(chapterNumber = 0, timeline = "", maxChapters = 4) {
+        const targetTimeline = this.sanitizeTimelineLabel(timeline || "", Math.max(0, Number(chapterNumber || 0) - 1));
+        if (!targetTimeline || maxChapters <= 0) {
+            return [];
+        }
+
+        const texts = [];
+        for (let current = Number(chapterNumber || 0) - 1; current >= 1 && texts.length < maxChapters; current -= 1) {
+            const snapshot = this.getChapterSnapshotRecord(current);
+            const snapshotTimeline = this.sanitizeTimelineLabel(snapshot.timeline || snapshot["时间"] || "", current);
+            if (!snapshotTimeline || snapshotTimeline !== targetTimeline) {
+                break;
+            }
+            const record = this.findChapterRecordByNumber(current);
+            const chapter = record?.chapter || {};
+            const content = this.stripGeneratedMarkers(this.getStoredChapterContent(chapter) || "").trim();
+            if (content) {
+                texts.push(content.slice(-1800));
+            }
+        }
+        return texts;
+    }
+
+    inferNarrativeProgressScore(texts = []) {
+        const source = (Array.isArray(texts) ? texts : [])
+            .map((item) => String(item || "").trim())
+            .filter(Boolean)
+            .join("\n");
+        if (!source) {
+            return 0;
+        }
+
+        let score = 0;
+        const paragraphCount = source
+            .split(/\n+/)
+            .map((item) => item.trim())
+            .filter(Boolean).length;
+        const sceneTransitionCount = (source.match(/(?:随后|之后|接着|紧接着|很快|转而|再度|另一边|另一处|回到|赶回|赶到|前往|来到|进入|走出|离开|折返|返程|安置|处理|收尾|商议|安排|忙活|折腾|鏖战|厮杀|对峙|交锋|休整|疗伤|奔波|护送|搜查)/gu) || []).length;
+        const majorEventCount = (source.match(/(?:大战|决战|交锋|厮杀|生产|临盆|赶路|回宫|回府|回营|入城|出城|启程|抵达|搜查|审问|疗伤|休整|布阵|破阵|围攻|突围|追杀|撤离|撤出|安置)/gu) || []).length;
+
+        if (source.length >= 600) {
+            score += 1;
+        }
+        if (source.length >= 1500) {
+            score += 1;
+        }
+        if (paragraphCount >= 5) {
+            score += 1;
+        }
+        if (paragraphCount >= 10) {
+            score += 1;
+        }
+        if (sceneTransitionCount >= 3) {
+            score += 1;
+        }
+        if (sceneTransitionCount >= 6) {
+            score += 1;
+        }
+        if (majorEventCount >= 2) {
+            score += 1;
+        }
+        if (majorEventCount >= 4) {
+            score += 1;
+        }
+
+        return score;
+    }
+
+    inferNarrativeDayAdvanceFromDensity(texts = []) {
+        const source = (Array.isArray(texts) ? texts : [])
+            .map((item) => String(item || "").trim())
+            .filter(Boolean)
+            .join("\n");
+        if (!source) {
+            return 0;
+        }
+
+        const paragraphCount = source
+            .split(/\n+/)
+            .map((item) => item.trim())
+            .filter(Boolean).length;
+        const sceneTransitionCount = (source.match(/(?:随后|之后|接着|紧接着|很快|转眼|再次|另一边|另一头|回到|赶回|赶到|前往|来到|进入|走出|离开|折返|返程|安置|处理|收尾|商议|安排|忙活|折腾|鏖战|厮杀|对峙|交锋|休整|疗伤|奔波|护送|搜查)/gu) || []).length;
+        const majorEventCount = (source.match(/(?:大战|决战|交锋|厮杀|生产|临盆|赶路|回宫|回府|回营|入城|出城|启程|抵达|搜查|审问|疗伤|休整|布阵|破阵|围攻|突围|追杀|撤离|撤出|安置)/gu) || []).length;
+        const locationShiftCount = (source.match(/(?:客栈|地牢|京城|林家|鬼市|乱葬岗|院中|殿内|门外|街上|山路|城外|林中|营地|房中)/gu) || []).length;
+
+        let dayAdvance = 0;
+        if (paragraphCount >= 8 && (sceneTransitionCount >= 4 || majorEventCount >= 3)) {
+            dayAdvance = Math.max(dayAdvance, 1);
+        }
+        if (paragraphCount >= 14 && sceneTransitionCount >= 7) {
+            dayAdvance = Math.max(dayAdvance, 2);
+        }
+        if ((sceneTransitionCount >= 10 && majorEventCount >= 5) || locationShiftCount >= 10) {
+            dayAdvance = Math.max(dayAdvance, 2);
+        }
+        if (paragraphCount >= 22 && sceneTransitionCount >= 12 && majorEventCount >= 6) {
+            dayAdvance = Math.max(dayAdvance, 3);
+        }
+
+        return dayAdvance;
+    }
+
+    estimateFallbackDayAdvance(stagnationStreak = 0, progressScore = 0, cumulativeScore = 0, densityDays = 0, cumulativeDensityDays = 0) {
+        const streak = Math.max(0, Number(stagnationStreak || 0));
+        const score = Math.max(0, Number(progressScore || 0));
+        const totalScore = Math.max(score, Number(cumulativeScore || 0));
+        const density = Math.max(0, Number(densityDays || 0));
+        const totalDensity = Math.max(density, Number(cumulativeDensityDays || 0));
+        if (totalScore < 2 || streak <= 0) {
+            return totalDensity >= 2 && streak >= 2 ? totalDensity : 0;
+        }
+
+        let estimatedDays = 0;
+        if (streak >= 1 && totalScore >= 4) {
+            estimatedDays = Math.max(estimatedDays, 1);
+        }
+        if (streak >= 3 && totalScore >= 4) {
+            estimatedDays = Math.max(estimatedDays, Math.min(5, Math.floor((streak + totalScore) / 3)));
+        }
+        if (streak >= 6 && totalScore >= 5) {
+            estimatedDays = Math.max(estimatedDays, Math.min(15, Math.floor((streak * totalScore) / 6)));
+        }
+        if (streak >= 10 && totalScore >= 6) {
+            estimatedDays = Math.max(estimatedDays, 15);
+        }
+        if (streak >= 16 && totalScore >= 7) {
+            estimatedDays = Math.max(estimatedDays, 30);
+        }
+
+        if (streak >= 2 && totalDensity >= 1) {
+            estimatedDays = Math.max(estimatedDays, totalDensity);
+        }
+        if (streak >= 4 && totalDensity >= 2) {
+            estimatedDays = Math.max(estimatedDays, Math.min(5, totalDensity + 1));
+        }
+        if (streak >= 7 && totalDensity >= 3) {
+            estimatedDays = Math.max(estimatedDays, Math.min(10, totalDensity + 2));
+        }
+
+        return estimatedDays;
+    }
+
+    inferFallbackTimelineAdvance(chapterNumber = 0, previousMeta = {}, texts = []) {
+        const previousTimeline = String(previousMeta.timeline || "").trim();
+        if (!previousTimeline) {
+            return {
+                dayAdvance: 0,
+                phaseHint: ""
+            };
+        }
+
+        const progressScore = this.inferNarrativeProgressScore(texts);
+        const densityDays = this.inferNarrativeDayAdvanceFromDensity(texts);
+        const stagnationStreak = this.getTimelineStagnationStreak(chapterNumber, previousTimeline);
+        const recentTexts = this.collectRecentTimelineNarrativeTexts(chapterNumber, previousTimeline, Math.min(6, Math.max(0, stagnationStreak)));
+        const cumulativeScore = this.inferNarrativeProgressScore([
+            ...recentTexts,
+            ...texts
+        ]);
+        const cumulativeDensityDays = this.inferNarrativeDayAdvanceFromDensity([
+            ...recentTexts,
+            ...texts
+        ]);
+        const previousPhase = this.normalizeTimelinePhaseLabel(previousMeta.phase || "");
+        if (!previousPhase) {
+            return {
+                dayAdvance: 0,
+                phaseHint: ""
+            };
+        }
+
+        if (progressScore < 2) {
+            return {
+                dayAdvance: 0,
+                phaseHint: ""
+            };
+        }
+
+        const step = progressScore >= 6 ? 2 : 1;
+        const advanced = this.advanceTimelinePhase(previousPhase, step);
+        const estimatedDays = this.estimateFallbackDayAdvance(
+            stagnationStreak,
+            progressScore,
+            cumulativeScore,
+            densityDays,
+            cumulativeDensityDays
+        );
+
+        if (advanced.dayCarry > 0) {
+            return {
+                dayAdvance: Math.max(advanced.dayCarry, estimatedDays),
+                phaseHint: advanced.phase || "清晨"
+            };
+        }
+
+        if (estimatedDays > 0) {
+            return {
+                dayAdvance: estimatedDays,
+                phaseHint: advanced.phase || previousPhase || "清晨"
+            };
+        }
+
+        return {
+            dayAdvance: 0,
+            phaseHint: advanced.phase && advanced.phase !== previousPhase ? advanced.phase : ""
+        };
+    }
+
+    inferFallbackTimelineAdvance(chapterNumber = 0, previousMeta = {}, texts = []) {
+        const previousTimeline = String(previousMeta.timeline || "").trim();
+        if (!previousTimeline) {
+            return {
+                dayAdvance: 0,
+                phaseHint: ""
+            };
+        }
+
+        const progressScore = this.inferNarrativeProgressScore(texts);
+        const densityDays = this.inferNarrativeDayAdvanceFromDensity(texts);
+        const stagnationStreak = this.getTimelineStagnationStreak(chapterNumber, previousTimeline);
+        const recentTexts = this.collectRecentTimelineNarrativeTexts(chapterNumber, previousTimeline, Math.min(6, Math.max(0, stagnationStreak)));
+        const cumulativeScore = this.inferNarrativeProgressScore([
+            ...recentTexts,
+            ...texts
+        ]);
+        const cumulativeDensityDays = this.inferNarrativeDayAdvanceFromDensity([
+            ...recentTexts,
+            ...texts
+        ]);
+        const previousPhase = this.normalizeTimelinePhaseLabel(previousMeta.phase || "");
+        if (!previousPhase || progressScore < 2) {
+            return {
+                dayAdvance: 0,
+                phaseHint: ""
+            };
+        }
+
+        const step = progressScore >= 6 ? 2 : 1;
+        const advanced = this.advanceFallbackTimelinePhase(previousPhase, step);
+        const estimatedDays = this.estimateFallbackDayAdvance(
+            stagnationStreak,
+            progressScore,
+            cumulativeScore,
+            densityDays,
+            cumulativeDensityDays
+        );
+
+        if (advanced.dayCarry > 0) {
+            return {
+                dayAdvance: Math.max(advanced.dayCarry, estimatedDays),
+                phaseHint: advanced.phase || "娓呮櫒"
+            };
+        }
+
+        if (estimatedDays > 0) {
+            return {
+                dayAdvance: estimatedDays,
+                phaseHint: advanced.phase || previousPhase || "娓呮櫒"
+            };
+        }
+
+        return {
+            dayAdvance: 0,
+            phaseHint: advanced.phase && advanced.phase !== previousPhase ? advanced.phase : ""
+        };
+    }
+
+    extractTimelinePhaseHintFromText(text = "") {
+        const source = String(text || "").trim();
+        if (!source) {
+            return "";
+        }
+        const descriptor = this.parseTimelineDescriptor(source, 0);
+        if (descriptor.phaseLabel) {
+            const normalized = this.normalizeTimelinePhaseLabel(descriptor.phaseLabel);
+            return /^(?:今天|今日|当日|当天)$/u.test(normalized) ? "" : normalized;
+        }
+        const phaseCandidates = this.getTimelinePhaseCandidates()
+            .slice()
+            .sort((left, right) => right.length - left.length);
+        const matched = phaseCandidates.find((item) => source.includes(item)) || "";
+        const normalized = this.normalizeTimelinePhaseLabel(matched);
+        return /^(?:今天|今日|当日|当天)$/u.test(normalized) ? "" : normalized;
+    }
+
+    inferElapsedDaysFromTextStrict(source = "") {
+        const text = String(source || "").replace(/\s+/g, "").trim();
+        if (!text) {
+            return 0;
+        }
+
+        const toDays = (count, unit = "") => {
+            const value = Math.max(0, Number(count || 0));
+            if (!value) {
+                return 0;
+            }
+            if (/(?:个月|月)/u.test(unit)) {
+                return value * 30;
+            }
+            if (/年/u.test(unit)) {
+                return value * 365;
+            }
+            return value;
+        };
+
+        const hasElapsedContext = (context = "") => /(?:已过|过去|过了|熬了|拖了|守了|养伤|休养|昏迷|搜查|赶路|闭关|整整|足足|连续|连着|一连|数日|多日|几日|几天|半月|月余|数月|满月|第[一二两三四五六七八九十百千零\d]+天)/u.test(context);
+        const hasSuppressedContext = (context = "") => /(?:千百年|上千年|几百年|百年阴气|百年凶煞|九天玄雷|一天到晚|十个月里|孕育的十个月|温养|玄雷|凶煞|阴气|烤上[一二两三四五六七八九十百千零\d]+天|炼上[一二两三四五六七八九十百千零\d]+天|镇压[一二两三四五六七八九十百千零\d]+天|不出[一二两三四五六七八九十百千零\d]+天|不用[一二两三四五六七八九十百千零\d]+天|会在[一二两三四五六七八九十百千零\d]+天|将于[一二两三四五六七八九十百千零\d]+天)/u.test(context);
+        const hasFutureLead = (lead = "") => /(?:还有|还剩|剩余|预计|约莫|大概|至少|将于|会在|准备在|定于|不到|不用)$/u.test(String(lead || ""));
+
+        let maxDays = 0;
+        const exactPattern = /([^\n，。！？；]{0,12}?)([一二两三四五六七八九十百千零\d]+)\s*(天|日|个月|月|年)(?:以来|之久|有余|工夫|光景|时间|左右|之内|内)?/gu;
+        let exactMatch = null;
+        while ((exactMatch = exactPattern.exec(text)) !== null) {
+            const lead = exactMatch[1] || "";
+            if (hasFutureLead(lead)) {
+                continue;
+            }
+            const raw = exactMatch[0] || "";
+            const unit = exactMatch[3] || "";
+            const context = text.slice(
+                Math.max(0, exactMatch.index - 12),
+                Math.min(text.length, exactMatch.index + raw.length + 12)
+            );
+            if (hasSuppressedContext(context)) {
+                continue;
+            }
+            if ((/(?:个月|月)/u.test(unit) || /年/u.test(unit)) && !hasElapsedContext(context)) {
+                continue;
+            }
+            const days = toDays(this.parseChineseNumberValue(exactMatch[2] || ""), unit);
+            if (days > maxDays) {
+                maxDays = days;
+            }
+        }
+
+        const approxDurations = [
+            { pattern: /半月/u, days: 15 },
+            { pattern: /旬日|旬余/u, days: 10 },
+            { pattern: /数日|数天|几日|几天|连日/u, days: 3 },
+            { pattern: /多日|多天|连着几日|一连数日/u, days: 5 },
+            { pattern: /月余/u, days: 35 },
+            { pattern: /数月/u, days: 90 },
+            { pattern: /满月/u, days: 30 }
+        ];
+        approxDurations.forEach(({ pattern, days }) => {
+            const match = text.match(pattern);
+            if (!match) {
+                return;
+            }
+            const context = text.slice(
+                Math.max(0, match.index - 10),
+                Math.min(text.length, match.index + match[0].length + 10)
+            );
+            if (!hasSuppressedContext(context)) {
+                maxDays = Math.max(maxDays, days);
+            }
+        });
+
+        const semanticPatterns = [
+            /养伤[^，。！？；]{0,8}([一二两三四五六七八九十百千零\d]+)\s*(天|日)/u,
+            /休养[^，。！？；]{0,8}([一二两三四五六七八九十百千零\d]+)\s*(天|日)/u,
+            /昏迷[^，。！？；]{0,8}([一二两三四五六七八九十百千零\d]+)\s*(天|日)/u,
+            /搜查[^，。！？；]{0,10}([一二两三四五六七八九十百千零\d]+)\s*(天|日)/u,
+            /守了[^，。！？；]{0,4}([一二两三四五六七八九十百千零\d]+)\s*(天|日)/u,
+            /赶路[^，。！？；]{0,10}([一二两三四五六七八九十百千零\d]+)\s*(天|日)/u,
+            /闭关[^，。！？；]{0,10}([一二两三四五六七八九十百千零\d]+)\s*(天|日|个月|月)/u
+        ];
+        semanticPatterns.forEach((pattern) => {
+            const match = text.match(pattern);
+            if (!match?.[1]) {
+                return;
+            }
+            const days = toDays(this.parseChineseNumberValue(match[1]), match[2] || "");
+            if (days > maxDays) {
+                maxDays = days;
+            }
+        });
+
+        return maxDays;
+    }
+
+    inferElapsedDaysFromText(text = "") {
+        const source = String(text || "").replace(/\s+/g, "").trim();
+        if (!source) {
+            return 0;
+        }
+        return this.inferElapsedDaysFromTextStrict(source);
+
+        const normalizeDayUnit = (count, unit) => {
+            const value = Math.max(0, Number(count || 0));
+            if (!value) {
+                return 0;
+            }
+            if (/个月|月/.test(unit)) {
+                return value * 30;
+            }
+            if (/年/.test(unit)) {
+                return value * 365;
+            }
+            return value;
+        };
+
+        const hasFutureLead = (lead = "") => /(?:还有|还剩|剩余|预计|约莫|大概|至少|将于|会在|准备在|定于)$/.test(String(lead || ""));
+        let maxDays = 0;
+        const exactPattern = /([^\n，。！？；]{0,10}?)([一二两三四五六七八九十百零\d]+)\s*(天|日|夜|个月|月|年)(?:来|以来|之久|有余|工夫|光景|时间|左右|整|之内|内)?/gu;
+        let exactMatch = null;
+        while ((exactMatch = exactPattern.exec(source)) !== null) {
+            const lead = exactMatch[1] || "";
+            if (hasFutureLead(lead)) {
+                continue;
+            }
+            const count = this.parseChineseNumberValue(exactMatch[2] || "");
+            const days = normalizeDayUnit(count, exactMatch[3] || "");
+            if (days > maxDays) {
+                maxDays = days;
+            }
+        }
+
+        const approxMap = [
+            { pattern: /半月/u, days: 15 },
+            { pattern: /旬日|旬余/u, days: 10 },
+            { pattern: /数日|数天|几日|几天|连日/u, days: 3 },
+            { pattern: /多日|多天|连着几日|一连数日/u, days: 5 },
+            { pattern: /月余/u, days: 35 },
+            { pattern: /数月/u, days: 90 }
+        ];
+        approxMap.forEach(({ pattern, days }) => {
+            if (pattern.test(source)) {
+                maxDays = Math.max(maxDays, days);
+            }
+        });
+
+        const semanticPatterns = [
+            { pattern: /满月/u, days: 30 },
+            { pattern: /养伤[^，。！？；]{0,8}([一二两三四五六七八九十百零\d]+)\s*(天|日|夜)/u },
+            { pattern: /休养[^，。！？；]{0,8}([一二两三四五六七八九十百零\d]+)\s*(天|日|夜)/u },
+            { pattern: /昏迷[^，。！？；]{0,8}([一二两三四五六七八九十百零\d]+)\s*(天|日|夜)/u },
+            { pattern: /搜查[^，。！？；]{0,10}([一二两三四五六七八九十百零\d]+)\s*(天|日|夜)/u },
+            { pattern: /守了[^，。！？；]{0,4}([一二两三四五六七八九十百零\d]+)\s*(天|日|夜)/u },
+            { pattern: /赶路[^，。！？；]{0,10}([一二两三四五六七八九十百零\d]+)\s*(天|日|夜)/u },
+            { pattern: /闭关[^，。！？；]{0,10}([一二两三四五六七八九十百零\d]+)\s*(天|日|夜|个月|月)/u }
+        ];
+        semanticPatterns.forEach((item) => {
+            if (item.days) {
+                if (item.pattern.test(source)) {
+                    maxDays = Math.max(maxDays, item.days);
+                }
+                return;
+            }
+            const match = source.match(item.pattern);
+            if (!match?.[1]) {
+                return;
+            }
+            const count = this.parseChineseNumberValue(match[1]);
+            const days = normalizeDayUnit(count, match[2] || "");
+            if (days > maxDays) {
+                maxDays = days;
+            }
+        });
+
+        return maxDays;
+    }
+
+    inferTimelineDayAdvanceFromCountdowns(stateData = {}, chapterNumber = 0, chapter = null, currentTime = "") {
+        const tracker = this.novelData.timeline_tracker || {};
+        const existingCountdowns = Array.isArray(tracker.countdowns) ? tracker.countdowns : [];
+        const countdownCandidates = [
+            ...(Array.isArray(stateData.time_constraints) ? stateData.time_constraints : this.coerceStateArray(stateData.time_constraints)),
+            chapter?.next_chapter_setup?.countdown || ""
+        ]
+            .map((item) => this.parseTimelineCountdownCandidate(item, chapterNumber, currentTime))
+            .filter(Boolean);
+
+        let maxAdvance = 0;
+        countdownCandidates.forEach((candidate) => {
+            const matchKey = candidate.match_key || this.normalizeTimelineCountdownKey(candidate.title);
+            if (!matchKey) {
+                return;
+            }
+            const existing = existingCountdowns
+                .map((item) => this.normalizeTimelineCountdownEntry(item))
+                .find((item) => (item.match_key || this.normalizeTimelineCountdownKey(item.title)) === matchKey);
+            if (!existing) {
+                return;
+            }
+            const existingDays = Number(existing.remaining_days);
+            const currentDays = Number(candidate.remaining_days);
+            if (!Number.isFinite(existingDays) || !Number.isFinite(currentDays)) {
+                return;
+            }
+            if (existingDays > currentDays) {
+                maxAdvance = Math.max(maxAdvance, existingDays - currentDays);
+            }
+        });
+        return maxAdvance;
+    }
+
+    inferImplicitTimelineForChapter(chapterNumber, stateData = {}, chapter = null, cleanedContent = "", previousTimeline = "") {
+        const previousMeta = this.buildTimelineMetadata(previousTimeline, Math.max(0, Number(chapterNumber || 0) - 1));
+        const textSources = [
+            cleanedContent ? cleanedContent.slice(-2500) : ""
+        ].filter(Boolean);
+
+        let phaseHint = textSources
+            .map((text) => this.extractTimelinePhaseHintFromText(text))
+            .find(Boolean) || "";
+        let textAdvance = textSources.reduce((maxDays, text) => Math.max(maxDays, this.inferElapsedDaysFromText(text)), 0);
+        const countdownAdvance = this.inferTimelineDayAdvanceFromCountdowns(stateData, chapterNumber, chapter, previousMeta.timeline || previousTimeline || "");
+        const explicitDayAdvance = Math.max(textAdvance, countdownAdvance);
+        let dayAdvance = explicitDayAdvance;
+        let usesNarrativeEstimate = false;
+
+        if (!dayAdvance) {
+            const fallbackAdvance = this.inferFallbackTimelineAdvance(chapterNumber, previousMeta, textSources);
+            dayAdvance = Math.max(dayAdvance, Math.min(3, Number(fallbackAdvance.dayAdvance || 0)));
+            usesNarrativeEstimate = dayAdvance > 0;
+            phaseHint = phaseHint || fallbackAdvance.phaseHint || "";
+        }
+
+        const usesElapsedLabel = Boolean(
+            dayAdvance > 1 && (usesNarrativeEstimate || (textAdvance > 1 && countdownAdvance === 0))
+        );
+
+        if (!previousMeta.timeline) {
+            if (!dayAdvance && !phaseHint) {
+                return "";
+            }
+            const relation = dayAdvance > 0
+                ? (usesElapsedLabel ? this.formatNarrativeElapsedLabel(dayAdvance) : this.formatRelativeDayLabel(dayAdvance))
+                : "";
+            return this.buildExplicitTimelineLabel("", relation, phaseHint);
+        }
+
+        if (usesElapsedLabel && dayAdvance > 0) {
+            return this.buildExplicitTimelineLabel(
+                "",
+                this.formatNarrativeElapsedLabel(dayAdvance),
+                phaseHint || previousMeta.phase || ""
+            ) || previousMeta.timeline;
+        }
+
+        const baseLabel = previousMeta.anchor_event || this.extractTimelineBaseFromLabel(previousMeta.timeline);
+        const previousDay = Number.isFinite(Number(previousMeta.day_index)) ? Number(previousMeta.day_index) : null;
+        const nextDay = dayAdvance > 0
+            ? Math.max(0, (previousDay !== null ? previousDay : 0) + dayAdvance)
+            : previousDay;
+        const relationLabel = nextDay !== null
+            ? (usesNarrativeEstimate ? this.formatNarrativeElapsedLabel(nextDay) : this.formatRelativeDayLabel(nextDay))
+            : (previousMeta.relation_label || "");
+        const phaseLabel = phaseHint || previousMeta.phase || "";
+
+        if (!dayAdvance && !phaseHint) {
+            return previousMeta.timeline;
+        }
+        if (!dayAdvance && phaseHint && phaseHint === previousMeta.phase) {
+            return previousMeta.timeline;
+        }
+
+        return this.buildExplicitTimelineLabel(baseLabel, relationLabel, phaseLabel) || previousMeta.timeline;
     }
 
     calculateTimelineDayAdvance(previousTimeline = "", currentTimeline = "", chapterNumber = 0) {
@@ -7590,6 +8561,92 @@ ${(detailedOutline || concept || "未填写").slice(0, 2200)}`;
         return Math.max(0, currentDescriptor.dayOffset - previousDescriptor.dayOffset);
     }
 
+    extractLooseTimelineRelationLabel(label = "") {
+        const value = String(label || "").trim();
+        if (!value) {
+            return "";
+        }
+        if (/(?:次日|翌日|隔日|隔天|次晨|翌晨)/u.test(value)) {
+            return "次日";
+        }
+        if (/(?:第二天|第二日)/u.test(value)) {
+            return "第二天";
+        }
+        if (/三日后/u.test(value)) {
+            return "三日后";
+        }
+        if (/五日后/u.test(value)) {
+            return "五日后";
+        }
+        if (/十日后/u.test(value)) {
+            return "十日后";
+        }
+        if (/半月后/u.test(value)) {
+            return "半月后";
+        }
+        if (/一月后/u.test(value)) {
+            return "一月后";
+        }
+        if (/数月后/u.test(value)) {
+            return "数月后";
+        }
+        const dayMatch = value.match(/第?([一二两三四五六七八九十百零\d]+)(?:个)?(?:天|日)/u);
+        if (dayMatch?.[1]) {
+            const offset = this.parseChineseNumberValue(dayMatch[1]);
+            if (Number.isFinite(offset) && offset > 0) {
+                return this.formatRelativeDayLabel(offset);
+            }
+        }
+        return "";
+    }
+
+    extractLooseTimelineDayIndex(label = "") {
+        const relationLabel = this.extractLooseTimelineRelationLabel(label);
+        if (!relationLabel) {
+            return null;
+        }
+        if (relationLabel === "次日" || relationLabel === "第二天") {
+            return 1;
+        }
+        if (relationLabel === "两日后") {
+            return 2;
+        }
+        if (relationLabel === "三日后") {
+            return 3;
+        }
+        if (relationLabel === "五日后") {
+            return 5;
+        }
+        if (relationLabel === "十日后") {
+            return 10;
+        }
+        if (relationLabel === "半月后") {
+            return 15;
+        }
+        if (relationLabel === "一月后") {
+            return 30;
+        }
+        if (relationLabel === "数月后") {
+            return 60;
+        }
+        const dayMatch = relationLabel.match(/第([一二两三四五六七八九十百零\d]+)天/u);
+        if (dayMatch?.[1]) {
+            const offset = this.parseChineseNumberValue(dayMatch[1]);
+            return Number.isFinite(offset) ? offset : null;
+        }
+        return null;
+    }
+
+    isWeakPhaseOnlyTimelineLabel(label = "", chapterNumber = 0) {
+        const descriptor = this.parseTimelineDescriptor(label, chapterNumber);
+        return Boolean(
+            descriptor
+            && descriptor.phaseLabel
+            && !descriptor.relationLabel
+            && (descriptor.dayOffset === null || Number(descriptor.dayOffset) === 0)
+        );
+    }
+
     extractTimelineCueFromText(text = "") {
         const source = String(text || "").replace(/\s+/g, " ").trim();
         if (!source) {
@@ -7598,33 +8655,18 @@ ${(detailedOutline || concept || "未填写").slice(0, 2200)}`;
 
         const descriptor = this.parseTimelineDescriptor(source, 0);
         if (descriptor?.cues?.length) {
-            return this.buildExplicitTimelineLabel(
+            const cue = this.buildExplicitTimelineLabel(
                 "",
                 descriptor.relationLabel || "",
                 descriptor.phaseLabel || ""
             ) || descriptor.cues[descriptor.cues.length - 1]?.raw || "";
-        }
-
-        const patterns = [
-            /((?:第)?[一二两三四五六七八九十百零\d]+(?:个)?(?:时辰|小时|刻钟|炷香|天|日|夜|个月|月|年)后)/,
-            /(次日(?:清晨|清早|上午|中午|午后|傍晚|入夜|夜里|深夜)?)/,
-            /(第二天(?:清晨|清早|上午|中午|午后|傍晚|入夜|夜里|深夜)?)/,
-            /(翌日(?:清晨|清早|上午|中午|午后|傍晚|入夜|夜里|深夜)?)/,
-            /(翌晨|次晨|清晨|清早|凌晨|黎明|破晓|天亮时|上午|中午|晌午|午后|黄昏|傍晚|薄暮|入夜|夜里|深夜|夜半|当晚|当夜)/,
-            /(片刻后|不多时|半晌后|稍后|很快)/
-        ];
-
-        let lastMatch = "";
-        for (const pattern of patterns) {
-            const matcher = new RegExp(pattern.source, pattern.flags?.includes("g") ? pattern.flags : `${pattern.flags || ""}g`);
-            let match = null;
-            while ((match = matcher.exec(source)) !== null) {
-                if (match?.[1]) {
-                    lastMatch = match[1].trim();
-                }
+            const normalizedCue = String(cue || "").replace(/当日(?:今天|今日)|当天(?:今天|今日)/gu, "当日");
+            if (/^(?:当日|当天|今天|今日)$/u.test(normalizedCue)) {
+                return "";
             }
+            return normalizedCue;
         }
-        return lastMatch;
+        return "";
     }
 
     shouldEnrichTimelineWithPrevious(text = "") {
@@ -7632,7 +8674,7 @@ ${(detailedOutline || concept || "未填写").slice(0, 2200)}`;
         if (!value) {
             return false;
         }
-        return /^(?:第?[一二两三四五六七八九十百零\d]+(?:个)?(?:时辰|小时|刻钟|炷香|天|日|夜|个月|月|年)后|次日|第二天|翌日|翌晨|次晨|清晨|清早|凌晨|黎明|破晓|天亮时|上午|中午|晌午|午后|黄昏|傍晚|薄暮|入夜|夜里|深夜|夜半|当晚|当夜|片刻后|不多时|半晌后|稍后|很快)/.test(value);
+        return /^(?:第?[一二两三四五六七八九十百零\d]+(?:个)?(?:时辰|小时|刻钟|炷香|天|日|夜|个月|月|年)后|次日|第二天|第二日|翌日|隔日|隔天|翌晨|次晨|清晨时分|清晨|清早|晨起|晨间|拂晓|凌晨|黎明|破晓|天亮时|天亮时分|天将亮|鸡鸣时分|上午|辰时|巳时|正午|午时|中午|晌午|午后|下午|申时|未时|黄昏|傍晚|薄暮|日暮|暮色四合|天色将晚|夕阳西下|入夜|夜幕降临|华灯初上|夜深|夜里|深夜|夜半|半夜|子夜|三更|五更|夜阑|当晚|当夜|转眼|须臾后|片刻后|不多时|半晌后|稍后|很快)/.test(value);
     }
 
     mergeTimelineWithPrevious(previousTimeline = "", cue = "") {
@@ -7651,34 +8693,321 @@ ${(detailedOutline || concept || "未填写").slice(0, 2200)}`;
         return /^(当前|此时|此刻|同上|延续前文|上一章末|承接上章|继续前文)/.test(value);
     }
 
+    getTimelineAnchorCandidate(stateData = {}, chapter = null, cleanedContent = "") {
+        const sources = [
+            stateData?.key_event || "",
+            this.extractSummarySection(chapter?.summary || "", "核心事件")
+        ].filter(Boolean);
+
+        for (const source of sources) {
+            const candidate = this.sanitizeTimelineBaseLabel(this.extractTimelineBaseFromEvent(source));
+            if (!candidate) {
+                continue;
+            }
+            if (/^(?:今天|今日|当日|此时|此刻|继续前文|承接上章)$/u.test(candidate)) {
+                continue;
+            }
+            return candidate;
+        }
+
+        return "";
+    }
+
+    stripTimelineAnchorIfUnreliable(label = "", anchorCandidate = "", previousTimeline = "") {
+        const timeline = String(label || "").trim();
+        if (!timeline) {
+            return "";
+        }
+        if (this.sanitizeTimelineBaseLabel(anchorCandidate)) {
+            return timeline;
+        }
+
+        const descriptor = this.parseTimelineDescriptor(timeline, 0);
+        if (!descriptor?.cues?.length) {
+            return timeline;
+        }
+
+        const previousBase = this.sanitizeTimelineBaseLabel(this.extractTimelineBaseFromLabel(previousTimeline));
+        const currentBase = this.sanitizeTimelineBaseLabel(descriptor.baseLabel || "");
+        if (!currentBase) {
+            return timeline;
+        }
+        if (previousBase && currentBase !== previousBase) {
+            return timeline;
+        }
+
+        const relationLabel = descriptor.relationLabel
+            || (descriptor.dayOffset !== null ? this.formatRelativeDayLabel(descriptor.dayOffset) : "")
+            || this.extractLooseTimelineRelationLabel(timeline)
+            || "";
+        const collapsed = this.buildExplicitTimelineLabel("", relationLabel, descriptor.phaseLabel || "");
+        return collapsed || timeline;
+    }
+
+    getPreviousChapterTimelineBase(chapterNumber) {
+        const current = Number(chapterNumber || 0);
+        if (current <= 1) {
+            return "";
+        }
+        const previousSnapshot = this.getChapterSnapshotRecord(current - 1);
+        return this.extractTimelineBaseFromLabel(previousSnapshot.timeline || previousSnapshot["鏃堕棿"])
+            || this.extractReliableTimelineBaseFromEvent(previousSnapshot.key_event || previousSnapshot["鍏抽敭淇℃伅"]?.[0] || previousSnapshot.title || "");
+    }
+
+    getTimelineAnchorCandidate(stateData = {}, chapter = null, cleanedContent = "") {
+        const sources = [
+            cleanedContent || ""
+        ].filter(Boolean);
+        const contentSource = String(cleanedContent || "").replace(/\s+/g, "").trim();
+        const chapterNumber = Number(chapter?.number || chapter?.chapter_number || 0);
+        const previousBase = this.sanitizeTimelineBaseLabel(this.getPreviousChapterTimelineBase(chapterNumber));
+
+        for (const source of sources) {
+            const candidate = this.sanitizeTimelineBaseLabel(this.extractReliableTimelineBaseFromEvent(source));
+            if (!candidate) {
+                continue;
+            }
+            if (/^(?:浠婂ぉ|浠婃棩|褰撴棩|姝ゆ椂|姝ゅ埢|缁х画鍓嶆枃|鎵挎帴涓婄珷)$/u.test(candidate)) {
+                continue;
+            }
+            if (candidate === previousBase && contentSource && !contentSource.includes(candidate)) {
+                continue;
+            }
+            return candidate;
+        }
+
+        return "";
+    }
+
+    isReliableTimelineBaseLabel(label = "") {
+        const base = this.sanitizeTimelineBaseLabel(label);
+        if (!base) {
+            return false;
+        }
+        return /(?:大典|家宴|宴席|秋狩|围猎|兵变|风波|危机|祭典|封禁|婚宴|寿宴|围城|大战|决战|行刺|刺杀|审讯|会试|殿试|回宫|入宫|入府|出征|凯旋|结界震荡)/u.test(base);
+    }
+
+    stripTimelineAnchorIfUnreliable(label = "", anchorCandidate = "", previousTimeline = "", cleanedContent = "") {
+        const timeline = String(label || "").trim();
+        if (!timeline) {
+            return "";
+        }
+        if (this.sanitizeTimelineBaseLabel(anchorCandidate)) {
+            return timeline;
+        }
+
+        const descriptor = this.parseTimelineDescriptor(timeline, 0);
+        if (!descriptor?.cues?.length) {
+            return timeline;
+        }
+
+        const currentBase = this.sanitizeTimelineBaseLabel(descriptor.baseLabel || "");
+        const looseRelationLabel = this.extractLooseTimelineRelationLabel(timeline);
+        if (!currentBase && looseRelationLabel) {
+            return this.buildExplicitTimelineLabel(
+                "",
+                looseRelationLabel,
+                descriptor.phaseLabel || this.normalizeTimelinePhaseLabel(timeline) || ""
+            ) || timeline;
+        }
+        if (!currentBase) {
+            return timeline;
+        }
+        if (!this.isReliableTimelineBaseLabel(currentBase)) {
+            const relationLabel = descriptor.relationLabel
+                || (descriptor.dayOffset !== null ? this.formatRelativeDayLabel(descriptor.dayOffset) : "")
+                || looseRelationLabel
+                || "";
+            const collapsed = this.buildExplicitTimelineLabel("", relationLabel, descriptor.phaseLabel || "");
+            return collapsed || timeline;
+        }
+
+        const contentSource = String(cleanedContent || "").replace(/\s+/g, "").trim();
+        if (contentSource && currentBase.length >= 2 && contentSource.includes(currentBase)) {
+            return timeline;
+        }
+
+        const relationLabel = descriptor.relationLabel
+            || (descriptor.dayOffset !== null ? this.formatRelativeDayLabel(descriptor.dayOffset) : "")
+            || looseRelationLabel
+            || "";
+        const collapsed = this.buildExplicitTimelineLabel("", relationLabel, descriptor.phaseLabel || "");
+        return collapsed || timeline;
+    }
+
+    shouldRefreshTimelineAnchor(previousTimeline = "", anchorCandidate = "", chapterNumber = 0) {
+        const previousBase = this.sanitizeTimelineBaseLabel(this.extractTimelineBaseFromLabel(previousTimeline));
+        const candidate = this.sanitizeTimelineBaseLabel(anchorCandidate);
+        if (!candidate) {
+            return false;
+        }
+        if (!previousBase) {
+            return true;
+        }
+        if (candidate === previousBase) {
+            return false;
+        }
+        const stagnation = this.getTimelineStagnationStreak(chapterNumber, previousTimeline);
+        return stagnation >= 2 || candidate.length >= 4;
+    }
+
+    rebaseTimelineLabel(timeline = "", baseLabel = "", chapterNumber = 0, previousTimeline = "") {
+        const base = this.sanitizeTimelineBaseLabel(baseLabel);
+        if (!timeline || !base) {
+            return timeline;
+        }
+
+        const descriptor = this.parseTimelineDescriptor(timeline, chapterNumber);
+        const previousDescriptor = this.parseTimelineDescriptor(previousTimeline, Math.max(0, Number(chapterNumber || 0) - 1));
+        const relationLabel = descriptor.relationLabel
+            || (descriptor.dayOffset !== null ? this.formatRelativeDayLabel(descriptor.dayOffset) : "")
+            || previousDescriptor.relationLabel
+            || "";
+        const phaseLabel = descriptor.phaseLabel || previousDescriptor.phaseLabel || "";
+
+        return this.buildExplicitTimelineLabel(base, relationLabel, phaseLabel) || timeline;
+    }
+
+    isMalformedTimelineLabel(label = "") {
+        const value = String(label || "").trim();
+        if (!value) {
+            return false;
+        }
+        return /第[一二两三四五六七八九十百千零\d]+天.*(?:次日|第二天|第二日|翌日|隔日|隔天)/u.test(value)
+            || /(?:次日|第二天|第二日|翌日|隔日|隔天).*(?:次日|第二天|第二日|翌日|隔日|隔天)/u.test(value)
+            || /当日(?:今天|今日)|当天(?:今天|今日)/u.test(value);
+    }
+
+    collapseMalformedTimelineLabel(label = "") {
+        return String(label || "")
+            .replace(/(第[一二两三四五六七八九十百千零\d]+天)的?(?:次日|第二天|第二日|翌日|隔日|隔天)(?=(?:清晨|早朝后|早朝|上午|正午|午后|傍晚|入夜|当夜|深夜|稍后|$))/gu, "$1")
+            .replace(/(第[一二两三四五六七八九十百千零\d]+天)的?(?:次日|第二天|第二日|翌日|隔日|隔天)$/gu, "$1")
+            .replace(/当日(?:今天|今日)|当天(?:今天|今日)/gu, "当日");
+    }
+
     resolveTimelineForChapter(chapterNumber, stateData, chapter = null, cleanedContent = "") {
-        const currentTimeline = String(stateData?.timeline || "").trim();
+        if (!this.isTimelineSystemEnabled()) {
+            return "";
+        }
+        const currentTimeline = this.sanitizeTimelineLabel(String(stateData?.timeline || "").trim(), chapterNumber);
         const previousTimeline = this.getPreviousChapterTimeline(chapterNumber);
-        const inferredTimeline = this.pickFirstStateString([
-            this.extractTimelineCueFromText(cleanedContent),
-            this.extractTimelineCueFromText(chapter?.summary || ""),
-            this.extractTimelineCueFromText(chapter?.title || "")
-        ]);
-        const preferredTimeline = currentTimeline && currentTimeline !== previousTimeline
+        const previousMeta = this.buildTimelineMetadata(previousTimeline, Math.max(0, Number(chapterNumber || 0) - 1));
+        const currentMeta = this.buildTimelineMetadata(currentTimeline, chapterNumber, previousTimeline);
+        const inferredTimeline = this.sanitizeTimelineLabel(this.pickFirstStateString([
+            this.extractTimelineCueFromText(cleanedContent)
+        ]), chapterNumber, previousTimeline);
+        const implicitTimeline = this.sanitizeTimelineLabel(
+            this.inferImplicitTimelineForChapter(chapterNumber, stateData, chapter, cleanedContent, previousTimeline),
+            chapterNumber,
+            previousTimeline
+        );
+        const previousLooseDayIndex = this.extractLooseTimelineDayIndex(previousTimeline);
+        const inferredDayAdvance = this.calculateTimelineDayAdvance(previousTimeline, inferredTimeline, chapterNumber);
+        const implicitDayAdvance = this.calculateTimelineDayAdvance(previousTimeline, implicitTimeline, chapterNumber);
+        const implicitLooseDayIndex = this.extractLooseTimelineDayIndex(implicitTimeline);
+        const looseImplicitAdvance = (
+            implicitLooseDayIndex !== null && previousLooseDayIndex !== null
+        ) ? Math.max(0, implicitLooseDayIndex - previousLooseDayIndex) : 0;
+        const shouldPreferImplicitTimeline = Boolean(
+            implicitTimeline
+            && Math.max(implicitDayAdvance, looseImplicitAdvance) >= 2
+            && (
+                !inferredTimeline
+                || this.isWeakPhaseOnlyTimelineLabel(inferredTimeline, chapterNumber)
+                || inferredDayAdvance < Math.max(implicitDayAdvance, looseImplicitAdvance)
+            )
+            && (
+                !currentTimeline
+                || currentTimeline === previousTimeline
+                || this.isGenericTimelineText(currentTimeline)
+            )
+        );
+
+        if (!inferredTimeline && !implicitTimeline && currentTimeline && currentTimeline === previousTimeline) {
+            return currentTimeline;
+        }
+        const currentRegressesPhase = Boolean(
+            currentTimeline
+            && previousTimeline
+            && currentMeta.anchor_event
+            && currentMeta.anchor_event === previousMeta.anchor_event
+            && currentMeta.day_index === previousMeta.day_index
+            && this.getTimelinePhaseRank(currentMeta.phase || "") < this.getTimelinePhaseRank(previousMeta.phase || "")
+        );
+        const shouldTrustCurrentTimeline = Boolean(
+            currentTimeline
+            && currentTimeline !== previousTimeline
+            && !this.isGenericTimelineText(currentTimeline)
+            && !/当日今天|当日今日/u.test(currentTimeline)
+            && !currentRegressesPhase
+        );
+        const effectiveTrustCurrentTimeline = shouldTrustCurrentTimeline && !this.isMalformedTimelineLabel(currentTimeline);
+        let preferredTimeline = effectiveTrustCurrentTimeline
             ? currentTimeline
-            : inferredTimeline;
+            : (shouldPreferImplicitTimeline ? implicitTimeline : (inferredTimeline || implicitTimeline || currentTimeline));
+        if (shouldPreferImplicitTimeline) {
+            const implicitDescriptor = this.parseTimelineDescriptor(implicitTimeline, chapterNumber);
+            preferredTimeline = this.buildExplicitTimelineLabel(
+                "",
+                this.extractLooseTimelineRelationLabel(implicitTimeline)
+                    || implicitDescriptor.relationLabel
+                    || "",
+                implicitDescriptor.phaseLabel
+                    || this.normalizeTimelinePhaseLabel(implicitTimeline)
+                    || ""
+            ) || preferredTimeline;
+        }
 
         if (!preferredTimeline) {
-            return this.normalizeTimelineText(currentTimeline, chapterNumber, previousTimeline) || currentTimeline;
+            return previousTimeline || currentTimeline;
+        }
+
+        const anchorCandidate = this.getTimelineAnchorCandidate(stateData, chapter, cleanedContent);
+        const preferredBase = this.sanitizeTimelineBaseLabel(this.extractTimelineBaseFromLabel(preferredTimeline));
+        const previousBase = this.sanitizeTimelineBaseLabel(this.extractTimelineBaseFromLabel(previousTimeline));
+        if (
+            this.shouldRefreshTimelineAnchor(previousTimeline, anchorCandidate, chapterNumber)
+            && (!preferredBase || preferredBase === previousBase)
+        ) {
+            preferredTimeline = this.rebaseTimelineLabel(
+                preferredTimeline,
+                anchorCandidate,
+                chapterNumber,
+                previousTimeline
+            );
+        }
+
+        if (shouldPreferImplicitTimeline) {
+            return this.collapseMalformedTimelineLabel(
+                this.stripTimelineAnchorIfUnreliable(preferredTimeline, anchorCandidate, previousTimeline, cleanedContent)
+            );
         }
 
         const normalized = this.normalizeTimelineText(preferredTimeline, chapterNumber, previousTimeline);
         if (normalized) {
-            return normalized;
+            return this.collapseMalformedTimelineLabel(
+                this.stripTimelineAnchorIfUnreliable(normalized, anchorCandidate, previousTimeline, cleanedContent)
+            );
         }
 
         if (!currentTimeline && inferredTimeline) {
-            return inferredTimeline;
+            return this.collapseMalformedTimelineLabel(
+                this.stripTimelineAnchorIfUnreliable(inferredTimeline, anchorCandidate, previousTimeline, cleanedContent)
+            );
         }
         if (currentTimeline === previousTimeline || this.isGenericTimelineText(currentTimeline)) {
-            return inferredTimeline || currentTimeline;
+            return this.collapseMalformedTimelineLabel(
+                this.stripTimelineAnchorIfUnreliable(
+                    inferredTimeline || implicitTimeline || previousTimeline || currentTimeline,
+                    anchorCandidate,
+                    previousTimeline,
+                    cleanedContent
+                )
+            );
         }
-        return currentTimeline;
+        return this.collapseMalformedTimelineLabel(
+            this.stripTimelineAnchorIfUnreliable(currentTimeline, anchorCandidate, previousTimeline, cleanedContent)
+        );
     }
 
     normalizeChapterSnapshotRecord(snapshot) {
@@ -7708,7 +9037,7 @@ ${(detailedOutline || concept || "未填写").slice(0, 2200)}`;
             ) || {},
             ""
         );
-        const timeline = this.pickFirstStateString([
+        const timelineMeta = this.buildTimelineMetadata(this.pickFirstStateString([
             source.timeline,
             source.time,
             source.current_time,
@@ -7716,7 +9045,8 @@ ${(detailedOutline || concept || "未填写").slice(0, 2200)}`;
             source["\u5f53\u524d\u65f6\u95f4"],
             source["\u5f53\u524d\u65f6\u95f4\u70b9"],
             snapshotState.timeline
-        ]);
+        ]));
+        const timeline = timelineMeta.timeline;
         const currentLocation = this.pickFirstStateString([
             source.current_location,
             source.currentLocation,
@@ -7786,6 +9116,25 @@ ${(detailedOutline || concept || "未填写").slice(0, 2200)}`;
             \u5173\u952e\u4fe1\u606f: keyInfo,
             current_location: currentLocation,
             timeline,
+            timeline_day_index: this.pickFirstNonEmptyValue(
+                source.timeline_day_index,
+                source.timelineDayIndex,
+                source["\u65f6\u95f4\u5929\u6570"],
+                timelineMeta.day_index
+            ),
+            timeline_phase: this.pickFirstStateString([
+                source.timeline_phase,
+                source.timelinePhase,
+                source["\u65f6\u95f4\u65f6\u6bb5"],
+                timelineMeta.phase
+            ]),
+            timeline_anchor: this.pickFirstStateString([
+                source.timeline_anchor,
+                source.timelineAnchor,
+                source["\u65f6\u95f4\u952e\u70b9"],
+                source["\u65f6\u95f4\u951a\u70b9"],
+                timelineMeta.anchor_event
+            ]),
             \u4e0b\u4e00\u7ae0\u9884\u671f: nextExpectation
                 || (countdownPreview
                     ? (countdownPreview.includes("倒计时") ? countdownPreview : `倒计时：${countdownPreview}`)
@@ -7874,6 +9223,124 @@ ${(detailedOutline || concept || "未填写").slice(0, 2200)}`;
         return direct;
     }
 
+    sanitizeTimelineArtifacts() {
+        if (!this.isTimelineSystemEnabled()) {
+            const normalizeTracker = (rawTracker) => {
+                const tracker = rawTracker && typeof rawTracker === "object" ? rawTracker : {};
+                tracker.current_time = "";
+                tracker.timeline_events = [];
+                tracker.countdowns = (Array.isArray(tracker.countdowns) ? tracker.countdowns : []).map((item) => this.normalizeTimelineCountdownEntry(item));
+                return tracker;
+            };
+
+            if (this.novelData.story_state && typeof this.novelData.story_state === "object") {
+                this.novelData.story_state.current_time = "";
+            }
+            if (this.novelData.outline?.story_state && typeof this.novelData.outline.story_state === "object") {
+                this.novelData.outline.story_state.timeline = "";
+            }
+
+            this.novelData.timeline_tracker = normalizeTracker(this.novelData.timeline_tracker);
+
+            if (this.novelData.chapter_snapshot?.snapshots && typeof this.novelData.chapter_snapshot.snapshots === "object") {
+                Object.entries(this.novelData.chapter_snapshot.snapshots).forEach(([key, snapshot]) => {
+                    const normalized = this.normalizeChapterSnapshotRecord(snapshot);
+                    normalized.timeline = "";
+                    normalized["时间"] = "";
+                    normalized.timeline_day_index = "";
+                    normalized.timeline_phase = "";
+                    normalized.timeline_anchor = "";
+                    this.novelData.chapter_snapshot.snapshots[key] = normalized;
+                });
+            }
+
+            if (this.novelData.outline?.state_snapshots && typeof this.novelData.outline.state_snapshots === "object") {
+                Object.values(this.novelData.outline.state_snapshots).forEach((snapshot) => {
+                    if (!snapshot || typeof snapshot !== "object") {
+                        return;
+                    }
+                    if (snapshot.story_state && typeof snapshot.story_state === "object") {
+                        snapshot.story_state.timeline = "";
+                    }
+                    if (snapshot.compatibility_story_state && typeof snapshot.compatibility_story_state === "object") {
+                        snapshot.compatibility_story_state.current_time = "";
+                    }
+                    snapshot.timeline_tracker = normalizeTracker(snapshot.timeline_tracker);
+                    if (snapshot.chapter_snapshot?.snapshots && typeof snapshot.chapter_snapshot.snapshots === "object") {
+                        Object.entries(snapshot.chapter_snapshot.snapshots).forEach(([key, record]) => {
+                            const normalized = this.normalizeChapterSnapshotRecord(record);
+                            normalized.timeline = "";
+                            normalized["时间"] = "";
+                            normalized.timeline_day_index = "";
+                            normalized.timeline_phase = "";
+                            normalized.timeline_anchor = "";
+                            snapshot.chapter_snapshot.snapshots[key] = normalized;
+                        });
+                    }
+                });
+            }
+            return;
+        }
+
+        const normalizeTracker = (rawTracker) => {
+            const tracker = rawTracker && typeof rawTracker === "object" ? rawTracker : {};
+            tracker.current_time = this.sanitizeTimelineLabel(tracker.current_time || "");
+            tracker.timeline_events = (Array.isArray(tracker.timeline_events) ? tracker.timeline_events : []).map((item) => ({
+                ...item,
+                ...(() => {
+                    const meta = this.buildTimelineMetadata(item?.time_point || item?.["时间点"] || "");
+                    return {
+                        time_point: meta.timeline,
+                        时间点: meta.timeline,
+                        day_index: meta.day_index,
+                        天数: meta.day_index,
+                        phase: meta.phase,
+                        时段: meta.phase,
+                        anchor_event: meta.anchor_event,
+                        时间锚点: meta.anchor_event
+                    };
+                })()
+            }));
+            tracker.countdowns = (Array.isArray(tracker.countdowns) ? tracker.countdowns : []).map((item) => this.normalizeTimelineCountdownEntry(item));
+            return tracker;
+        };
+
+        if (this.novelData.story_state && typeof this.novelData.story_state === "object") {
+            this.novelData.story_state.current_time = this.sanitizeTimelineLabel(this.novelData.story_state.current_time || "");
+        }
+        if (this.novelData.outline?.story_state && typeof this.novelData.outline.story_state === "object") {
+            this.novelData.outline.story_state.timeline = this.sanitizeTimelineLabel(this.novelData.outline.story_state.timeline || "");
+        }
+
+        this.novelData.timeline_tracker = normalizeTracker(this.novelData.timeline_tracker);
+
+        if (this.novelData.chapter_snapshot?.snapshots && typeof this.novelData.chapter_snapshot.snapshots === "object") {
+            Object.entries(this.novelData.chapter_snapshot.snapshots).forEach(([key, snapshot]) => {
+                this.novelData.chapter_snapshot.snapshots[key] = this.normalizeChapterSnapshotRecord(snapshot);
+            });
+        }
+
+        if (this.novelData.outline?.state_snapshots && typeof this.novelData.outline.state_snapshots === "object") {
+            Object.values(this.novelData.outline.state_snapshots).forEach((snapshot) => {
+                if (!snapshot || typeof snapshot !== "object") {
+                    return;
+                }
+                if (snapshot.story_state && typeof snapshot.story_state === "object") {
+                    snapshot.story_state.timeline = this.sanitizeTimelineLabel(snapshot.story_state.timeline || "");
+                }
+                if (snapshot.compatibility_story_state && typeof snapshot.compatibility_story_state === "object") {
+                    snapshot.compatibility_story_state.current_time = this.sanitizeTimelineLabel(snapshot.compatibility_story_state.current_time || "");
+                }
+                snapshot.timeline_tracker = normalizeTracker(snapshot.timeline_tracker);
+                if (snapshot.chapter_snapshot?.snapshots && typeof snapshot.chapter_snapshot.snapshots === "object") {
+                    Object.entries(snapshot.chapter_snapshot.snapshots).forEach(([key, record]) => {
+                        snapshot.chapter_snapshot.snapshots[key] = this.normalizeChapterSnapshotRecord(record);
+                    });
+                }
+            });
+        }
+    }
+
     iterateAllChapters(callback) {
         (this.novelData.outline?.volumes || []).forEach((volume, volumeIndex) => {
             (volume.chapters || []).forEach((chapter, chapterIndex) => {
@@ -7883,6 +9350,7 @@ ${(detailedOutline || concept || "未填写").slice(0, 2200)}`;
     }
 
     rehydrateDerivedChapterArtifacts() {
+        this.sanitizeTimelineArtifacts();
         this.novelData.chapter_snapshot = this.novelData.chapter_snapshot && typeof this.novelData.chapter_snapshot === "object"
             ? this.novelData.chapter_snapshot
             : { snapshots: {} };
@@ -8595,7 +10063,7 @@ ${(detailedOutline || concept || "未填写").slice(0, 2200)}`;
     buildHistoricalStateFallbackFromSnapshot(snapshot = {}) {
         const keyMemories = Array.isArray(snapshot?.["关键信息"]) ? snapshot["关键信息"] : [];
         return {
-            timeline: this.pickWorldStateText(snapshot.timeline, snapshot["时间"]),
+            timeline: this.pickTimelineText(snapshot.timeline, snapshot["时间"]),
             current_location: this.pickWorldStateText(snapshot.current_location, snapshot["位置"]),
             important_items: this.pickWorldStateText(snapshot.important_items, snapshot["重要物品"]),
             pending_plots: this.pickWorldStateText(snapshot.pending_plots, snapshot["待推进事项"]),
@@ -8781,14 +10249,16 @@ ${(detailedOutline || concept || "未填写").slice(0, 2200)}`;
             options.extraCharactersBlock || ""
         );
         const sanitizedStateData = this.sanitizeStateDataWithCharacterEvidence(stateData, evidence);
-        sanitizedStateData.timeline = this.resolveTimelineForChapter(
-            chapterNumber,
-            sanitizedStateData,
-            chapter,
-            options.cleanedContent || ""
-        ) || sanitizedStateData.timeline || "";
+        sanitizedStateData.timeline = this.isTimelineSystemEnabled()
+            ? (this.resolveTimelineForChapter(
+                chapterNumber,
+                sanitizedStateData,
+                chapter,
+                options.cleanedContent || ""
+            ) || "")
+            : "";
         const outlineState = this.novelData.outline.story_state || {};
-        outlineState.timeline = sanitizedStateData.timeline || outlineState.timeline || "";
+        outlineState.timeline = this.isTimelineSystemEnabled() ? (sanitizedStateData.timeline || outlineState.timeline || "") : "";
         outlineState.current_location = sanitizedStateData.current_location || outlineState.current_location || "";
         outlineState.important_items = sanitizedStateData.important_items || outlineState.important_items || "";
         outlineState.pending_plots = sanitizedStateData.pending_plots || outlineState.pending_plots || "";
@@ -8812,7 +10282,7 @@ ${(detailedOutline || concept || "未填写").slice(0, 2200)}`;
 
         this.novelData.outline.story_state = outlineState;
         this.novelData.story_state.current_location = outlineState.current_location || "";
-        this.novelData.story_state.current_time = outlineState.timeline || "";
+        this.novelData.story_state.current_time = this.isTimelineSystemEnabled() ? (outlineState.timeline || "") : "";
 
         this.recordTimelineUpdate(chapterNumber, sanitizedStateData, chapter, {
             cleanedContent: options.cleanedContent || ""
@@ -9212,6 +10682,8 @@ ${(detailedOutline || concept || "未填写").slice(0, 2200)}`;
         const activeCountdowns = this.getActiveTimelineCountdowns(chapterNumber);
         const countdownPreview = this.formatTimelineCountdownPreview(activeCountdowns, 3)
             || (nextChapterSetup.countdown ? String(nextChapterSetup.countdown).trim() : "");
+        const timelineMeta = this.buildTimelineMetadata(stateData.timeline || "", chapterNumber);
+        const timeline = timelineMeta.timeline;
         const nextChapterExpectation = [
             nextChapterSetup.state_setup ? `状态铺垫：${nextChapterSetup.state_setup}` : "",
             nextChapterSetup.atmosphere_setup ? `氛围铺垫：${nextChapterSetup.atmosphere_setup}` : "",
@@ -9223,13 +10695,16 @@ ${(detailedOutline || concept || "未填写").slice(0, 2200)}`;
         ].filter(Boolean).join("；");
         snapshots[`chapter_${chapterNumber}`] = {
             title: chapterTitle,
-            时间: stateData.timeline || "",
+            时间: timeline,
             位置: stateData.current_location || "",
             pending_plots: stateData.pending_plots || "",
             important_items: stateData.important_items || "",
             关键信息: stateData.key_event ? [stateData.key_event] : [],
             current_location: stateData.current_location || "",
-            timeline: stateData.timeline || "",
+            timeline,
+            timeline_day_index: timelineMeta.day_index,
+            timeline_phase: timelineMeta.phase,
+            timeline_anchor: timelineMeta.anchor_event,
             下一章预期: nextChapterExpectation || stateData.pending_plots || "",
             next_chapter_setup: nextChapterSetup,
             active_countdowns: activeCountdowns,
@@ -9367,6 +10842,7 @@ ${(detailedOutline || concept || "未填写").slice(0, 2200)}`;
             this.novelData.genre_progress_tracker = this.deepClone(snapshot.genre_progress_tracker || this.novelData.genre_progress_tracker || {});
             this.novelData.name_locker = this.deepClone(snapshot.name_locker || this.novelData.name_locker || {});
             this.novelData.used_temp_subplots = this.deepClone(snapshot.used_temp_subplots || this.novelData.used_temp_subplots || []);
+            this.sanitizeTimelineArtifacts();
             this.rebuildUsedExtraCharacters(target);
             this.ensureWorldStateManager();
             this.syncWorldStateManager();
@@ -9376,7 +10852,7 @@ ${(detailedOutline || concept || "未填写").slice(0, 2200)}`;
         const chapterSnapshot = this.novelData.chapter_snapshot?.snapshots?.[`chapter_${target}`];
         if (chapterSnapshot) {
             const outlineState = this.novelData.outline.story_state || this.deepClone(DEFAULT_NOVEL_DATA.outline.story_state);
-            outlineState.timeline = chapterSnapshot.timeline || chapterSnapshot["时间"] || outlineState.timeline || "";
+            outlineState.timeline = this.sanitizeTimelineLabel(chapterSnapshot.timeline || chapterSnapshot["时间"] || outlineState.timeline || "", target);
             outlineState.current_location = chapterSnapshot.current_location || chapterSnapshot["位置"] || outlineState.current_location || "";
             outlineState.important_items = chapterSnapshot.important_items || outlineState.important_items || "";
             outlineState.pending_plots = chapterSnapshot.pending_plots || outlineState.pending_plots || "";
@@ -9384,6 +10860,7 @@ ${(detailedOutline || concept || "未填写").slice(0, 2200)}`;
             this.novelData.story_state.current_location = outlineState.current_location || "";
             this.novelData.story_state.current_time = outlineState.timeline || "";
         }
+        this.sanitizeTimelineArtifacts();
         this.rebuildUsedExtraCharacters(target);
         this.ensureWorldStateManager();
         this.syncWorldStateManager();
@@ -9572,16 +11049,16 @@ ${(detailedOutline || concept || "未填写").slice(0, 2200)}`;
             title,
             match_key: this.normalizeTimelineCountdownKey(title || source.raw_text || ""),
             start_chapter: Number(source.start_chapter || source.chapter || source["章节"] || 0) || 0,
-            start_time: String(source.start_time || source.origin_time || source["起点时间"] || "").trim(),
+            start_time: this.sanitizeTimelineLabel(String(source.start_time || source.origin_time || source["起点时间"] || "").trim()),
             remaining_days: Number(source.remaining_days ?? source.days_left ?? source["剩余天数"]),
             initial_days: Number(source.initial_days ?? source.total_days ?? source["初始天数"]),
-            current_time: String(source.current_time || source["当前时间"] || "").trim(),
+            current_time: this.sanitizeTimelineLabel(String(source.current_time || source["当前时间"] || "").trim()),
             current_label: String(source.current_label || source["当前标签"] || "").trim(),
             status: explicitStatus || "active",
             raw_text: String(source.raw_text || source.constraint_desc || source["设定"] || "").trim(),
             last_updated_chapter: Number(source.last_updated_chapter || source.chapter || source["章节"] || 0) || 0,
             resolved_chapter: Number(source.resolved_chapter || source["结束章节"] || 0) || 0,
-            resolved_time: String(source.resolved_time || source["结束时间"] || "").trim()
+            resolved_time: this.sanitizeTimelineLabel(String(source.resolved_time || source["结束时间"] || "").trim())
         };
         if (!Number.isFinite(normalized.remaining_days)) {
             normalized.remaining_days = "";
@@ -9680,9 +11157,23 @@ ${(detailedOutline || concept || "未填写").slice(0, 2200)}`;
 
     recordTimelineUpdate(chapterNumber, stateData, chapter = null, options = {}) {
         const tracker = this.novelData.timeline_tracker || (this.novelData.timeline_tracker = {});
-        const previousTime = String(tracker.current_time || this.getPreviousChapterTimeline(chapterNumber) || "").trim();
-        const currentTime = String(stateData.timeline || previousTime || "").trim();
-        const dayAdvance = this.calculateTimelineDayAdvance(previousTime, currentTime, chapterNumber);
+        const timelineEnabled = this.isTimelineSystemEnabled();
+        const previousTime = timelineEnabled
+            ? this.sanitizeTimelineLabel(
+                String(tracker.current_time || this.getPreviousChapterTimeline(chapterNumber) || "").trim(),
+                Math.max(0, Number(chapterNumber || 0) - 1)
+            )
+            : "";
+        const currentTime = timelineEnabled
+            ? this.sanitizeTimelineLabel(
+                String(stateData.timeline || previousTime || "").trim(),
+                chapterNumber,
+                previousTime
+            )
+            : "";
+        const dayAdvance = timelineEnabled
+            ? this.calculateTimelineDayAdvance(previousTime, currentTime, chapterNumber)
+            : 0;
         const cleanedContent = String(options?.cleanedContent || "").trim();
         const explicitResolvedKeys = new Set(this.getResolvedTimelineCountdownKeys(stateData));
         const resolutionEvidence = [
@@ -9693,7 +11184,7 @@ ${(detailedOutline || concept || "未填写").slice(0, 2200)}`;
             cleanedContent ? cleanedContent.slice(-1800) : ""
         ].filter(Boolean);
 
-        tracker.current_time = currentTime || tracker.current_time || "";
+        tracker.current_time = timelineEnabled ? (currentTime || tracker.current_time || "") : "";
         tracker.timeline_events = Array.isArray(tracker.timeline_events) ? tracker.timeline_events : [];
         tracker.time_constraints = Array.isArray(tracker.time_constraints) ? tracker.time_constraints : [];
         tracker.countdowns = Array.isArray(tracker.countdowns) ? tracker.countdowns : [];
@@ -9731,12 +11222,19 @@ ${(detailedOutline || concept || "未填写").slice(0, 2200)}`;
             })
             .filter((item) => item.title);
 
-        if (stateData.key_event || stateData.timeline) {
+        if (timelineEnabled && (stateData.key_event || stateData.timeline)) {
+            const timelineMeta = this.buildTimelineMetadata(currentTime || "", chapterNumber, previousTime);
             tracker.timeline_events.push({
                 chapter: chapterNumber,
                 章节: chapterNumber,
                 time_point: currentTime || "",
                 时间点: currentTime || "",
+                day_index: timelineMeta.day_index,
+                天数: timelineMeta.day_index,
+                phase: timelineMeta.phase,
+                时段: timelineMeta.phase,
+                anchor_event: timelineMeta.anchor_event,
+                时间锚点: timelineMeta.anchor_event,
                 event: stateData.key_event || stateData.pending_plots || "",
                 事件: stateData.key_event || stateData.pending_plots || ""
             });
